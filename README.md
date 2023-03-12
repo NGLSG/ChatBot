@@ -65,7 +65,7 @@ _✨基于nlohmann,cpr,spdlog的ChatGPT API✨_
 
 # 依赖
 
-你需要安装使用[vcpkg](https://github.com/microsoft/vcpkg)安装cpr,spdlog,nlohmann
+你需要使用[vcpkg](https://github.com/microsoft/vcpkg)安装cpr,spdlog,nlohmann
 
  ```bash
 git clone https://github.com/Microsoft/vcpkg.git
