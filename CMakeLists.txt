@@ -18,7 +18,7 @@ set(SOURCES
 # 添加头文件
 set(HEADERS
         include/ChatBot.h
-        )
+        include/utils.h)
 
 # 添加可执行文件
 add_executable(ChatBot ${SOURCES} ${HEADERS})

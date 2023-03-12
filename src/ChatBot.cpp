@@ -1,8 +1,17 @@
 #include "ChatBot.h"
-#include <iostream>
-#include <fstream>
+
 
 ChatBot::ChatBot(ChatData chat_data) : chat_data_(std::move(chat_data)) {
+    defaultJson["content"] = sys;
+    defaultJson["role"] = "system";
+
+    if (!UDirectory::Exists(PresetPath)) {
+        UDirectory::Create(PresetPath);
+    }
+    if (!UDirectory::Exists(ConversationPath)) {
+        UDirectory::Create(ConversationPath);
+    }
+
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("chatbot.log", true);
     auto logger = std::make_shared<spdlog::logger>("Logger", spdlog::sinks_init_list{console_sink, file_sink});
@@ -10,7 +19,7 @@ ChatBot::ChatBot(ChatData chat_data) : chat_data_(std::move(chat_data)) {
     logger_ = logger;
 }
 
-json ChatBot::sendRequest(const std::string &data) {
+json ChatBot::sendRequest(std::string data) {
     if (!chat_data_.proxy.proxy.empty()) {
         cpr::Proxies proxies = {
                 {"http",  chat_data_.proxy.proxy},
@@ -59,12 +68,23 @@ json ChatBot::sendRequest(const std::string &data) {
     }
 }
 
-std::string ChatBot::submit(const std::string &prompt, const std::string &role) {
+std::string ChatBot::submit(std::string prompt, std::string role, std::string convid) {
+    convid_ = convid;
+    json ask;
+    ask["content"] = prompt;
+    ask["role"] = role;
+
+    if (Conversation.find(convid) == Conversation.end()) {
+
+        history.push_back(defaultJson);
+        Conversation.insert({convid, history});
+    }
+    history.push_back(ask);
+    Conversation[convid] = history;
     std::string data = "{\n"
                        "  \"model\": \"gpt-3.5-turbo\",\n"
-                       "  \"messages\": [{\"role\": \"" + role + R"(", "content": ")" + prompt + "\"}]\n"
-                                                                                                 "}";
-
+                       "  \"messages\": " + Conversation[convid].dump()
+                       + "}\n";
     json response = sendRequest(data);
 
     if (response.is_null()) {
@@ -77,74 +97,58 @@ std::string ChatBot::submit(const std::string &prompt, const std::string &role) 
         return "";
     }
 
-
     std::string text = response["choices"][0]["message"]["content"];
-    std::string finish_reason = response["choices"][0]["finish_reason"];
+    //std::string finish_reason = response["choices"][0]["finish_reason"];
 
-    memory_ += text + "\n";
+    if (!text.empty())
+        while (text[0] == '\n') {
+            text.erase(0, 1);
+        }
+    else {
+        LogWarn("Warning:Result is null");
+        return "";
+    }
     return text;
 }
 
 void ChatBot::reset() {
-    memory_ = "";
+
+    history.clear();
+    history.push_back(defaultJson);
+    Conversation[convid_] = history;
 }
 
-void ChatBot::setMode(std::string ModeName) {
-    mode_name_ = std::move(ModeName);
-}
+void ChatBot::load(std::string name) {
 
-std::string ChatBot::getMode() {
-    return mode_name_;
-}
-
-void ChatBot::saveMode(const std::string &ModeName, const std::string &content) {
-    std::ofstream mode_file(ModeName + ".txt");
-
-    if (mode_file.is_open()) {
-        mode_file << content;
-        mode_file.close();
-    } else {
-        LogError("Error: Unable to save mode " + ModeName + ".");
-    }
-}
-
-void ChatBot::delMode(const std::string &ModeName) {
-    if (remove((ModeName + ".txt").c_str()) != 0) {
-        LogError("Error: Unable to delete mode " + ModeName + ".");
-    }
-}
-
-void ChatBot::load(const std::string &name) {
-    std::ifstream session_file(name + ".txt");
-
+    std::stringstream buffer;
+    std::ifstream session_file(ConversationPath + name + suffix);
     if (session_file.is_open()) {
-        std::string session_content((std::istreambuf_iterator<char>(session_file)),
-                                    std::istreambuf_iterator<char>());
-        memory_ = session_content;
-        session_file.close();
+        buffer<<session_file.rdbuf();
+        history=json::parse(buffer.str());
     } else {
         LogError("Error: Unable to load session " + name + ".");
     }
+    log("加载成功");
 }
 
-void ChatBot::save(const std::string &name) {
-    std::ofstream session_file(name + ".txt");
+void ChatBot::save(std::string name) {
+    std::ofstream session_file(ConversationPath + name + suffix);
 
     if (session_file.is_open()) {
-        session_file << memory_;
+        session_file << history.dump();
         session_file.close();
     } else {
         log("Error: Unable to save session " + name + ".");
     }
 }
 
-void ChatBot::del(const std::string &name) {
-    if (remove((name + ".txt").c_str()) != 0) {
+void ChatBot::del(std::string name) {
+    if (remove((ConversationPath + name + suffix).c_str()) != 0) {
         log("Error: Unable to delete session " + name + ".");
     }
 }
 
-void ChatBot::log(const std::string &message) {
+void ChatBot::log(std::string message) {
     std::ofstream log_file(log_file_, std::ios_base::app);
     if (log_file.is_open()) {
         log_file << message << std::endl;
@@ -154,9 +158,14 @@ void ChatBot::log(const std::string &message) {
     }
 }
 
-void ChatBot::LogError(const std::string &errorMessage) {
-    // Output error message to console
+void ChatBot::LogError(std::string Message) {
+    logger_->error(Message);
+}
 
-    // Log error message to file
-    logger_->error(errorMessage);
+void ChatBot::LogWarn(std::string Message) {
+    logger_->warn(Message);
+}
+
+void ChatBot::LogInfo(std::string Message) {
+    logger_->info(Message);
 }

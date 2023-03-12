@@ -1,24 +1,27 @@
-#include <iostream>
-#include "../include/ChatBot.h"
+#include "ChatBot.h"
 
 int main() {
     try {
+        std::cout << "Bot:" << std::endl;
         ChatData chatData;
-        chatData.api_key = "sk-xxxx";//your api key
+        chatData.api_key = "";
 
         Proxy proxy;
-        proxy.proxy = "http://ip:port or https://ip:port";//if you need proxy
+        proxy.proxy = "";
         chatData.proxy = proxy;
         ChatBot bot(chatData);
+        std::string res = bot.submit("记住a=1");
+        bot.LogInfo(res);
+        bot.reset();
+        res = bot.submit("a=?");
+        bot.LogInfo(res);
+        //bot.save();
 
-        std::cout << bot.submit("hello") << std::endl;
     }
     catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
     }
 
-
     system("pause");
     return 0;
 }
-

@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include "utils.h"
 
 using json = nlohmann::json;
 
@@ -31,34 +32,42 @@ class ChatBot {
 public:
     ChatBot(ChatData chat_data);
 
-    std::string submit(const std::string& prompt, const std::string& role = Role::User);
+    std::string submit(std::string prompt, std::string role = Role::User, std::string convid = "defult");
 
     void reset();
 
-    void setMode(std::string ModeName = "default");
+    void load(std::string name = "default");
 
-    std::string getMode();
+    void save(std::string name = "default");
 
-    void saveMode(const std::string& ModeName, const std::string& content);
+    void del(std::string name);
 
-    void delMode(const std::string& ModeName);
+    void log(std::string message);
 
-    void load(const std::string& name);
+    void LogError(std::string Message);
 
-    void save(const std::string& name);
+    void LogWarn(std::string Message);
 
-    void del(const std::string& name);
+    void LogInfo(std::string Message);
+
 
 private:
     ChatData chat_data_;
     std::string mode_name_ = "default";
-    std::string memory_;
+    std::string convid_ = "default";
     std::string log_file_ = "chatbot.log";
     std::shared_ptr<spdlog::logger> logger_;
 
-    json sendRequest(const std::string& data);
+    std::map<std::string, json> Conversation;
+    json history;
+    const std::string PresetPath = "Presets/";
+    const std::string ConversationPath = "Conversations/";
 
-    void log(const std::string& message);
+    const std::string suffix = ".dat";
 
-    void LogError(const std::string &errorMessage);
+    json sendRequest(std::string data);
+
+
+    const std::string sys = "You are ChatGPT, a large language model trained by OpenAI. Respond conversationally";
+    json defaultJson;
 };
