@@ -27,46 +27,73 @@ _✨基于nlohmann,cpr,spdlog的ChatGPT API✨_
 初始化
 
 ```c++
-    ChatData chatData;
+    #include<ChatBot.h>
+    OpenAIData chatData;
     chatData.api_key = "sk-xxxx";//设置你的API_Key
     ChatBot bot(chatData);//初始化
 ```
 
-* 会话相关
-  *
-      * 提交对话
+* **会话**
+    *
+        * 提交对话
       ```c++
-      bot.submit("Hello","user");//对话内容,及对话模式 默认为user
+      bot.Submit("Hello","user");//对话内容,及对话模式 默认为user
+      bot.SubmitAsync("Hello","user");//异步提交对话内容,及对话模式 默认为user
       ```
-        
-* * 保存会话
-    ```c++
-    bot.save("Conversation Name");//保存会话,默认为default
-    ```
-       
-* * 加载会话
 
-    ```c++
-    bot.load("Conversation Name");//加载会话 默认为default
-    ```
-        
-* * 删除会话
+*
+    * 保存会话
+      ```c++
+      bot.Save("Conversation Name");//保存会话,默认为default
+      ```
 
-    ```c++
-    bot.del("Conversation Name");//删除会话
-    ```
-        
-* * 重置会话
+*
+    * 加载会话
 
+      ```c++
+      bot.Load("Conversation Name");//加载会话 默认为default
+      ```
+
+*
+    * 删除会话
+
+      ```c++
+      bot.Del("Conversation Name");//删除会话
+      ```
+
+*
+    * 重置会话
+
+      ```c++
+      bot.Reset();//重置当前会话
+      ```
+* **日志功能**
+    * Log::Trace()
+    * Log::Info()
+    * Log::Warn()
+    * Log::Error()
+    * Log::Fatal()
+
+* **语音转文本**
+    * 初始化
     ```c++
-    bot.reset();//重置当前会话
+    #include <VoiceToText.h>
+    OpenAIData Data;
+    Data.api_key = "sk-xxx";//your api key
+    VoiceToText voiceToText(Data);
     ```
-        
+* 
+  * 转化
+      ```c++
+        string res=voiceToText.Convert("path to voice file");
+      ```
+
 
 # 依赖
 
 你需要使用[vcpkg](https://github.com/microsoft/vcpkg)安装cpr,spdlog,nlohmann
 
+* Windows
  ```bash
 git clone https://github.com/Microsoft/vcpkg.git
 cd vcpkg
@@ -76,13 +103,24 @@ vcpkg install cpr
 vcpkg install spdlog
 vcpkg integrate install
 ```  
-
+* Linux
+ ```bash
+git clone https://github.com/Microsoft/vcpkg.git
+cd vcpkg
+bootstrap-vcpkg.sh
+vcpkg install nlohmann-json
+vcpkg install cpr
+vcpkg install spdlog
+vcpkg integrate install
+```  
 
 # 编译
+
 ```bash
+cd ChatBot
 mkdir build
 cd build
-cmake -B build/ -S . -DCMAKE_TOOLCHAIN_FILE=vcpkgdirectory/scripts/buildsystems/vcpkg.cmake
+cmake -B build/ -S . -DCMAKE_TOOLCHAIN_FILE=path/to/vcpkg.cmake
 cd build
 cmake --build .
 ```

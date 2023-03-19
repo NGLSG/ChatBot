@@ -11,20 +11,24 @@ find_package(spdlog CONFIG REQUIRED)
 
 # 添加源文件
 set(SOURCES
-        src/ChatBot.cpp
-        src/main.cpp
+        ../src/ChatBot.cpp
+        ../src/Logger.cpp
+        main.cpp
         )
 
 # 添加头文件
 set(HEADERS
-        include/ChatBot.h
-        include/utils.h)
+        ../include/ChatBot.h
+        ../include/utils.h
+        ../include/Logger.h
+
+        ../src/VoiceToText.cpp ../include/VoiceToText.h)
 
 # 添加可执行文件
 add_executable(ChatBot ${SOURCES} ${HEADERS})
 
 # 添加头文件目录
-target_include_directories(ChatBot PRIVATE include)
+target_include_directories(ChatBot PRIVATE ../include)
 
 # 链接依赖库
 
