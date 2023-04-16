@@ -2,7 +2,6 @@
 
 
 ChatBot::ChatBot(const OpenAIData& chat_data) : chat_data_(chat_data) {
-
     Log::Logger::Init();
     defaultJson["content"] = sys;
     defaultJson["role"] = "system";

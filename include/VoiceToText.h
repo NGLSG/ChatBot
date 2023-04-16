@@ -1,10 +1,4 @@
-﻿//
-// Created by 92703 on 2023/3/19.
-//
-
-#ifndef CHATBOT_VOICETOTEXT_H
-#define CHATBOT_VOICETOTEXT_H
-
+﻿#pragma once
 
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
@@ -24,6 +18,3 @@ public:
 private:
     OpenAIData _voiceData;
 };
-
-
-#endif //CHATBOT_VOICETOTEXT_H
