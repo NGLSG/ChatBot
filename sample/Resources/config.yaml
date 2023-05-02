@@ -1,0 +1,17 @@
+openAi:
+  useLocalModel: false
+  modelPath: model/ChatGLM/
+  api_key: ""
+  model: gpt-3.5-turbo
+  proxy: ""
+baiDuTranslator:
+  appId: ""
+  APIKey: ""
+  proxy: ""
+vits:
+  model: ""
+  config: ""
+  lanType: jp
+whisper:
+  useLocalModel: false
+  model: model/Whisper/ggml-base.bin

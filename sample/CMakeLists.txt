@@ -54,7 +54,7 @@ target_include_directories(ChatBot PRIVATE ../include)
 # 链接依赖库
 target_link_libraries(ChatBot
         PRIVATE portaudio
-        PRIVATE D:/Git/vcpkg/installed/x64-windows/lib/sndfile.lib
+        PRIVATE ${SNDFILE_LIBRARIES}
         PRIVATE OpenGL::GL
         PRIVATE LibArchive::LibArchive
         PRIVATE yaml-cpp
@@ -63,3 +63,22 @@ target_link_libraries(ChatBot
         PRIVATE cpr::cpr
         PRIVATE spdlog::spdlog spdlog::spdlog_header_only
         PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+
+# 添加资源文件
+target_sources(ChatBot PRIVATE
+        Resources/Info.rc
+        Resources/Info.plist
+        Resources/icon.png)
+
+# 指定资源文件输出目录
+set_target_properties(ChatBot PROPERTIES
+        RESOURCE "Resources/Info.rc"
+        RESOURCE "Resources/Info.plist"
+        RESOURCE "Resources/icon.png"
+        )
+
+# 指定资源文件输出目录
+set_target_properties(ChatBot PROPERTIES
+        VS_RESOURCE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Resources"
+        XCODE_ATTRIBUTE_RESOURCE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Resources"
+        )

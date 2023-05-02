@@ -16,13 +16,14 @@ Recorder::~Recorder() {
 }
 
 void Recorder::startRecording() {
-    LogInfo("Staring recording...");
+    LogInfo("Starting recording...");
     Pa_OpenDefaultStream(&stream, 1, 0, paFloat32, sampleRate, framesPerBuffer, recordCallback, this);
     Pa_StartStream(stream);
 
 }
 
 void Recorder::stopRecording(bool del) {
+    LogInfo("Stopping recording...");
     silentTimer = LLONG_MIN;
     Pa_StopStream(stream);
     Pa_CloseStream(stream);

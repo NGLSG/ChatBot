@@ -62,9 +62,10 @@ public:
         }).detach();
     }
 
-    void EndListen() {
+    void EndListen(bool save = true) {
         ResetRecorded();
-        recorder.saveToWav(taskPath);
+        if (save)
+            recorder.saveToWav(taskPath);
     }
 
     bool IsRecorded() {
