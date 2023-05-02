@@ -1,16 +1,10 @@
-#pragma once
-
-#include <string>
-#include <nlohmann/json.hpp>
-#include <cpr/cpr.h>
-#include <thread>
+#ifndef CHATBOT_H
+#define CHATBOT_H
 
 #include "VoiceToText.h"
 #include "utils.h"
-#include "Logger.h"
 
 using json = nlohmann::json;
-
 
 namespace Role {
     static std::string User = "user";
@@ -20,7 +14,7 @@ namespace Role {
 
 class ChatBot {
 public:
-    ChatBot(const OpenAIData& chat_data);
+    ChatBot(const OpenAIData &chat_data);
 
     std::string Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult");
 
@@ -34,10 +28,13 @@ public:
 
     void Del(std::string name);
 
+    void Add(std::string name);
+
     json history;
 
 private:
 
+    cpr::Session session;
     OpenAIData chat_data_;
     std::string mode_name_ = "default";
     std::string convid_ = "default";
@@ -57,3 +54,5 @@ private:
     }
 
 };
+
+#endif

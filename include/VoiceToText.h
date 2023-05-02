@@ -1,7 +1,6 @@
-﻿#pragma once
+﻿#ifndef VOICETOTEXT_H
+#define VOICETOTEXT_H
 
-#include <nlohmann/json.hpp>
-#include <cpr/cpr.h>
 #include "utils.h"
 
 using json = nlohmann::json;
@@ -15,6 +14,12 @@ public:
 
     json sendRequest(std::string data);
 
+    std::future<std::string> ConvertAsync(std::string voicePath);
+
 private:
+
+    cpr::Session session;
     OpenAIData _voiceData;
 };
+
+#endif

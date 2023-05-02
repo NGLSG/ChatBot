@@ -1,152 +1,132 @@
 ﻿#ifndef RECORDER_H
 #define RECORDER_H
 
-#include "portaudio.h"
-#include <vector>
-#include <thread>
-#include <chrono>
-#include "Logger.h"
+#include "utils.h"
 
 class Recorder {
 public:
+    const std::string filepath = "recorded.wav";
 
-    Recorder(int sampleRate, int framesPerBuffer)
-            : sampleRate(sampleRate), framesPerBuffer(framesPerBuffer) {
-        Log::Logger::Init();
-        PaError err = Pa_Initialize();
-        if (err != paNoError) {
-            Log::Error("PortAudio initialization failed: {0}", Pa_GetErrorText(err));
-        }
+    double silentTimer;
+    const int SILENT_TIMEOUT = 1000;
 
-    }
+    Recorder(int sampleRate, int framesPerBuffer);
 
-    ~Recorder() {
-        Pa_Terminate();
-    }
+    ~Recorder();
 
-    void startRecording() {
-        Pa_OpenDefaultStream(&stream, 1, 0, paFloat32, sampleRate, framesPerBuffer, recordCallback, this);
-        Pa_StartStream(stream);
-    }
+    void startRecording();
 
-    void stopRecording() {
-        Pa_StopStream(stream);
-        Pa_CloseStream(stream);
-    }
+    void stopRecording(bool del = false);
 
-    std::vector<float> getRecordedData() const {
-        return recordedData;
-    }
+    std::vector<float> getRecordedData() const;
 
-    void saveToWav(const std::string &fileName) {
-        const std::vector<float> &pcmData = getRecordedData();
-        FILE * file = fopen(fileName.c_str(), "wb");
-        if (file) {
-            // Write WAV header
-            const int bitsPerSample = 16;
-            const int numChannels = 1;
-            const int blockAlign = numChannels * bitsPerSample / 8;
-            const int byteRate = sampleRate * blockAlign;
+    void saveToWav(const std::string &fileName = "recorded.wav");
 
-            const int dataSize = pcmData.size() * sizeof(float);
-            const int fileSize = dataSize + 44;
 
-            fwrite("RIFF", 1, 4, file);
-            fwrite(&fileSize, 4, 1, file);
-            fwrite("WAVE", 1, 4, file);
-            fwrite("fmt ", 1, 4, file);
-            const int fmtSize = 16;
-            fwrite(&fmtSize, 4, 1, file);
-            const short int audioFormat = 1;
-            fwrite(&audioFormat, 2, 1, file);
-            fwrite(&numChannels, 2, 1, file);
-            fwrite(&sampleRate, 4, 1, file);
-            fwrite(&byteRate, 4, 1, file);
-            fwrite(&blockAlign, 2, 1, file);
-            fwrite(&bitsPerSample, 2, 1, file);
-            fwrite("data", 1, 4, file);
-            fwrite(&dataSize, 4, 1, file);
-
-            // Convert float PCM data to 16-bit signed integer and write to file
-            std::vector<short> wavData(pcmData.size());
-            for (int i = 0; i < pcmData.size(); i++) {
-                wavData[i] = static_cast<short>(pcmData[i] * 32767.0f);
-            }
-            fwrite(wavData.data(), 2, wavData.size(), file);
-
-            fclose(file);
-            Log::Info("Saved audio to {0}", fileName);
-        } else {
-            Log::Error("Failed to open file {0}", fileName);
-        }
-    }
-
-private:
-    static const int SAMPLE_RATE = 16000;
-
-    PaStream *stream;
-    std::vector<float> recordedData;
+    int sampleRate;
 
     static int recordCallback(const void *inputBuffer, void *outputBuffer, unsigned long framesPerBuffer,
                               const PaStreamCallbackTimeInfo *timeInfo, PaStreamCallbackFlags statusFlags,
-                              void *userData) {
-        Recorder *recorder = static_cast<Recorder *>(userData);
-        float *input = static_cast<float *>(const_cast<void *>(inputBuffer));
+                              void *userData);
 
-        // Check if there is any audio input
-        bool hasAudioInput = false;
-        for (int i = 0; i < framesPerBuffer; i++) {
-            if (input[i] != 0) {
-                hasAudioInput = true;
-                break;
-            }
-        }
+private:
 
-        // If there is no audio input for 2 seconds, stop recording
-        static int silentFrames = 0;
-        if (!hasAudioInput) {
-            silentFrames += framesPerBuffer;
-            if (silentFrames >= SAMPLE_RATE * 2) {
-                recorder->stopRecording();
-                return paComplete;
-            }
-        } else {
-            silentFrames = 0;
-        }
-
-        // Save audio data to memory
-        for (int i = 0; i < framesPerBuffer; i++) {
-            recorder->recordedData.push_back(input[i]);
-        }
-
-        return paContinue;
-    }
-
-    int sampleRate;
+    static const int SAMPLE_RATE = 16000;
     int framesPerBuffer;
+    PaStream *stream;
+    std::vector<float> recordedData;
+
 };
 
-void playRecordedAudio(const std::vector<float> &audioData) {
-    // Play audio data
-    PaStream *stream;
-    Pa_Initialize();
-    Pa_OpenDefaultStream(&stream, 0, 1, paFloat32, 44100, 512, NULL, NULL);
-    Pa_StartStream(stream);
-    Pa_WriteStream(stream, audioData.data(), audioData.size());
-    Pa_StopStream(stream);
-    Pa_CloseStream(stream);
-    Pa_Terminate();
-}
-
-void savePcmToFile(const std::vector<float> &pcmData, const std::string &fileName) {
-    FILE * file = fopen(fileName.c_str(), "wb");
-    if (file) {
-        fwrite(pcmData.data(), sizeof(float), pcmData.size(), file);
-        fclose(file);
-        Log::Info("Saved PCM data to {0}", fileName);
-    } else {
-        Log::Error("Failed to open file {0}", fileName);
+class Listener {
+public:
+    Listener(int sampleRate, int framesPerBuffer) : recorder(sampleRate, framesPerBuffer) {
     }
-}
 
-#endif // RECORDER_H
+    ~Listener() {
+    }
+
+    void listen(std::string file = "recorded0.wav") {
+        run = true;
+        taskPath = file;
+        std::thread([&]() {
+            recorder.startRecording();
+            while (run) {
+                if (recorder.silentTimer >= recorder.SILENT_TIMEOUT) {
+                    isRecorded = true;
+                    //recorder.stopRecording();
+                    break;
+                }
+            }
+            LogInfo("Stop Recording...");
+        }).detach();
+    }
+
+    void EndListen() {
+        ResetRecorded();
+        recorder.saveToWav(taskPath);
+    }
+
+    bool IsRecorded() {
+        std::lock_guard<std::mutex> lock(recordedData_mutex); // 加锁
+        return isRecorded;
+    };
+
+    void ResetRecorded() {
+        run = false;
+        isRecorded = false;
+        recorder.silentTimer = 0;
+        recorder.stopRecording(); // 停止录音
+        std::lock_guard<std::mutex> lock(recordedData_mutex); // 加锁
+        recordedData.clear(); // 清空录音数据
+    }
+
+    void playRecorded() {
+        // 使用std::shared_ptr来管理filename的生命周期
+        auto filename_ptr = std::make_shared<std::string>(taskPath);
+
+        // 播放音频文件
+        Utils::playAudioAsync(*filename_ptr, [&]() {
+            listen();
+        });
+
+        // 在回调函数中使用std::weak_ptr来获取filename的引用
+        auto callback = [filename_ptr]() {
+            std::weak_ptr<std::string> weak_ptr = filename_ptr;
+            if (auto ptr = weak_ptr.lock()) {
+                // 在回调函数中使用filename的引用
+                LogInfo("Audio file {0} finished playing", *ptr);
+            }
+        };
+
+        // 启动异步任务，并将Lambda表达式作为参数传递
+        std::async(std::launch::async, callback);
+    }
+
+    void changeFile(std::string filename) {
+        taskPath = filename;
+    }
+
+    std::vector<float> getRecordedData() {
+        std::lock_guard<std::mutex> lock(recordedData_mutex); // 加锁
+        return recordedData;
+    }
+
+private:
+    std::string taskPath;
+    bool isRecorded = false;
+    bool run = true;
+    Recorder recorder;
+    std::vector<float> recordedData;
+    std::mutex recordedData_mutex; // 互斥锁
+    friend int Recorder::recordCallback(const void *inputBuffer, void *outputBuffer, unsigned long framesPerBuffer,
+                                        const PaStreamCallbackTimeInfo *timeInfo, PaStreamCallbackFlags statusFlags,
+                                        void *userData);
+};
+
+class Audio {
+public:
+    static void playRecordedAudio(const std::vector<float> &audioData);
+};
+
+#endif

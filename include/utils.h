@@ -1,101 +1,125 @@
-#pragma once
+#ifndef UTILS_H
+#define UTILS_H
 
-#include <fstream>
-#include <string>
-#include <filesystem>
-#include <iostream>
+#include "pch.h"
 #include <Logger.h>
-#include "nlohmann/json.hpp"
+#include <Progress.hpp>
+#include <Configure.h>
 
 using json = nlohmann::json;
 
-template<typename T>
-T Min(T a, T b) {
-    return a < b ? a : b;
-}
+#ifndef UTILS
+#define UTILS
 
-template<typename T>
-T Max(T a, T b) {
-    return a > b ? a : b;
-}
+extern bool NoRecord;
+extern std::mutex mtx;
 
-template<typename T>
-using Scope = std::unique_ptr<T>;
-
-template<typename T, typename... Args>
-constexpr Scope<T> CreateScope(Args &&... args) {
-    return std::make_unique<T>(std::forward<Args>(args)...);
-}
-
-template<typename T>
-using Ref = std::shared_ptr<T>;
-
-template<typename T, typename... Args>
-constexpr Ref<T> CreateRef(Args &&... args) {
-    return std::make_shared<T>(std::forward<Args>(args)...);
-}
-
-struct VITSData {
-    std::string model = "";//模型名字
-    std::string lanType="jp";//模型的语言类型
-
-};
-
-struct TranslateData {
-    std::string appId;
-    std::string APIKey;
-};
-
-struct Proxy {
-    std::string proxy = "";
-    std::string ip = "";
-    std::string port = "";
-};
-
-struct OpenAIData {
-    std::string api_key;
-    std::string model = "gpt-3.5-turbo";
-    Proxy proxy = Proxy();
-};
+#endif
 
 class UFile {
 public:
-    static bool Exists(const std::string &filename) {
-        std::ifstream file(filename);
-        return file.good();
-    }
+    static bool Exists(const std::string &filename);
 };
 
 class UDirectory {
 public:
-    static bool Create(const std::string &dirname) {
-        try {
-            std::filesystem::create_directory(dirname);
-            return true;
-        } catch (std::filesystem::filesystem_error &e) {
-            std::cerr << "Error creating directory: " << e.what() << std::endl;
-            return false;
-        }
-    }
+    static bool Create(const std::string &dirname);
 
-    static bool Exists(const std::string &dirname) {
-        return std::filesystem::is_directory(dirname);
-    }
+    static bool Exists(const std::string &dirname);
 };
-
-
-#include <openssl/md5.h>
 
 class UEncrypt {
 public:
-    static std::string ToMD5(const std::string &str) {
-        unsigned char md[16];
-        MD5((const unsigned char *) str.c_str(), str.length(), md);
-        char buf[33] = {'\0'};
-        for (int i = 0; i < 16; ++i) {
-            sprintf(buf + i * 2, "%02x", md[i]);
-        }
-        return std::string(buf);
-    }
+    static std::string ToMD5(const std::string &str);
+
+    static std::string GetMD5(const std::string &str);
+
+    static std::string GetMD5(const void *data, std::size_t size);
 };
 
+class UCompression {
+public:
+    static bool Decompress7z(std::string file, std::string path);
+
+    static bool DecompressZip(std::string file, std::string path);
+
+    static bool DecompressGz(std::string file, std::string path);
+
+    static bool DecompressXz(std::string file, std::string path);
+
+    static bool DecompressRar(std::string file, std::string path);
+};
+
+class Utils {
+private:
+
+    typedef struct {
+        const float *data;
+        int position;
+        int length;
+    } paUserData;
+
+    static int paCallback(const void *inputBuffer, void *outputBuffer,
+                          unsigned long framesPerBuffer,
+                          const PaStreamCallbackTimeInfo *timeInfo,
+                          PaStreamCallbackFlags statusFlags,
+                          void *userData);
+
+    static bool DownloadThread(const std::string &url, const std::string &file_path, int start, int end, int id,
+                               std::vector<int> &progress);
+
+    static bool CheckFileSize(const std::string &file_path, int expected_size);
+
+
+public:
+
+    static std::string GetAbsolutePath(const std::string &relativePath);
+
+    static std::string exec(const std::string &command);
+
+    static std::string GetErrorString(cpr::ErrorCode code);
+
+    static std::string execAsync(const std::string &command);
+
+    static std::string GetLatestUrl(const std::string &url);
+
+    static std::string GetFileName(const std::string &dir);
+
+    static std::string GetDirName(const std::string &dir);
+
+    static std::string GetFileExt(std::string file);
+
+    static void playAudio(const char *filename = "tmp.wav");
+
+    static void playAudioAsync(const std::string &filename, std::function<void()> callback);
+
+    static void SaveYaml(const std::string &filename, const YAML::Node &node);
+
+    // 下载文件
+    static bool UDownload(const std::pair<std::string, std::string> &task, int num_threads = 8);
+
+    static bool UDownloads(const std::map<std::string, std::string> &tasks, int num_threads = 8);
+
+    static bool Decompress(std::string file, std::string path = "");
+
+    template<typename T>
+    static T LoadYaml(const std::string &file) {
+        // 从文件中读取YAML数据
+        YAML::Node node = YAML::LoadFile(file);
+
+        // 将整个YAML节点转换为指定类型的对象
+        return node.as<T>();
+    }
+
+    template<typename T>
+    static YAML::Node toYaml(const T &value) {
+        YAML::Node node;
+        node = value;
+        return node;
+    }
+
+    static size_t write_callback(char *ptr, size_t size, size_t nmemb, void *userdata);
+
+};
+
+#endif

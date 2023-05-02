@@ -1,6 +1,5 @@
-﻿#pragma once
-
-#include "cpr/cpr.h"
+﻿#ifndef TRANSLATE_H
+#define TRANSLATE_H
 #include "utils.h"
 
 class Translate {
@@ -11,6 +10,7 @@ public :
 
 private:
     TranslateData _data;
-
+    cpr::Session session;
 };
 
+#endif

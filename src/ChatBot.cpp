@@ -1,8 +1,8 @@
 #include "ChatBot.h"
 
 
-ChatBot::ChatBot(const OpenAIData& chat_data) : chat_data_(chat_data) {
-    Log::Logger::Init();
+ChatBot::ChatBot(const OpenAIData &chat_data) : chat_data_(chat_data) {
+    Logger::Init();
     defaultJson["content"] = sys;
     defaultJson["role"] = "system";
 
@@ -15,24 +15,29 @@ ChatBot::ChatBot(const OpenAIData& chat_data) : chat_data_(chat_data) {
 json ChatBot::sendRequest(std::string data) {
     bool ForceStop = false;
     json parsed_response;
+
+
     while (!ForceStop) {
-        if (!chat_data_.proxy.proxy.empty()) {
+        if (!chat_data_.proxy.empty()) {
             cpr::Proxies proxies = {
-                    {"http",  chat_data_.proxy.proxy},
-                    {"https", chat_data_.proxy.proxy}
+                    {"http",  chat_data_.proxy},
+                    {"https", chat_data_.proxy}
             };
 
             try {
+                session.SetProxies(proxies);
 
-                cpr::Response response = cpr::Post(cpr::Url{"https://api.openai.com/v1/chat/completions"},
-                                                   cpr::Body{data},
-                                                   cpr::Bearer({chat_data_.api_key}),
-                                                   cpr::Header{{"Content-Type", "application/json"}},
-                                                   proxies,
-                                                   cpr::VerifySsl{false});
+                session.SetUrl(cpr::Url{"https://api.openai.com/v1/chat/completions"});
+                session.SetBody(cpr::Body{data});
+                session.SetHeader(cpr::Header{{"Content-Type",  "application/json"},
+                                              {"Authorization", "Bearer " + chat_data_.api_key}});
+                session.SetVerifySsl(cpr::VerifySsl{false});
+
+                // 发送HTTP请求
+                cpr::Response response = session.Post();
 
                 if (response.status_code != 200) {
-                    Log::Error("Error: Request failed with status code " + std::to_string(response.status_code));
+                    LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
                     parsed_response = {};
                     ForceStop = true;
                 }
@@ -42,19 +47,24 @@ json ChatBot::sendRequest(std::string data) {
                     ForceStop = true;
                 }
             } catch (json::exception &e) {
-                Log::Error("Error: " + std::string(e.what()));
+                LogError("OpenAI Error: " + std::string(e.what()));
                 parsed_response = {};
                 ForceStop = true;
             }
+
         } else {
             try {
-                cpr::Response response = cpr::Post(cpr::Url{"https://api.openai.com/v1/chat/completions"},
-                                                   cpr::Bearer({chat_data_.api_key}),
-                                                   cpr::Header{{"Content-Type", "application/json"}},
-                                                   cpr::Body{data});
+                session.SetUrl(cpr::Url{"https://api.openai.com/v1/chat/completions"});
+                session.SetBody(cpr::Body{data});
+                session.SetHeader(cpr::Header{{"Content-Type",  "application/json"},
+                                              {"Authorization", "Bearer " + chat_data_.api_key}});
+                session.SetVerifySsl(cpr::VerifySsl{false});
+
+                // 发送HTTP请求
+                cpr::Response response = session.Post();
 
                 if (response.status_code != 200) {
-                    Log::Error("Error: Request failed with status code " + std::to_string(response.status_code));
+                    LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
                     parsed_response = {};
                     ForceStop = true;
                 }
@@ -64,12 +74,13 @@ json ChatBot::sendRequest(std::string data) {
                     ForceStop = true;
                 }
             } catch (json::exception &e) {
-                Log::Error("Error: " + std::string(e.what()));
+                LogError("OpenAI Error: " + std::string(e.what()));
                 parsed_response = {};
                 ForceStop = true;
             }
         }
     }
+
     return parsed_response;
 }
 
@@ -84,7 +95,6 @@ std::string ChatBot::Submit(std::string prompt, std::string role, std::string co
     ask["role"] = role;
 
     if (Conversation.find(convid) == Conversation.end()) {
-
         history.push_back(defaultJson);
         Conversation.insert({convid, history});
     }
@@ -97,12 +107,12 @@ std::string ChatBot::Submit(std::string prompt, std::string role, std::string co
     json response = sendRequest(data);
 
     if (response.is_null()) {
-        Log::Error("Error: Response is null.");
+        LogError("OpenAI Error: Response is null.");
         return "";
     }
 
     if (response.find("choices") == response.end() || response["choices"].empty()) {
-        Log::Error("Error: No choices found in response.");
+        LogError("OpenAI Error: No choices found in response.");
         return "";
     }
 
@@ -114,7 +124,7 @@ std::string ChatBot::Submit(std::string prompt, std::string role, std::string co
             text.erase(0, 1);
         }
     else {
-        Log::Warn("Warning:Result is null");
+        LogWarn("OpenAI Warning: Result is null");
         return "";
     }
     return text;
@@ -135,9 +145,9 @@ void ChatBot::Load(std::string name) {
         buffer << session_file.rdbuf();
         history = json::parse(buffer.str());
     } else {
-        Log::Error("Error: Unable to load session " + name + ".");
+        LogError("OpenAI Error: Unable to load session " + name + ".");
     }
-    Log::Info("加载成功");
+    LogInfo("Bot: 加载 {0} 成功", name);
 }
 
 void ChatBot::Save(std::string name) {
@@ -146,14 +156,21 @@ void ChatBot::Save(std::string name) {
     if (session_file.is_open()) {
         session_file << history.dump();
         session_file.close();
+        LogInfo("Bot : Save {0} successfully", name);
     } else {
-        Log::Error("Error: Unable to save session {0},{1}", name, ".");
+        LogError("OpenAI Error: Unable to save session {0},{1}", name, ".");
     }
 }
 
 void ChatBot::Del(std::string name) {
     if (remove((ConversationPath + name + suffix).c_str()) != 0) {
-        Log::Error("Error: Unable to delete session {0},{1}", name, ".");
+        LogError("OpenAI Error: Unable to delete session {0},{1}", name, ".");
     }
+    LogInfo("Bot : 删除 {0} 成功", name);
 }
 
+void ChatBot::Add(std::string name) {
+    history.clear();
+    history.emplace_back(defaultJson);
+    Save(name);
+}
