@@ -18,6 +18,7 @@ find_package(yaml-cpp CONFIG REQUIRED)
 find_package(LibArchive REQUIRED)
 # 添加源文件
 set(SOURCES
+        ../../3rdPart/ImGuiColorTextEdit/TextEditor.cpp
         ../src/utils.cpp
         ../src/ChatBot.cpp
         ../src/Logger.cpp
@@ -31,6 +32,7 @@ set(SOURCES
 
 # 添加头文件
 set(HEADERS
+        ../../3rdPart/ImGuiColorTextEdit/TextEditor.h
         ../include/utils.h
         ../include/ChatBot.h
         ../include/Logger.h

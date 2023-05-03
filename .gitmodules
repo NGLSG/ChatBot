@@ -1,0 +1,3 @@
+[submodule "3rdPart/ImGuiColorTextEdit"]
+	path = 3rdPart/ImGuiColorTextEdit
+	url = https://github.com/BalazsJako/ImGuiColorTextEdit.git
