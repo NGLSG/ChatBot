@@ -16,9 +16,9 @@ find_package(OpenGL REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(LibArchive REQUIRED)
+
 # 添加源文件
 set(SOURCES
-        ../../3rdPart/ImGuiColorTextEdit/TextEditor.cpp
         ../src/utils.cpp
         ../src/ChatBot.cpp
         ../src/Logger.cpp
@@ -32,7 +32,6 @@ set(SOURCES
 
 # 添加头文件
 set(HEADERS
-        ../../3rdPart/ImGuiColorTextEdit/TextEditor.h
         ../include/utils.h
         ../include/ChatBot.h
         ../include/Logger.h
@@ -42,13 +41,13 @@ set(HEADERS
         ../include/Recorder.h
         ../src/stb_image.cpp
         ../include/stb_image.h
-        ../include/imgui_markdown.h
         ../include/Configure.h
         ../include/Progress.hpp
         Application.h
         ../include/pch.h)
 
 # 添加可执行文件
+
 add_executable(ChatBot ${SOURCES} ${HEADERS})
 target_precompile_headers(ChatBot PRIVATE ../include/pch.h)
 # 添加头文件目录

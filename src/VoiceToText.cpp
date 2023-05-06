@@ -16,7 +16,7 @@ json VoiceToText::sendRequest(std::string data) {
         session.SetHeader(cpr::Header{{"Authorization", "Bearer " + _voiceData.api_key},
                                       {"Content-Type",  "multipart/form-data"}});
         session.SetMultipart(cpr::Multipart{{"file",  cpr::File{data}},
-                                            {"model", "whisperData-1"}});
+                                            {"model", "whisper-1"}});
         session.SetProxies(proxies);
         session.SetVerifySsl(cpr::VerifySsl{false});
         // 发送HTTP请求
