@@ -546,12 +546,12 @@ void Application::render_setting_box() {
         if (showbaiduPassword || baiduclicked) {
             if (ImGui::InputText("BaiDu API Key", Bapi_buffer,
                                  sizeof(Bapi_buffer))) {
-                configure.baiDuTranslator.APIKey=Bapi_buffer;
+                configure.baiDuTranslator.APIKey = Bapi_buffer;
             }
         } else {
             if (ImGui::InputText("BaiDu API Key", Bapi_buffer,
                                  sizeof(Bapi_buffer), ImGuiInputTextFlags_Password)) {
-                configure.baiDuTranslator.APIKey=Bapi_buffer;
+                configure.baiDuTranslator.APIKey = Bapi_buffer;
                 showbaiduPassword = true;
                 baidulastInputTime = ImGui::GetTime();
             }

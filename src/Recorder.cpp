@@ -1,10 +1,12 @@
 #include "Recorder.h"
 
 extern bool NoRecord;
+bool Iscount = false;
 
 Recorder::Recorder(int sampleRate, int framesPerBuffer)
         : sampleRate(sampleRate), framesPerBuffer(framesPerBuffer) {
     Logger::Init();
+    Iscount = false;
     PaError err = Pa_Initialize();
     if (err != paNoError) {
         LogError("PortAudio initialization failed: {0}", Pa_GetErrorText(err));
@@ -24,10 +26,11 @@ void Recorder::startRecording() {
 
 void Recorder::stopRecording(bool del) {
     LogInfo("Stopping recording...");
-    silentTimer = LLONG_MIN;
+    silentTimer = 0;
+    Iscount = false;
     Pa_StopStream(stream);
     Pa_CloseStream(stream);
-
+    stream = NULL;
 }
 
 std::vector<float> Recorder::getRecordedData() const {
@@ -37,7 +40,7 @@ std::vector<float> Recorder::getRecordedData() const {
 void Recorder::saveToWav(const std::string &fileName) {
     if (!getRecordedData().empty()) {
         const std::vector<float> &pcmData = getRecordedData();
-        getRecordedData().clear();
+        recordedData.clear();
         FILE *file = fopen(fileName.c_str(), "wb");
         if (file) {
             // Write WAV header
@@ -97,11 +100,14 @@ int Recorder::recordCallback(const void *inputBuffer, void *outputBuffer, unsign
         if (std::abs(input[i]) > 0.001) {
             silence = false;
             break;
+        } else {
+            silence = true;
         }
     }
 
     // Reset timer if not silent
     if (!silence) {
+        Iscount = true;
         recorder->silentTimer = 0.0;
     }
 
@@ -114,9 +120,9 @@ int Recorder::recordCallback(const void *inputBuffer, void *outputBuffer, unsign
     if (!silence) {
         recorder->recordedData.insert(recorder->recordedData.end(), input, input + framesPerBuffer);
     }
-
     // Increment timer
-    recorder->silentTimer += static_cast<double>(framesPerBuffer * 1000.0 / recorder->sampleRate);
+    if (Iscount)
+        recorder->silentTimer += static_cast<double>(framesPerBuffer * 1000.0 / recorder->sampleRate);
     return paContinue;
 }
 

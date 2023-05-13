@@ -7,7 +7,7 @@ class Recorder {
 public:
     const std::string filepath = "recorded.wav";
 
-    double silentTimer;
+    long long silentTimer;
     const int SILENT_TIMEOUT = 1000;
 
     Recorder(int sampleRate, int framesPerBuffer);
@@ -34,6 +34,7 @@ private:
     static const int SAMPLE_RATE = 16000;
     int framesPerBuffer;
     PaStream *stream;
+
     std::vector<float> recordedData;
 
 };
@@ -75,7 +76,6 @@ public:
     void ResetRecorded() {
         run = false;
         isRecorded = false;
-        recorder.silentTimer = 0;
         recorder.stopRecording(); // 停止录音
         std::lock_guard<std::mutex> lock(recordedData_mutex); // 加锁
         recordedData.clear(); // 清空录音数据
