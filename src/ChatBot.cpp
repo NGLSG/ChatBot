@@ -39,6 +39,7 @@ string ChatBot::sendRequest(std::string data) {
         if (response.status_code != 200) {
             LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
             parsed_response = {};
+            return "";
         }
 
         std::stringstream stream(response.text);

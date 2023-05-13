@@ -58,7 +58,6 @@ public:
                     break;
                 }
             }
-            LogInfo("Stop Recording...");
         }).detach();
     }
 
@@ -82,14 +81,17 @@ public:
         recordedData.clear(); // 清空录音数据
     }
 
-    void playRecorded() {
+    void playRecorded(bool islisten = true) {
         // 使用std::shared_ptr来管理filename的生命周期
         auto filename_ptr = std::make_shared<std::string>(taskPath);
 
         // 播放音频文件
-        Utils::playAudioAsync(*filename_ptr, [&]() {
-            listen();
-        });
+        if (islisten)
+            Utils::playAudioAsync(*filename_ptr, [&]() {
+                listen();
+            });
+        else
+            Utils::playAudioAsync(*filename_ptr, nullptr);
 
         // 在回调函数中使用std::weak_ptr来获取filename的引用
         auto callback = [filename_ptr]() {

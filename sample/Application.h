@@ -17,6 +17,9 @@
 #include "Configure.h"
 #include "utils.h"
 
+#define TEXT_BUFFER 1024
+const std::string VERSION = reinterpret_cast<const char *>(u8"Listner v1.0.dev");
+
 enum State {
     OK = 0,
     NO_OPENAI_KEY,
@@ -24,8 +27,6 @@ enum State {
     NO_TRANSLATOR,
     NO_WHISPER,
     FIRST_USE,
-
-
 };
 
 class Application {
@@ -42,13 +43,11 @@ private:
     const std::string exeSuffix = "";
 #endif
 
-
     struct Chat {
         int flag = 0;//0=user;1=bot
         long long timestamp;
         std::string content;
     };
-
 
     Ref<Translate> translator;
     Ref<ChatBot> bot;
@@ -73,11 +72,14 @@ private:
     std::mutex chat_history_mutex;
 
     State state = state = State::OK;
-
+    Configure configure;
     int select_id = 0;
     int role_id = 0;
+    int Rnum = 0;
 
     char input_buffer[4096 * 32];
+    char api_buffer[4096];
+    char Bapi_buffer[4096];
     const std::string bin = "bin/";
     const std::string VitsConvertor = "VitsConvertor/";
     const std::string model = "model/";
@@ -102,95 +104,17 @@ private:
 
     std::string remove_spaces(const std::string &str) {
         std::string result = str;
-        remove(result.begin(), result.end(), ' ');
+        if (!is_valid_text(result)) {
+            remove(result.begin(), result.end(), ' ');
+        }
         return result;
     }
 
+    void save(std::string name = "default");
 
-    void save(std::string name = "default") {
-        std::ofstream session_file(Conversation + name + ".yaml");
+    std::vector<Chat> load(std::string name = "default");
 
-        if (session_file.is_open()) {
-            // 创建 YAML 节点
-            YAML::Node node;
-
-            // 将 chat_history 映射到 YAML 节点
-            for (const auto &record: chat_history) {
-                // 创建一个新的 YAML 映射节点
-                YAML::Node record_node(YAML::NodeType::Map);
-
-                // 将 ChatRecord 对象的成员变量映射到 YAML 映射节点中
-                record_node["flag"] = record.flag;
-                if (record.flag == 0) {
-                    record_node["user"]["timestamp"] = record.timestamp;
-                    record_node["user"]["content"] = record.content;
-                } else {
-                    record_node["bot"]["timestamp"] = record.timestamp;
-                    record_node["bot"]["content"] = record.content;
-                }
-
-                // 将 YAML 映射节点添加到主节点中
-                node.push_back(record_node);
-            }
-
-            // 将 YAML 节点写入文件
-            session_file << node;
-
-            session_file.close();
-            LogInfo("Application : Save {0} successfully", name);
-        } else {
-            LogError("Application Error: Unable to save session {0},{1}", name, ".");
-        }
-    }
-
-    std::vector<Chat> load(std::string name = "default") {
-
-        if (UFile::Exists(Conversation + name + ".yaml")) {
-            std::ifstream session_file(Conversation + name + ".yaml");
-
-            if (session_file.is_open()) {
-                // 从文件中读取 YAML 节点
-                YAML::Node node = YAML::Load(session_file);
-
-                // 将 YAML 节点映射到 chat_history
-                for (const auto &record_node: node) {
-                    // 从 YAML 映射节点中读取 ChatRecord 对象的成员变量
-                    int flag = record_node["flag"].as<int>();
-                    long long timestamp;
-                    std::string content;
-                    if (flag == 0) {
-                        timestamp = record_node["user"]["timestamp"].as<long long>();
-                        content = record_node["user"]["content"].as<std::string>();
-                    } else {
-                        timestamp = record_node["bot"]["timestamp"].as<long long>();
-                        content = record_node["bot"]["content"].as<std::string>();
-
-                    }
-                    Chat record;
-                    record.flag = flag;
-                    record.content = content;
-                    record.timestamp = timestamp;
-
-                    // 创建一个新的 ChatRecord 对象，并将其添加到 chat_history 中
-                    chat_history.push_back(record);
-                }
-
-                session_file.close();
-                LogInfo("Application : Load {0} successfully", name);
-            } else {
-                LogError("Application Error: Unable to load session {0},{1}", name, ".");
-            }
-        }
-
-        return chat_history;
-    }
-
-    void del(std::string name = "default") {
-        if (remove((Conversation + name + ".yaml").c_str()) != 0) {
-            LogError("OpenAI Error: Unable to delete session {0},{1}", name, ".");
-        }
-        LogInfo("Bot : 删除 {0} 成功", name);
-    }
+    void del(std::string name = "default");
 
     void add_chat_record(const Chat &data) {
         chat_history.push_back(data);
@@ -218,13 +142,8 @@ private:
     bool Initialize();
 
     static bool is_valid_text(const std::string &text) {
-        // 定义正则表达式，匹配所有非特殊字符和空格
-        std::regex pattern("[^\\p{P}\\s]+");
-
-        // 检查字符串是否匹配正则表达式
-        return !std::regex_match(text, pattern);
+        return text.empty() || text == "";
     }
-
 
     struct Code {
         std::string codeType;
@@ -265,25 +184,9 @@ private:
         return result;
     }
 
+    long long getCurrentTimestamp();
 
-    long long getCurrentTimestamp() {
-        auto now = std::chrono::system_clock::now();
-        auto duration = now.time_since_epoch();
-        return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-    }
-
-
-    std::string Stamp2Time(long long timestamp) {
-        int ms = timestamp % 1000;//取毫秒
-        time_t tick = (time_t) (timestamp / 1000);//转换时间
-        struct tm tm;
-        char s[40];
-        tm = *localtime(&tick);
-        strftime(s, sizeof(s), "%Y-%m-%d %H:%M:%S", &tm);
-        std::string str(s);
-        str = str + " " + std::to_string(ms);
-        return str;
-    }
+    std::string Stamp2Time(long long timestamp);
 
 public:
     std::string WhisperConvertor(const std::string &file);
@@ -305,8 +208,6 @@ public:
 
     bool CheckFileExistence(const std::string &filePath, const std::string &fileType,
                             const std::string &executableFile = "", bool isExecutable = false);
-
-
 };
 
 #endif

@@ -2,6 +2,7 @@
 
 Application::Application(const OpenAIData &chat_data, const TranslateData &data, const VITSData &VitsData,
                          const WhisperData &WhisperData, bool setting) {
+    configure = Configure(chat_data, data, VitsData, whisperData);
     OnlySetting = setting;
     if (chat_data.api_key.empty()) {
         OnlySetting = true;
@@ -13,6 +14,7 @@ Application::Application(const OpenAIData &chat_data, const TranslateData &data,
     listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
     vitsData = VitsData;
     whisperData = WhisperData;
+
     if (!Initialize()) {
         LogWarn("Warning: Initialization failed!Maybe some function can not working");
     }
@@ -21,6 +23,7 @@ Application::Application(const OpenAIData &chat_data, const TranslateData &data,
 }
 
 Application::Application(const Configure &configure, bool setting) {
+    this->configure = configure;
     OnlySetting = setting;
     if (configure.openAi.api_key.empty() || configure.openAi.api_key == "") {
         OnlySetting = true;
@@ -75,7 +78,7 @@ void Application::Vits(std::string text) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             is_playing = true;
-            listener->playRecorded();
+            listener->playRecorded(whisperData.enable);
             is_playing = false;
         }
     }).detach();
@@ -136,8 +139,6 @@ void Application::render_popup_box() {
 }
 
 void Application::render_chat_box() {
-
-
     ImGuiStyle &style = ImGui::GetStyle();
     style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
     style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
@@ -324,14 +325,13 @@ void Application::render_chat_box() {
 
 void Application::render_input_box() {
     static std::vector<std::shared_future<std::string>> submit_futures;
-    static int num = 0;
-
     if (listener && listener->IsRecorded()) {
         std::thread([&]() {
-            listener->EndListen();
 
-            std::string path = "recorded" + std::to_string(num) + ".wav";
-            num += 1;
+            listener->EndListen();
+            listener->ResetRecorded();
+            std::string path = "recorded" + std::to_string(Rnum) + ".wav";
+            Rnum += 1;
             if (voiceToText && !path.empty()) {
                 std::future<std::string> conversion_future;
                 if (!whisperData.useLocalModel) {
@@ -347,17 +347,23 @@ void Application::render_input_box() {
                 // 在异步任务完成后执行回调函数
                 auto callback = [&](std::future<std::string> &future) {
                     std::string text = future.get();
+
                     if (is_valid_text(text)) {
                         // 显示错误消息
                         LogWarn("Bot Warning: Your question is empty");
-                        listener->listen();
+                        if (whisperData.enable)
+                            listener->listen();
                     } else {
                         last_input = text;
                         Chat user;
                         user.timestamp = getCurrentTimestamp();
                         user.content = last_input;
                         add_chat_record(user);
-                        num -= 1;
+
+                        Rnum -= 1;
+
+                        std::remove(("recorded" + std::to_string(Rnum) + ".wav").c_str());
+                        LogInfo("whisper: 删除录音{0}", "recorded" + std::to_string(Rnum) + ".wav");
                         std::shared_future<std::string> submit_future = std::async(std::launch::async, [&](void) {
                             return bot->Submit(remove_spaces(last_input), role);
                         }).share();
@@ -371,36 +377,39 @@ void Application::render_input_box() {
                 // 启动异步任务，并将回调函数作为参数传递
                 std::async(std::launch::async, callback, std::ref(conversion_future));
             }
-            listener->changeFile("recorded" + std::to_string(num) + ".wav");
+
+            listener->changeFile("recorded" + std::to_string(Rnum) + ".wav");
         }).detach();
     }
 
-    ImGuiStyle &style = ImGui::GetStyle();
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 5));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(5, 5));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing, ImVec2(5, 5));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
-    ImGui::PushStyleVar(ImGuiStyleVar_GrabRounding, 0);
-    ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0);
+    {
+        ImGuiStyle &style = ImGui::GetStyle();
+        style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+        style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+        style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 5));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(5, 5));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing, ImVec2(5, 5));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
+        ImGui::PushStyleVar(ImGuiStyleVar_GrabRounding, 0);
+        ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0);
 
-    ImGui::Begin("Input filed", NULL,
-                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
-                 ImGuiWindowFlags_NoTitleBar);
-    ImVec2 size(50, 0);
-    ImGui::SameLine(ImGui::GetWindowWidth() - size.x - 10);
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
-    ImGui::Text("%d", strlen(last_input.c_str()));
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(3);
+        ImGui::Begin("Input filed", NULL,
+                     ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
+                     ImGuiWindowFlags_NoTitleBar);
+        ImVec2 size(50, 0);
+        ImGui::SameLine(ImGui::GetWindowWidth() - size.x - 10);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+        ImGui::Text("%d", strlen(last_input.c_str()));
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+    }
 
     strcpy_s(input_buffer, input_text.c_str());
 
@@ -442,6 +451,8 @@ void Application::render_input_box() {
             if (vits && vitsData.enable) {
                 std::string VitsText = translator->translate(response, vitsData.lanType);
                 Vits(VitsText);
+            } else if (whisperData.enable) {
+                listener->listen();
             }
         } else {
             ++it;
@@ -466,7 +477,6 @@ void Application::render_setting_box() {
         default:
             break;
     }
-    static Configure configure = Utils::LoadYaml<Configure>("config.yaml");
     static bool should_restart = false;
 
     ImGui::Begin(reinterpret_cast<const char *>(u8"设置"), NULL,
@@ -478,20 +488,24 @@ void Application::render_setting_box() {
         if (!configure.openAi.useLocalModel) {
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
-
             double currentTime = ImGui::GetTime();
+            strcpy_s(api_buffer, configure.openAi.api_key.c_str());
             if (currentTime - lastInputTime > 0.5) {
                 showPassword = false;
             }
             if (showPassword || clicked) {
-                ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI API Key"),
-                                 configure.openAi.api_key.data(),
-                                 256);
+                if (ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI API Key"),
+                                     api_buffer,
+                                     sizeof(input_buffer))) {
+                    configure.openAi.api_key = api_buffer;
+                }
+
             } else {
                 if (ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI API Key"),
-                                     configure.openAi.api_key.data(),
-                                     256,
+                                     api_buffer,
+                                     sizeof(input_buffer),
                                      ImGuiInputTextFlags_Password)) {
+                    configure.openAi.api_key = api_buffer;
                     showPassword = true;
                     lastInputTime = ImGui::GetTime();
                 }
@@ -507,34 +521,37 @@ void Application::render_setting_box() {
                 clicked = !clicked;
             }
             ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI 模型"), configure.openAi.model.data(),
-                             256);
+                             TEXT_BUFFER);
             ImGui::InputText(reinterpret_cast<const char *>(u8"对OpenAI使用的代理"), configure.openAi.proxy.data(),
-                             256);
+                             TEXT_BUFFER);
         } else {
             ImGui::InputText(reinterpret_cast<const char *>(u8"ChatGLM的位置"),
                              configure.openAi.modelPath.data(),
-                             256);
+                             TEXT_BUFFER);
         }
-
     }
 
     // 显示百度翻译配置
     if (ImGui::CollapsingHeader(reinterpret_cast<const char *>(u8"百度翻译"))) {
         ImGui::InputText("BaiDu App ID", configure.baiDuTranslator.appId.data(),
-                         256);
+                         TEXT_BUFFER);
         static bool showbaiduPassword = false, baiduclicked = false;
         static double baidulastInputTime = 0.0;
 
         double baiducurrentTime = ImGui::GetTime();
+        strcpy_s(Bapi_buffer, configure.baiDuTranslator.APIKey.c_str());
         if (baiducurrentTime - baidulastInputTime > 0.5) {
             showbaiduPassword = false;
         }
         if (showbaiduPassword || baiduclicked) {
-            ImGui::InputText("BaiDu API Key", configure.baiDuTranslator.APIKey.data(),
-                             256);
+            if (ImGui::InputText("BaiDu API Key", Bapi_buffer,
+                                 sizeof(Bapi_buffer))) {
+                configure.baiDuTranslator.APIKey=Bapi_buffer;
+            }
         } else {
-            if (ImGui::InputText("BaiDu API Key", configure.baiDuTranslator.APIKey.data(),
-                                 256, ImGuiInputTextFlags_Password)) {
+            if (ImGui::InputText("BaiDu API Key", Bapi_buffer,
+                                 sizeof(Bapi_buffer), ImGuiInputTextFlags_Password)) {
+                configure.baiDuTranslator.APIKey=Bapi_buffer;
                 showbaiduPassword = true;
                 baidulastInputTime = ImGui::GetTime();
             }
@@ -544,31 +561,33 @@ void Application::render_setting_box() {
                                ImVec2(16, 16),
                                ImVec2(0, 0),
                                ImVec2(1, -1),
-                               -1,
+                               1,
                                ImVec4(0, 0, 0, 0),
                                ImVec4(1, 1, 1, 1))) {
-
             baiduclicked = !baiduclicked;
         }
 
         ImGui::InputText(reinterpret_cast<const char *>(u8"对百度使用的代理"),
                          configure.baiDuTranslator.proxy.data(),
-                         256);
+                         TEXT_BUFFER);
     }
 
     // 显示 VITS 配置
     if (ImGui::CollapsingHeader("VITS")) {
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Vits"), &configure.vits.enable);
-        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(), 256);
-        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 配置文件位置"), configure.vits.config.data(), 256);
-        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits的语言类型"), configure.vits.lanType.data(), 256);
+        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(), TEXT_BUFFER);
+        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 配置文件位置"), configure.vits.config.data(),
+                         TEXT_BUFFER);
+        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits的语言类型"), configure.vits.lanType.data(),
+                         TEXT_BUFFER);
     }
 
     // 显示 Whisper 配置
     if (ImGui::CollapsingHeader("Whisper")) {
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Whisper"), &configure.whisper.enable);
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用本地模型"), &configure.whisper.useLocalModel);
-        ImGui::InputText(reinterpret_cast<const char *>(u8"Whisper 模型位置"), configure.whisper.model.data(), 256);
+        ImGui::InputText(reinterpret_cast<const char *>(u8"Whisper 模型位置"), configure.whisper.model.data(),
+                         TEXT_BUFFER);
     }
 
     // 保存配置
@@ -607,7 +626,6 @@ void Application::render_setting_box() {
             ImGui::EndPopup();
         }
 
-
         if (no_key) {
             ImGui::OpenPopup(reinterpret_cast<const char *>(u8"需要配置OpenAI Key"));
             no_key = false;
@@ -624,9 +642,7 @@ void Application::render_setting_box() {
     }
 }
 
-
 bool Application::Initialize() {
-
     std::filesystem::path path_to_directory = "Conversations/";
     for (const auto &entry: std::filesystem::directory_iterator(path_to_directory)) {
         if (entry.is_regular_file()) {
@@ -663,7 +679,8 @@ bool Application::Initialize() {
                 std::cin >> yn;
                 if (yn == "y") {
                     if (!WhisperExeInstaller()) {
-                        LogWarn("Initialize Waring: \"Executable file\" download failure!Please download \"Executable\" file by yourself");
+                        LogWarn("Initialize Waring: \"Executable file\" download failure!Please download {0} \"Executable\" file by yourself",
+                                VitsConvertUrl);
                         LogWarn("Initialize Warning: Since you don't have a \"Executable file\", the voice conversation function isn't working properly!");
                         return false;
                     }
@@ -758,21 +775,13 @@ std::string Application::WhisperConvertor(const std::string &file) {
                  this->model + WhisperPath + whisperData.model);
         return "";
     }
-    std::string result;
+    std::string res;
 
-    result = Utils::exec(
-            Utils::GetAbsolutePath(bin + WhisperPath) + "main -l auto -m " + whisperData.model +
-            " -f ./recorded0.wav");
+    res = Utils::exec(
+            Utils::GetAbsolutePath(bin + WhisperPath) + "main -nt -l auto -t 8 -m " + whisperData.model +
+            " -f ./recorded" + std::to_string(Rnum - 1) + ".wav");
 
-    if (is_valid_text(result)) {
-        return "";
-    }
-    std::regex pattern(
-            "\\[.*\\]\\s*(.*)\\n");
-    std::sregex_token_iterator it(result.begin(), result.end(), pattern, 1);
-    std::sregex_token_iterator end;
-
-    return it->str();
+    return res;
 }
 
 bool Application::WhisperExeInstaller() {
@@ -821,7 +830,7 @@ int Application::Renderer() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // 创建窗口
-    GLFWwindow *window = glfwCreateWindow(800, 600, reinterpret_cast<const char *>(u8"Listener v1.0"), NULL, NULL);
+    GLFWwindow *window = glfwCreateWindow(800, 600, VERSION.c_str(), NULL, NULL);
     glfwMakeContextCurrent(window);
 
     // 初始化OpenGL
@@ -907,4 +916,105 @@ int Application::Renderer() {
     ImGui::DestroyContext();
     glfwTerminate();
     return 0;
+}
+
+long long Application::getCurrentTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto duration = now.time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+}
+
+std::string Application::Stamp2Time(long long int timestamp) {
+    int ms = timestamp % 1000;//取毫秒
+    time_t tick = (time_t) (timestamp / 1000);//转换时间
+    struct tm tm;
+    char s[40];
+    tm = *localtime(&tick);
+    strftime(s, sizeof(s), "%Y-%m-%d %H:%M:%S", &tm);
+    std::string str(s);
+    str = str + " " + std::to_string(ms);
+    return str;
+}
+
+void Application::del(std::string name) {
+    if (remove((Conversation + name + ".yaml").c_str()) != 0) {
+        LogError("OpenAI Error: Unable to delete session {0},{1}", name, ".");
+    }
+    LogInfo("Bot : 删除 {0} 成功", name);
+}
+
+vector <Application::Chat> Application::load(std::string name) {
+    if (UFile::Exists(Conversation + name + ".yaml")) {
+        std::ifstream session_file(Conversation + name + ".yaml");
+
+        if (session_file.is_open()) {
+            // 从文件中读取 YAML 节点
+            YAML::Node node = YAML::Load(session_file);
+
+            // 将 YAML 节点映射到 chat_history
+            for (const auto &record_node: node) {
+                // 从 YAML 映射节点中读取 ChatRecord 对象的成员变量
+                int flag = record_node["flag"].as<int>();
+                long long timestamp;
+                std::string content;
+                if (flag == 0) {
+                    timestamp = record_node["user"]["timestamp"].as<long long>();
+                    content = record_node["user"]["content"].as<std::string>();
+                } else {
+                    timestamp = record_node["bot"]["timestamp"].as<long long>();
+                    content = record_node["bot"]["content"].as<std::string>();
+                }
+                Chat record;
+                record.flag = flag;
+                record.content = content;
+                record.timestamp = timestamp;
+
+                // 创建一个新的 ChatRecord 对象，并将其添加到 chat_history 中
+                chat_history.push_back(record);
+            }
+
+            session_file.close();
+            LogInfo("Application : Load {0} successfully", name);
+        } else {
+            LogError("Application Error: Unable to load session {0},{1}", name, ".");
+        }
+    }
+
+    return chat_history;
+}
+
+void Application::save(std::string name) {
+    std::ofstream session_file(Conversation + name + ".yaml");
+
+    if (session_file.is_open()) {
+        // 创建 YAML 节点
+        YAML::Node node;
+
+        // 将 chat_history 映射到 YAML 节点
+        for (const auto &record: chat_history) {
+            // 创建一个新的 YAML 映射节点
+            YAML::Node record_node(YAML::NodeType::Map);
+
+            // 将 ChatRecord 对象的成员变量映射到 YAML 映射节点中
+            record_node["flag"] = record.flag;
+            if (record.flag == 0) {
+                record_node["user"]["timestamp"] = record.timestamp;
+                record_node["user"]["content"] = record.content;
+            } else {
+                record_node["bot"]["timestamp"] = record.timestamp;
+                record_node["bot"]["content"] = record.content;
+            }
+
+            // 将 YAML 映射节点添加到主节点中
+            node.push_back(record_node);
+        }
+
+        // 将 YAML 节点写入文件
+        session_file << node;
+
+        session_file.close();
+        LogInfo("Application : Save {0} successfully", name);
+    } else {
+        LogError("Application Error: Unable to save session {0},{1}", name, ".");
+    }
 }

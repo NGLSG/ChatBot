@@ -91,7 +91,7 @@ std::string Utils::execAsync(const std::string &command) {
     return resultFuture.get();
 }
 
-std::string Utils::exec(const std::string &command) {
+std::string Utils:: exec(const std::string &command) {
     std::string output;
     FILE *pipe = _popen(command.c_str(), "r");
     if (!pipe) {

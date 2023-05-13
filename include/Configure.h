@@ -39,7 +39,7 @@ struct VITSData {
 struct WhisperData {
 	bool enable = false;
 	bool useLocalModel = false;
-	std::string model = "model/Whisper/ggml-base.bin";
+	std::string model = "model/Whisper/ggml-small.bin";
 };
 
 struct Configure {
