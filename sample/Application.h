@@ -106,14 +106,6 @@ private:
     bool show_input_box = false;
     bool OnlySetting = false;
 
-    std::string remove_spaces(const std::string &str) {
-        std::string result = str;
-        if (!is_valid_text(result)) {
-            remove(result.begin(), result.end(), ' ');
-        }
-        return result;
-    }
-
     void save(std::string name = "default");
 
     std::vector<Chat> load(std::string name = "default");

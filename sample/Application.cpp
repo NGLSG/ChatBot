@@ -116,7 +116,7 @@ void Application::render_popup_box() {
     if (ImGui::BeginPopupModal(reinterpret_cast<const char *>(u8"新建对话##popup"), &show_input_box,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         static std::string text;
-        if (ImGui::InputText("##input", buf, 256, ImGuiInputTextFlags_EnterReturnsTrue)) {
+        if (ImGui::InputText("##input", buf, 256)) {
             text = buf;
         };
         ImGui::SameLine();
@@ -127,7 +127,17 @@ void Application::render_popup_box() {
             ImGui::Button(reinterpret_cast<const char *>(u8"确定"), button_size)) {
             if (!is_valid_text(text)) {
                 bot->Add(text);
+                conversations.emplace_back(text);
+                chat_history.clear();
+                auto iter = std::find(conversations.begin(), conversations.end(), text);
+                if (iter != conversations.end()) {
+                    select_id = std::distance(conversations.begin(), iter);
+                }
+                convid = conversations[select_id];
                 ImGui::CloseCurrentPopup();
+                save(convid);
+                bot->Load(convid);
+                load(convid);
                 show_input_box = false;
             }
         }
@@ -291,9 +301,12 @@ void Application::render_chat_box() {
                 bot->Reset();
                 save(convid);
             }
-            if (ImGui::Button(reinterpret_cast<const char *>(u8"删除当前会话"), ImVec2(200, 30))) {
+            if (ImGui::Button(reinterpret_cast<const char *>(u8"删除当前会话"), ImVec2(200, 30)) &&
+                conversations.size() > 1) {
                 bot->Del(convid);
                 del(convid);
+                bot->Load(convid);
+                load(convid);
             }
             ImGui::EndMenu();
         }
@@ -375,7 +388,7 @@ void Application::render_input_box() {
                         std::remove(("recorded" + std::to_string(Rnum) + ".wav").c_str());
                         LogInfo("whisper: 删除录音{0}", "recorded" + std::to_string(Rnum) + ".wav");
                         std::shared_future<std::string> submit_future = std::async(std::launch::async, [&](void) {
-                            return bot->Submit(remove_spaces(last_input), role);
+                            return bot->Submit(last_input, role);
                         }).share();
                         {
                             std::lock_guard<std::mutex> lock(submit_futures_mutex);
@@ -437,7 +450,7 @@ void Application::render_input_box() {
         if (whisperData.enable)
             listener->ResetRecorded();
         std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]() {
-            return bot->Submit(remove_spaces(last_input), role);
+            return bot->Submit(last_input, role);
         }).share();
         submit_futures.push_back(std::move(submit_future));
         input_text.clear();
@@ -992,13 +1005,17 @@ void Application::del(std::string name) {
     if (remove((Conversation + name + ".yaml").c_str()) != 0) {
         LogError("OpenAI Error: Unable to delete session {0},{1}", name, ".");
     }
+    conversations.erase(conversations.begin() + select_id);
+    select_id = conversations.size() - 1;
+    convid = conversations[select_id];
+
     LogInfo("Bot : 删除 {0} 成功", name);
 }
 
 vector <Application::Chat> Application::load(std::string name) {
     if (UFile::Exists(Conversation + name + ".yaml")) {
         std::ifstream session_file(Conversation + name + ".yaml");
-
+        chat_history.clear();
         if (session_file.is_open()) {
             // 从文件中读取 YAML 节点
             YAML::Node node = YAML::Load(session_file);
