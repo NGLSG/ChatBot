@@ -91,7 +91,7 @@ std::string Utils::execAsync(const std::string &command) {
     return resultFuture.get();
 }
 
-std::string Utils:: exec(const std::string &command) {
+std::string Utils::exec(const std::string &command) {
     std::string output;
     FILE *pipe = _popen(command.c_str(), "r");
     if (!pipe) {
@@ -723,3 +723,80 @@ bool UCompression::DecompressRar(std::string file, std::string path) {
     LogInfo("Successfully decompressed RAR file: {0}", file);
     return true;
 }
+
+#ifdef WIN32
+
+#include <windows.h>
+#include <tchar.h>
+#include <string>
+#include <thread>
+
+void Utils::OpenProgram(const char *path) {
+    std::thread worker([=]() {
+        STARTUPINFO si{};
+        PROCESS_INFORMATION pi{};
+
+        SECURITY_ATTRIBUTES sa{};
+        sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+        sa.bInheritHandle = TRUE;
+
+        HANDLE g_hChildStd_IN_Rd = nullptr;
+        HANDLE g_hChildStd_IN_Wr = nullptr;
+        HANDLE g_hChildStd_OUT_Rd = nullptr;
+        HANDLE g_hChildStd_OUT_Wr = nullptr;
+
+        if (!CreatePipe(&g_hChildStd_OUT_Rd, &g_hChildStd_OUT_Wr, &sa, 0)) {
+            std::cerr << "Failed to create output pipe" << std::endl;
+            return;
+        }
+
+        if (!CreatePipe(&g_hChildStd_IN_Rd, &g_hChildStd_IN_Wr, &sa, 0)) {
+            std::cerr << "Failed to create input pipe" << std::endl;
+            return;
+        }
+
+        GetStartupInfo(&si);
+        si.hStdInput = g_hChildStd_IN_Rd;
+        si.hStdOutput = g_hChildStd_OUT_Wr;
+        si.hStdError = g_hChildStd_OUT_Wr;
+        si.dwFlags |= STARTF_USESTDHANDLES;
+
+        std::string cmdLine = path;
+        if (!CreateProcess(nullptr,
+                           const_cast<char *>(cmdLine.c_str()),
+                           nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi)) {
+            std::cerr << "Failed to open process" << std::endl;
+            return;
+        }
+
+        std::cout << "Open process successfully" << std::endl;
+
+        WaitForSingleObject(pi.hProcess, INFINITE);
+
+        std::cout << "Process finished" << std::endl;
+
+        CloseHandle(g_hChildStd_IN_Rd);
+        CloseHandle(g_hChildStd_IN_Wr);
+        CloseHandle(g_hChildStd_OUT_Rd);
+        CloseHandle(g_hChildStd_OUT_Wr);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    });
+    worker.detach();
+}
+
+std::vector<std::string> Utils::GetDirectories(const std::string &path) {
+    std::vector<std::string> dirs;
+    for (auto &entry: std::filesystem::directory_iterator(path)) {
+        if (entry.is_directory()) {
+            dirs.push_back(GetAbsolutePath(entry.path().string()));
+        }
+    }
+    return dirs;
+}
+
+
+
+#else
+void Utils::OpenProgram(const char *path){}
+#endif

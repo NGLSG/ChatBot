@@ -20,6 +20,5 @@ int main(int argc, char *argv[]) {
         LogError(e.what());
     }
 
-    system("pause");
     return 0;
 }

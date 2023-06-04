@@ -55,6 +55,7 @@ private:
     Ref<Listener> listener;
     WhisperData whisperData;
     VITSData vitsData;
+    Live2D live2D;
 
     std::vector<std::string> conversations;
     std::vector<Chat> chat_history;
@@ -76,6 +77,7 @@ private:
     int select_id = 0;
     int role_id = 0;
     int Rnum = 0;
+    int selected_dir=0;
 
     char input_buffer[4096 * 32];
     char api_buffer[4096];
@@ -87,16 +89,18 @@ private:
     const std::string VitsPath = "Vits/";
     const std::string WhisperPath = "Whisper/";
     const std::string ChatGLMPath = "ChatGLM/";
+    const std::string Live2DPath = "Live2D/";
     const std::string Conversation = "Conversations/ChatHistory/";
 
     const int sampleRate = 16000;
     const int framesPerBuffer = 512;
 
     const std::vector<std::string> dirs = {Conversation, bin, bin + VitsConvertor, bin + WhisperPath,
-                                           bin + ChatGLMPath, model, model + VitsPath,
-                                           model + WhisperPath,
+                                           bin + ChatGLMPath, bin + Live2DPath, model, model + VitsPath,
+                                           model + WhisperPath, model + Live2DPath,
                                            Resources};
     const std::vector<std::string> roles = {"user", "system", "assistant"};
+    std::vector<std::string> mdirs;
 
     bool vits = true;
     bool show_input_box = false;
@@ -200,7 +204,7 @@ public:
     bool Installer(std::map<std::string, std::string> tasks);
 
     Application(const OpenAIData &chat_data, const TranslateData &data, const VITSData &VitsData,
-                const WhisperData &WhisperData, bool setting = false);
+                const WhisperData &WhisperData, const Live2D &Live2D, bool setting = false);
 
     explicit Application(const Configure &configure, bool setting = false);
 

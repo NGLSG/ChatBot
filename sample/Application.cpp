@@ -1,7 +1,8 @@
 ﻿#include "Application.h"
 
+
 Application::Application(const OpenAIData &chat_data, const TranslateData &data, const VITSData &VitsData,
-                         const WhisperData &WhisperData, bool setting) {
+                         const WhisperData &WhisperData, const Live2D &Live2D, bool setting) {
     configure = Configure(chat_data, data, VitsData, whisperData);
     OnlySetting = setting;
     if (chat_data.api_key.empty()) {
@@ -14,9 +15,13 @@ Application::Application(const OpenAIData &chat_data, const TranslateData &data,
     listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
     vitsData = VitsData;
     whisperData = WhisperData;
-
+    live2D = Live2D;
     if (!Initialize()) {
         LogWarn("Warning: Initialization failed!Maybe some function can not working");
+    }
+    if (live2D.enable) {
+        Utils::SaveFile(live2D.model, "Lconfig.txt");
+        Utils::OpenProgram(live2D.bin.c_str());
     }
     if (whisperData.enable)
         listener->listen();
@@ -35,9 +40,14 @@ Application::Application(const Configure &configure, bool setting) {
     listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
     vitsData = configure.vits;
     whisperData = configure.whisper;
-
+    live2D = configure.live2D;
     if (!Initialize()) {
         LogWarn("Warning: Initialization failed!Maybe some function can not working");
+    }
+    if (live2D.enable) {
+
+        Utils::SaveFile(live2D.model, "Lconfig.txt");
+        Utils::OpenProgram(live2D.bin.c_str());
     }
     if (whisperData.enable)
         listener->listen();
@@ -581,7 +591,30 @@ void Application::render_setting_box() {
         ImGui::InputText(reinterpret_cast<const char *>(u8"Vits的语言类型"), configure.vits.lanType.data(),
                          TEXT_BUFFER);
     }
+#ifdef WIN32
+    if (ImGui::CollapsingHeader("Live2D")) {
+        ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Live2D"), &configure.live2D.enable);
+        ImGui::InputText(reinterpret_cast<const char *>(u8"Live2D 可执行文件"), configure.live2D.bin.data(),
+                         TEXT_BUFFER);
 
+        if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"Live2D 模型"),
+                              Utils::GetFileName(mdirs[selected_dir]).c_str())) // 开始下拉列表
+        {
+            for (int i = 0; i < mdirs.size(); i++) {
+                bool is_selected = (selected_dir == i);
+                if (ImGui::Selectable(Utils::GetFileName(mdirs[i]).c_str(), is_selected)) {
+                    selected_dir = i;
+                }
+                if (is_selected) {
+                    ImGui::SetItemDefaultFocus(); // 默认选中项
+                }
+            }
+            configure.live2D.model = mdirs[selected_dir].c_str();
+            ImGui::EndCombo(); // 结束下拉列表
+        }
+
+    }
+#endif
     // 显示 Whisper 配置
     if (ImGui::CollapsingHeader("Whisper")) {
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Whisper"), &configure.whisper.enable);
@@ -734,6 +767,25 @@ bool Application::Initialize() {
             vits = false;
             return false;
         }
+    }
+
+    if (live2D.enable) {
+        mdirs = Utils::GetDirectories(model + Live2DPath);
+        auto it = std::find(mdirs.begin(), mdirs.end(), configure.live2D.model);
+        if (it != mdirs.end()) {
+            selected_dir = std::distance(mdirs.begin(), it);
+        }
+        if (!CheckFileExistence(live2D.bin, "Live2D executable file")) {
+            LogWarn("Initialize Warning: Since you don't have a \"Live2D Executable file\", the Live2D function isn't working properly!");
+            live2D.enable = false;
+            return false;
+        }
+        if (!CheckFileExistence(live2D.model + "/" + Utils::GetFileName(live2D.model) + ".model3.json",
+                                "Live2D model")) {
+            live2D.enable = false;
+            return false;
+        }
+
     }
 
     LogInfo("Successful initialization!");

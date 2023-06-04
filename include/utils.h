@@ -102,6 +102,19 @@ public:
 
     static bool Decompress(std::string file, std::string path = "");
 
+    static void ExecuteInBackGround(const std::string &appName);
+
+    static void SaveFile(const std::string &content, const std::string &filename) {
+        std::ofstream outfile(filename);
+        if (outfile) {
+            outfile << content << std::endl;
+            outfile.close();
+            LogInfo("数据已保存到文件 {0}", filename);
+        } else {
+            LogError("无法打开文件 {0}", filename);
+        }
+    }
+
     template<typename T>
     static T LoadYaml(const std::string &file) {
         // 从文件中读取YAML数据
@@ -119,6 +132,12 @@ public:
     }
 
     static size_t write_callback(char *ptr, size_t size, size_t nmemb, void *userdata);
+
+    static void OpenProgram(const char *path);
+
+    static std::vector<std::string> GetDirectories(const std::string &path);
+
+
 };
 
 #endif
