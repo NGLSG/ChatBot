@@ -94,6 +94,44 @@ void Application::Vits(std::string text) {
     }).detach();
 }
 
+void Application::render_code_box() {
+
+    ImGuiStyle &style = ImGui::GetStyle();
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
+    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+    style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+    style.Colors[ImGuiCol_Header] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+    style.Colors[ImGuiCol_Button] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+
+    ImGui::SetNextWindowSize(ImVec2(400, 300));
+    ImGui::Begin("Code Box", nullptr,
+                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+    // 显示 vector 中的值
+    for (const auto &value: codes) {
+        // 显示按钮
+        if (ImGui::Button(value.c_str(), ImVec2(-1, 0))) {
+            // 将值复制到剪贴板
+            glfwSetClipboardString(nullptr, value.c_str());
+        }
+        ImGui::SameLine();
+    }
+
+    ImGui::PopStyleVar();
+    ImGui::End();
+}
+
 void Application::render_popup_box() {
     // 定制样式
     ImVec4 button_color(0.8f, 0.8f, 0.8f, 1.0f); // 将按钮颜色设置为浅白色
@@ -471,6 +509,9 @@ void Application::render_input_box() {
             bot.content = response;
             add_chat_record(bot);
             it = submit_futures.erase(it);
+            for (auto &i: Utils::GetAllCodesFromText(response)) {
+                codes.emplace_back(i);
+            }
             if (vits && vitsData.enable) {
                 std::string VitsText = translator->translate(Utils::ExtractNormalText(response), vitsData.lanType);
                 Vits(VitsText);
@@ -882,6 +923,7 @@ void Application::render_ui() {
         render_popup_box();
         render_setting_box();
         render_chat_box();
+        render_code_box();
     } else {
         render_setting_box();
     }

@@ -77,7 +77,7 @@ private:
     int select_id = 0;
     int role_id = 0;
     int Rnum = 0;
-    int selected_dir=0;
+    int selected_dir = 0;
 
     char input_buffer[4096 * 32];
     char api_buffer[4096];
@@ -100,7 +100,10 @@ private:
                                            model + WhisperPath, model + Live2DPath,
                                            Resources};
     const std::vector<std::string> roles = {"user", "system", "assistant"};
+
     std::vector<std::string> mdirs;
+    std::vector<std::string> codes;
+
 
     bool vits = true;
     bool show_input_box = false;
@@ -128,8 +131,16 @@ private:
     //渲染弹窗
     void render_popup_box();
 
+    void render_code_box();
+
     // 渲染UI
     void render_ui();
+
+    void ImGuiCopyTextToClipboard(const char *text) {
+        if (strlen(text) > 0) {
+            ImGui::SetClipboardText(text);
+        }
+    }
 
     GLuint load_texture(const char *path);
 
