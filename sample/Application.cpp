@@ -472,7 +472,7 @@ void Application::render_input_box() {
             add_chat_record(bot);
             it = submit_futures.erase(it);
             if (vits && vitsData.enable) {
-                std::string VitsText = translator->translate(response, vitsData.lanType);
+                std::string VitsText = translator->translate(Utils::ExtractNormalText(response), vitsData.lanType);
                 Vits(VitsText);
             } else if (whisperData.enable) {
                 listener->listen();

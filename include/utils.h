@@ -139,6 +139,9 @@ public:
 
     static std::vector<std::string> GetAllCodesFromText(const std::string &text);
 
+    static std::string ExtractNormalText(const std::string &text);
+
+
 };
 
 #endif

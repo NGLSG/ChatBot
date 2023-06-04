@@ -804,11 +804,35 @@ std::vector<std::string> Utils::GetAllCodesFromText(const std::string &text) {
         searchStart = matchResult.suffix().first;
         if (matchResult.size() >= 2) {
             std::string codeString = matchResult[1].str();
+
+            std::size_t pos = codeString.find('\n'); // 查找第一个换行符的位置
+            if (pos != std::string::npos) { // 如果找到了换行符
+                codeString = codeString.substr(pos + 1); // 删除第一行
+            }
             codeStrings.push_back(codeString);
         }
     }
 
     return codeStrings;
+}
+
+std::string Utils::ExtractNormalText(const std::string &text) {
+    std::regex codeRegex("```[^`]*?\\n([\\s\\S]*?)\\n```"); // 匹配代码块
+    std::string normalText = text;
+    std::sregex_iterator codeBlockIterator(text.cbegin(), text.cend(), codeRegex);
+    std::sregex_iterator endIterator;
+
+    for (auto it = codeBlockIterator; it != endIterator; ++it)
+    {
+        std::string codeBlock = it->str();
+        std::size_t position = normalText.find(codeBlock);
+        if (position != std::string::npos) // 如果找到匹配的代码块，则将其替换为普通文本
+        {
+            normalText.replace(position, codeBlock.length(), ""); // 将代码块替换为空字符串
+        }
+    }
+
+    return normalText;
 }
 
 
