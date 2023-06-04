@@ -795,6 +795,21 @@ std::vector<std::string> Utils::GetDirectories(const std::string &path) {
     return dirs;
 }
 
+std::vector<std::string> Utils::GetAllCodesFromText(const std::string &text) {
+    std::regex codeRegex("`{3}([\\s\\S]*?)`{3}");
+    std::vector<std::string> codeStrings;
+    std::smatch matchResult;
+    std::string::const_iterator searchStart(text.cbegin());
+    while (std::regex_search(searchStart, text.cend(), matchResult, codeRegex)) {
+        searchStart = matchResult.suffix().first;
+        if (matchResult.size() >= 2) {
+            std::string codeString = matchResult[1].str();
+            codeStrings.push_back(codeString);
+        }
+    }
+
+    return codeStrings;
+}
 
 
 #else

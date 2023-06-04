@@ -137,6 +137,7 @@ public:
 
     static std::vector<std::string> GetDirectories(const std::string &path);
 
+    static std::vector<std::string> GetAllCodesFromText(const std::string &text);
 
 };
 

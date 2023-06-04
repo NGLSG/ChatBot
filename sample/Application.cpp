@@ -917,8 +917,8 @@ int Application::Renderer() {
     config.OversampleV = 1;
     config.PixelSnapH = true;
     config.GlyphExtraSpacing = ImVec2(0.0f, 1.0f);
-    static const ImWchar ranges[] = {0x0020, 0x00FF, 0x2000, 0x206F, 0x3000, 0x30FF, 0x4E00, 0x9FFF, 0};
-    ImFont *font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", 16.0f, &config, ranges);
+    ImFont *font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", 16.0f, &config,
+                                                io.Fonts->GetGlyphRangesChineseFull());
     IM_ASSERT(font != NULL);
     io.DisplayFramebufferScale = ImVec2(0.8f, 0.8f);
     (void) io;
@@ -958,7 +958,6 @@ int Application::Renderer() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-
         render_ui();
 
         ImGui::Render();
@@ -1015,6 +1014,7 @@ void Application::del(std::string name) {
 vector <Application::Chat> Application::load(std::string name) {
     if (UFile::Exists(Conversation + name + ".yaml")) {
         std::ifstream session_file(Conversation + name + ".yaml");
+        session_file.imbue(std::locale("en_US.UTF-8"));
         chat_history.clear();
         if (session_file.is_open()) {
             // 从文件中读取 YAML 节点
@@ -1054,7 +1054,7 @@ vector <Application::Chat> Application::load(std::string name) {
 
 void Application::save(std::string name) {
     std::ofstream session_file(Conversation + name + ".yaml");
-
+    session_file.imbue(std::locale("en_US.UTF-8"));
     if (session_file.is_open()) {
         // 创建 YAML 节点
         YAML::Node node;
