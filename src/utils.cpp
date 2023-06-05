@@ -804,11 +804,6 @@ std::vector<std::string> Utils::GetAllCodesFromText(const std::string &text) {
         searchStart = matchResult.suffix().first;
         if (matchResult.size() >= 2) {
             std::string codeString = matchResult[1].str();
-
-            std::size_t pos = codeString.find('\n'); // 查找第一个换行符的位置
-            if (pos != std::string::npos) { // 如果找到了换行符
-                codeString = codeString.substr(pos + 1); // 删除第一行
-            }
             codeStrings.push_back(codeString);
         }
     }

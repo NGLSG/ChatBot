@@ -95,7 +95,6 @@ void Application::Vits(std::string text) {
 }
 
 void Application::render_code_box() {
-
     ImGuiStyle &style = ImGui::GetStyle();
     style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
     style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
@@ -113,19 +112,19 @@ void Application::render_code_box() {
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
     style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
 
-    ImGui::SetNextWindowSize(ImVec2(400, 300));
-    ImGui::Begin("Code Box", nullptr,
-                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
-
+    ImGui::Begin("Code Box", nullptr, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
-    // 显示 vector 中的值
-    for (const auto &value: codes) {
-        // 显示按钮
-        if (ImGui::Button(value.c_str(), ImVec2(-1, 0))) {
-            // 将值复制到剪贴板
-            glfwSetClipboardString(nullptr, value.c_str());
+
+    static bool show_codes = false;
+    for (auto &it: codes) {
+        show_codes = ImGui::CollapsingHeader(it.first.c_str());
+        if (show_codes) {
+            for (const auto &code: it.second) {
+                if (ImGui::Button(code.c_str(), ImVec2(-1, 0))) {
+                    glfwSetClipboardString(nullptr, code.c_str());
+                }
+            }
         }
-        ImGui::SameLine();
     }
 
     ImGui::PopStyleVar();
@@ -509,8 +508,19 @@ void Application::render_input_box() {
             bot.content = response;
             add_chat_record(bot);
             it = submit_futures.erase(it);
-            for (auto &i: Utils::GetAllCodesFromText(response)) {
-                codes.emplace_back(i);
+            auto tmp_code = Utils::GetAllCodesFromText(response);
+            for (auto &i: tmp_code) {
+                std::size_t pos = i.find('\n'); // 查找第一个换行符的位置
+                std::string codetype;
+                if (pos != std::string::npos) { // 如果找到了换行符
+                    codetype = i.substr(0, pos);
+                    i = i.substr(pos + 1); // 删除第一行
+                }
+                if (codes.contains(codetype)) {
+                    codes[codetype].emplace_back(i);
+                } else {
+                    codes.insert({codetype, {i}});
+                }
             }
             if (vits && vitsData.enable) {
                 std::string VitsText = translator->translate(Utils::ExtractNormalText(response), vitsData.lanType);

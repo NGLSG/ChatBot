@@ -18,7 +18,7 @@
 #include "utils.h"
 
 #define TEXT_BUFFER 1024
-const std::string VERSION = reinterpret_cast<const char *>(u8"Listner v1.0.dev");
+const std::string VERSION = reinterpret_cast<const char *>(u8"Listener v1.1");
 
 enum State {
     OK = 0,
@@ -102,7 +102,7 @@ private:
     const std::vector<std::string> roles = {"user", "system", "assistant"};
 
     std::vector<std::string> mdirs;
-    std::vector<std::string> codes;
+    std::map<std::string, std::vector<std::string>> codes;
 
 
     bool vits = true;
