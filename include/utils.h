@@ -141,6 +141,9 @@ public:
 
     static std::string ExtractNormalText(const std::string &text);
 
+    static long long getCurrentTimestamp() { return Logger::getCurrentTimestamp(); }
+
+    static std::string Stamp2Time(long long timestamp) { return Logger::Stamp2Time(timestamp); }
 
 };
 

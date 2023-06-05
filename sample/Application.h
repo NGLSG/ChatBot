@@ -152,49 +152,6 @@ private:
         return text.empty() || text == "";
     }
 
-    struct Code {
-        std::string codeType;
-        std::string codeContent;
-        std::string normalContent;
-    };
-
-    Code splitMarkdownCodeBlock(const std::string &markdown) {
-        Code result;
-
-        // 找到代码块的起始位置
-        size_t start = markdown.find("```");
-        if (start == std::string::npos) {
-            // 没有找到代码块
-            return result;
-        }
-
-        // 找到代码块的语言类型
-        size_t langStart = start + 3;
-        size_t langEnd = markdown.find("\n", langStart);
-        if (langEnd == std::string::npos) {
-            // 没有找到语言类型，使用默认值
-            result.codeType = "text";
-        } else {
-            result.codeType = markdown.substr(langStart, langEnd - langStart);
-        }
-
-        // 找到代码块的结束位置
-        size_t end = markdown.find("```", langEnd);
-        if (end == std::string::npos) {
-            // 没有找到代码块的结束
-            return result;
-        }
-
-        // 截取代码块的内容
-        result.codeContent = markdown.substr(langEnd + 1, end - langEnd - 1);
-
-        return result;
-    }
-
-    long long getCurrentTimestamp();
-
-    std::string Stamp2Time(long long timestamp);
-
 public:
     std::string WhisperConvertor(const std::string &file);
 

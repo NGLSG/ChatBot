@@ -259,7 +259,7 @@ void Application::render_chat_box() {
                                       ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_CtrlEnterForNewLine);
 
             // Display the timestamp below the chat record
-            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Stamp2Time(userAsk.timestamp).c_str());
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(userAsk.timestamp).c_str());
 
             // Restore the style of the input field
             ImGui::PopStyleVar();
@@ -303,7 +303,7 @@ void Application::render_chat_box() {
                                       ImGuiInputTextFlags_ReadOnly);
 
             // Display the timestamp below the chat record
-            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Stamp2Time(botAnswer.timestamp).c_str());
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(botAnswer.timestamp).c_str());
 
             // Restore the style
             ImGui::PopStyleVar();
@@ -416,7 +416,7 @@ void Application::render_input_box() {
                     } else {
                         last_input = text;
                         Chat user;
-                        user.timestamp = getCurrentTimestamp();
+                        user.timestamp = Utils::getCurrentTimestamp();
                         user.content = last_input;
                         add_chat_record(user);
 
@@ -481,7 +481,7 @@ void Application::render_input_box() {
 
     if ((strlen(last_input.c_str()) > 0 && ImGui::IsKeyPressed(ImGuiKey_Enter) && !ImGui::GetIO().KeyCtrl)) {
         Chat user;
-        user.timestamp = getCurrentTimestamp();
+        user.timestamp = Utils::getCurrentTimestamp();
         user.content = last_input;
         add_chat_record(user); // 使用last_input作为键
         if (whisperData.enable)
@@ -504,7 +504,7 @@ void Application::render_input_box() {
             std::lock_guard<std::mutex> lock(chat_history_mutex);
             Chat bot;
             bot.flag = 1;
-            bot.timestamp = getCurrentTimestamp();
+            bot.timestamp = Utils::getCurrentTimestamp();
             bot.content = response;
             add_chat_record(bot);
             it = submit_futures.erase(it);
@@ -655,8 +655,14 @@ void Application::render_setting_box() {
         ImGui::InputText(reinterpret_cast<const char *>(u8"Vits的语言类型"), configure.vits.lanType.data(),
                          TEXT_BUFFER);
     }
+
 #ifdef WIN32
     if (ImGui::CollapsingHeader("Live2D")) {
+        mdirs = Utils::GetDirectories(model + Live2DPath);
+        auto it = std::find(mdirs.begin(), mdirs.end(), configure.live2D.model);
+        if (it != mdirs.end() && mdirs.size() > 1) {
+            selected_dir = std::distance(mdirs.begin(), it);
+        }
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Live2D"), &configure.live2D.enable);
         ImGui::InputText(reinterpret_cast<const char *>(u8"Live2D 可执行文件"), configure.live2D.bin.data(),
                          TEXT_BUFFER);
@@ -668,6 +674,11 @@ void Application::render_setting_box() {
                 bool is_selected = (selected_dir == i);
                 if (ImGui::Selectable(Utils::GetFileName(mdirs[i]).c_str(), is_selected)) {
                     selected_dir = i;
+                    if (select_id = 0) {
+                        configure.live2D.enable = false;
+                    } else {
+                        configure.live2D.enable = true;
+                    }
                 }
                 if (is_selected) {
                     ImGui::SetItemDefaultFocus(); // 默认选中项
@@ -834,11 +845,6 @@ bool Application::Initialize() {
     }
 
     if (live2D.enable) {
-        mdirs = Utils::GetDirectories(model + Live2DPath);
-        auto it = std::find(mdirs.begin(), mdirs.end(), configure.live2D.model);
-        if (it != mdirs.end()) {
-            selected_dir = std::distance(mdirs.begin(), it);
-        }
         if (!CheckFileExistence(live2D.bin, "Live2D executable file")) {
             LogWarn("Initialize Warning: Since you don't have a \"Live2D Executable file\", the Live2D function isn't working properly!");
             live2D.enable = false;
@@ -1032,24 +1038,6 @@ int Application::Renderer() {
     ImGui::DestroyContext();
     glfwTerminate();
     return 0;
-}
-
-long long Application::getCurrentTimestamp() {
-    auto now = std::chrono::system_clock::now();
-    auto duration = now.time_since_epoch();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-}
-
-std::string Application::Stamp2Time(long long int timestamp) {
-    int ms = timestamp % 1000;//取毫秒
-    time_t tick = (time_t) (timestamp / 1000);//转换时间
-    struct tm tm;
-    char s[40];
-    tm = *localtime(&tick);
-    strftime(s, sizeof(s), "%Y-%m-%d %H:%M:%S", &tm);
-    std::string str(s);
-    str = str + " " + std::to_string(ms);
-    return str;
 }
 
 void Application::del(std::string name) {

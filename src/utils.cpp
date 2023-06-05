@@ -787,6 +787,7 @@ void Utils::OpenProgram(const char *path) {
 
 std::vector<std::string> Utils::GetDirectories(const std::string &path) {
     std::vector<std::string> dirs;
+    dirs.push_back("empty");
     for (auto &entry: std::filesystem::directory_iterator(path)) {
         if (entry.is_directory()) {
             dirs.push_back(GetAbsolutePath(entry.path().string()));
@@ -817,8 +818,7 @@ std::string Utils::ExtractNormalText(const std::string &text) {
     std::sregex_iterator codeBlockIterator(text.cbegin(), text.cend(), codeRegex);
     std::sregex_iterator endIterator;
 
-    for (auto it = codeBlockIterator; it != endIterator; ++it)
-    {
+    for (auto it = codeBlockIterator; it != endIterator; ++it) {
         std::string codeBlock = it->str();
         std::size_t position = normalText.find(codeBlock);
         if (position != std::string::npos) // 如果找到匹配的代码块，则将其替换为普通文本

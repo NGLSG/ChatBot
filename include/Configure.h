@@ -50,7 +50,7 @@ struct LConfigure {
 
 struct Live2D {
     bool enable = false;
-    std::string model = "mao";
+    std::string model = "./model/Live2D/Mao";
     std::string bin = "Live2D.exe";
 };
 
