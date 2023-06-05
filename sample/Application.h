@@ -100,6 +100,7 @@ private:
                                            model + WhisperPath, model + Live2DPath,
                                            Resources};
     const std::vector<std::string> roles = {"user", "system", "assistant"};
+    const std::vector<std::string> proxies = {"Cloudflare", "Tencent Cloud"};
 
     std::vector<std::string> mdirs;
     std::map<std::string, std::vector<std::string>> codes;

@@ -13,10 +13,12 @@ struct TranslateData {
 
 struct OpenAIData {
     bool useLocalModel = false;
+    bool useWebProxy = true;
     std::string modelPath = "model/ChatGLM/";
     std::string api_key;
     std::string model = "gpt-3.5-turbo";
     std::string proxy = "";
+    int webproxy = 0;
 };
 
 struct VitsTask {
@@ -89,10 +91,14 @@ namespace YAML {
         static Node encode(const OpenAIData &data) {
             Node node;
             node["useLocalModel"] = data.useLocalModel;
+            node["useLocalModel"] = data.useLocalModel;
             node["modelPath"] = data.modelPath;
             node["api_key"] = data.api_key;
             node["model"] = data.model;
             node["proxy"] = data.proxy;
+            node["useWebProxy"] = data.useWebProxy;
+            node["webproxy"] = data.webproxy;
+
             return node;
         }
 
@@ -103,10 +109,12 @@ namespace YAML {
             data.api_key = node["api_key"].as<std::string>();
             data.modelPath = node["modelPath"].as<std::string>();
             data.useLocalModel = node["useLocalModel"].as<bool>();
+            data.useWebProxy = node["useWebProxy"].as<bool>();
             if (node["model"]) {
                 data.model = node["model"].as<std::string>();
             }
             data.proxy = node["proxy"].as<std::string>();
+            data.webproxy = node["webproxy"].as<int>();
             return true;
         }
     };

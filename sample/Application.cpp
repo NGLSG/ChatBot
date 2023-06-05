@@ -557,6 +557,7 @@ void Application::render_setting_box() {
     // 显示 OpenAI 配置
     if (ImGui::CollapsingHeader("OpenAI")) {
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用ChatGLM"), &configure.openAi.useLocalModel);
+
         if (!configure.openAi.useLocalModel) {
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
@@ -594,8 +595,26 @@ void Application::render_setting_box() {
             }
             ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI 模型"), configure.openAi.model.data(),
                              TEXT_BUFFER);
-            ImGui::InputText(reinterpret_cast<const char *>(u8"对OpenAI使用的代理"), configure.openAi.proxy.data(),
-                             TEXT_BUFFER);
+            ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用远程代理"), &configure.openAi.useWebProxy);
+            if (!configure.openAi.useWebProxy)
+                ImGui::InputText(reinterpret_cast<const char *>(u8"对OpenAI使用的代理"), configure.openAi.proxy.data(),
+                                 TEXT_BUFFER);
+            else {
+                if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"远程代理"),
+                                      Utils::GetFileName(proxies[configure.openAi.webproxy]).c_str())) // 开始下拉列表
+                {
+                    for (int i = 0; i < proxies.size(); i++) {
+                        bool is_selected = (configure.openAi.webproxy == i);
+                        if (ImGui::Selectable(Utils::GetFileName(proxies[i]).c_str(), is_selected)) {
+                            configure.openAi.webproxy = i;
+                        }
+                        if (is_selected) {
+                            ImGui::SetItemDefaultFocus(); // 默认选中项
+                        }
+                    }
+                    ImGui::EndCombo(); // 结束下拉列表
+                }
+            }
         } else {
             ImGui::InputText(reinterpret_cast<const char *>(u8"ChatGLM的位置"),
                              configure.openAi.modelPath.data(),

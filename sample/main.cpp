@@ -9,8 +9,9 @@ int main(int argc, char *argv[]) {
         }
         bool setting = false;
         Logger::Init();
+        Utils::SaveYaml("template.yaml", Utils::toYaml(Configure()));
         if (!UFile::Exists("config.yaml")) {
-            Utils::SaveYaml("config.yaml", Utils::toYaml(Configure()));
+
             LogWarn("Application Warning: Please configure config.yaml! Then run this program again");
             setting = true;
         }

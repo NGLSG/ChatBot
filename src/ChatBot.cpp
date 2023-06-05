@@ -19,14 +19,21 @@ string ChatBot::sendRequest(std::string data) {
     while (retry_count < 3) {
         try {
             LogInfo("ChatBot: Post request to openai...");
-            if (!chat_data_.proxy.empty()) {
-                session.SetProxies(cpr::Proxies{
-                        {"http",  chat_data_.proxy},
-                        {"https", chat_data_.proxy}
-                });
+            std::string url = "";
+            if (!chat_data_.useWebProxy) {
+                url = "https://api.openai.com/";
+                if (!chat_data_.proxy.empty()) {
+                    session.SetProxies(cpr::Proxies{
+                            {"http",  chat_data_.proxy},
+                            {"https", chat_data_.proxy}
+                    });
+                }
+            } else {
+                url = WebProxies[chat_data_.webproxy];
             }
 
-            session.SetUrl(cpr::Url{"https://api.openai.com/v1/chat/completions"});
+
+            session.SetUrl(cpr::Url{url + "v1/chat/completions"});
             session.SetBody(cpr::Body{data});
             session.SetHeader(cpr::Header{
                     {"Authorization",     "Bearer " + chat_data_.api_key},
