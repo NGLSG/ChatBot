@@ -218,7 +218,6 @@ void Application::render_chat_box() {
     ImGui::BeginChild("Chat Box Content", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing()), false,
                       ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoSavedSettings);
 
-    int num = 0;
     // 显示聊天记录
     for (auto chat: chat_history) {
         Chat userAsk;
@@ -253,7 +252,7 @@ void Application::render_chat_box() {
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
 
             // Display the input field with the text and automatic line breaks
-            ImGui::InputTextMultiline(("##" + userAsk.content + std::to_string(num)).c_str(),
+            ImGui::InputTextMultiline(("##" + std::to_string(userAsk.timestamp)).c_str(),
                                       const_cast<char *>(userAsk.content.c_str()), userAsk.content.size() + 1,
                                       input_size,
                                       ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_CtrlEnterForNewLine);
@@ -297,7 +296,7 @@ void Application::render_chat_box() {
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
 
             // Display the multi-line input field
-            ImGui::InputTextMultiline(("##" + botAnswer.content + std::to_string(num)).c_str(),
+            ImGui::InputTextMultiline(("##" + to_string(botAnswer.timestamp)).c_str(),
                                       const_cast<char *>(botAnswer.content.c_str()), botAnswer.content.size() + 1,
                                       input_size,
                                       ImGuiInputTextFlags_ReadOnly);
@@ -309,7 +308,6 @@ void Application::render_chat_box() {
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(8);
         }
-        num++;
     }
     // 滚动到底部
     if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetStyle().ItemSpacing.x - 20) {

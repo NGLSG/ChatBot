@@ -15,69 +15,75 @@ string ChatBot::sendRequest(std::string data) {
     json parsed_response;
     std::string response_role = "";
     std::string full_response = "";
-    try {
-        if (!chat_data_.proxy.empty()) {
-            session.SetProxies(cpr::Proxies{
-                    {"http",  chat_data_.proxy},
-                    {"https", chat_data_.proxy}
+    int retry_count = 0;
+    while (retry_count < 3) {
+        try {
+            LogInfo("ChatBot: Post request to openai...");
+            if (!chat_data_.proxy.empty()) {
+                session.SetProxies(cpr::Proxies{
+                        {"http",  chat_data_.proxy},
+                        {"https", chat_data_.proxy}
+                });
+            }
+
+            session.SetUrl(cpr::Url{"https://api.openai.com/v1/chat/completions"});
+            session.SetBody(cpr::Body{data});
+            session.SetHeader(cpr::Header{
+                    {"Authorization",     "Bearer " + chat_data_.api_key},
+                    {"Content-Type",      "application/json"},
+                    {"Transfer-Encoding", "chunked"}
             });
+            session.SetTimeout(cpr::Timeout(0)); // 设置超时时间为0
+            session.SetVerifySsl(cpr::VerifySsl{false});
+
+            // 发送HTTP请求
+            cpr::Response response = session.Post();
+
+            if (response.status_code != 200) {
+                LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
+                parsed_response = {};
+                return "";
+            }
+
+            //打印输出
+            std::stringstream stream(response.text);
+            std::string line;
+            while (std::getline(stream, line)) {
+                if (line.empty()) {
+                    continue;
+                }
+                // Remove "data: "
+                line = line.substr(6);
+                if (line == "[DONE]") {
+                    break;
+                }
+                json resp = json::parse(line);
+                json choices = resp.value("choices", json::array());
+                if (choices.empty()) {
+                    continue;
+                }
+                json delta = choices[0].value("delta", json::object());
+                if (delta.empty()) {
+                    continue;
+                }
+                if (delta.count("role")) {
+                    response_role = delta["role"].get<std::string>();
+                }
+                if (delta.count("content")) {
+                    std::string content = delta["content"].get<std::string>();
+                    full_response += content;
+                }
+            }
+            return full_response;
         }
-
-        session.SetUrl(cpr::Url{"https://api.openai.com/v1/chat/completions"});
-        session.SetBody(cpr::Body{data});
-        session.SetHeader(cpr::Header{
-                {"Authorization",     "Bearer " + chat_data_.api_key},
-                {"Content-Type",      "application/json"},
-                {"Transfer-Encoding", "chunked"}
-        });
-        session.SetTimeout(cpr::Timeout(0)); // 设置超时时间为0
-        session.SetVerifySsl(cpr::VerifySsl{false});
-
-        // 发送HTTP请求
-        cpr::Response response = session.Post();
-
-        if (response.status_code != 200) {
-            LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
+        catch (json::exception &e) {
+            LogError("OpenAI Error: " + std::string(e.what()));
             parsed_response = {};
-            return "";
-        }
-
-        std::stringstream stream(response.text);
-        std::string line;
-        while (std::getline(stream, line)) {
-            if (line.empty()) {
-                continue;
-            }
-            // Remove "data: "
-            line = line.substr(6);
-            if (line == "[DONE]") {
-                break;
-            }
-            json resp = json::parse(line);
-            json choices = resp.value("choices", json::array());
-            if (choices.empty()) {
-                continue;
-            }
-            json delta = choices[0].value("delta", json::object());
-            if (delta.empty()) {
-                continue;
-            }
-            if (delta.count("role")) {
-                response_role = delta["role"].get<std::string>();
-            }
-            if (delta.count("content")) {
-                std::string content = delta["content"].get<std::string>();
-                full_response += content;
-                LogInfo("\rBot Replied: {0}", full_response);
-            }
+            retry_count++;
         }
     }
-    catch (json::exception &e) {
-        LogError("OpenAI Error: " + std::string(e.what()));
-        parsed_response = {};
-    }
-    cout << endl;
-    return full_response;
+    LogError("OpenAI Error: Request failed after three retries.");
+    return "";
 }
 
 std::future<std::string> ChatBot::SubmitAsync(std::string prompt, std::string role, std::string convid) {
