@@ -18,7 +18,7 @@ public:
 
 private:
     const std::vector<std::string> WebProxies{"https://nglsg.ml/",
-                                              "https://service-n535eyti-1306800451.sg.apigw.tencentcs.com/"};
+                                              "https://service-hbv9ql2m-1306800451.sg.apigw.tencentcs.com/"};
     cpr::Session session;
     OpenAIData _voiceData;
 };

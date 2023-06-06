@@ -35,6 +35,9 @@ public:
     static std::string GetMD5(const std::string &str);
 
     static std::string GetMD5(const void *data, std::size_t size);
+
+    static std::string md5(const std::string& data);
+
 };
 
 class UCompression {
@@ -144,6 +147,11 @@ public:
     static long long getCurrentTimestamp() { return Logger::getCurrentTimestamp(); }
 
     static std::string Stamp2Time(long long timestamp) { return Logger::Stamp2Time(timestamp); }
+
+    static int Stamp2Day(long long timestamp) {
+        return timestamp / 86400000;
+    }
+
 
 };
 

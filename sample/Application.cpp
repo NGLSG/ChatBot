@@ -11,6 +11,7 @@ Application::Application(const OpenAIData &chat_data, const TranslateData &data,
     }
     translator = CreateRef<Translate>(data);
     bot = CreateRef<ChatBot>(chat_data);
+    billing = bot->GetBilling();
     voiceToText = CreateRef<VoiceToText>(chat_data);
     listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
     vitsData = VitsData;
@@ -36,6 +37,7 @@ Application::Application(const Configure &configure, bool setting) {
     }
     translator = CreateRef<Translate>(configure.baiDuTranslator);
     bot = CreateRef<ChatBot>(configure.openAi);
+    billing = bot->GetBilling();
     voiceToText = CreateRef<VoiceToText>(configure.openAi);
     listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
     vitsData = configure.vits;
@@ -117,11 +119,14 @@ void Application::render_code_box() {
 
     static bool show_codes = false;
     for (auto &it: codes) {
+
         show_codes = ImGui::CollapsingHeader(it.first.c_str());
         if (show_codes) {
             for (const auto &code: it.second) {
-                if (ImGui::Button(code.c_str(), ImVec2(-1, 0))) {
-                    glfwSetClipboardString(nullptr, code.c_str());
+                if (!is_valid_text(code)) {
+                    if (ImGui::Button(code.c_str(), ImVec2(-1, 0))) {
+                        glfwSetClipboardString(nullptr, code.c_str());
+                    }
                 }
             }
         }
@@ -458,13 +463,50 @@ void Application::render_input_box() {
         ImGui::Begin("Input filed", NULL,
                      ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
                      ImGuiWindowFlags_NoTitleBar);
+        ImGui::BeginGroup();
+        // 设置子窗口的背景颜色为浅灰色
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+// 设置子窗口的圆角半径为10像素
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+// 创建一个子窗口，注意要设置大小和标志
+// 大小要和你的控件一致，标志要去掉边框和滚动条
+        ImGui::BeginChild("background", ImVec2(500, 20), false,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                          ImGuiWindowFlags_NoDecoration);
+// 恢复默认的样式
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+// 显示你的控件
+        ImGui::SameLine();
+        ImGui::Text(reinterpret_cast<const char *>(u8"总额: %.2f"), billing.total);
+        ImGui::SameLine();
+        ImGui::Text(reinterpret_cast<const char *>(u8"可用: %.2f"), billing.available);
+        ImGui::SameLine();
+        ImGui::Text(reinterpret_cast<const char *>(u8"剩余: %d 天"),
+                    Utils::Stamp2Day(billing.date * 1000 - Utils::getCurrentTimestamp()));
+        ImGui::SameLine();
+// 设置进度条的背景颜色为透明
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogramHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+// 设置进度条的前景颜色为白色
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(1.00f, 1.0f, 1.0f, 1.0f));
+// 设置进度条的圆角半径为10像素
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
+// 显示进度条，注意要设置frame_padding为-1，否则会有边框
+        ImGui::ProgressBar(billing.used / billing.total, ImVec2(100, 20), NULL);
+// 恢复默认的样式
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(2);
+// 结束子窗口
+        ImGui::EndChild();
+        ImGui::EndGroup();
+
         ImVec2 size(50, 0);
-        ImGui::SameLine(ImGui::GetWindowWidth() - size.x - 10);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
-        ImGui::Text("%d", strlen(last_input.c_str()));
+        token = countTokens(input_buffer);
+        ImGui::Text(reinterpret_cast<const char *>(u8"字符数: %d"), token);
         ImGui::PopStyleVar();
         ImGui::PopStyleColor(3);
     }
@@ -514,6 +556,8 @@ void Application::render_input_box() {
                     codetype = i.substr(0, pos);
                     i = i.substr(pos + 1); // 删除第一行
                 }
+                if (is_valid_text(codetype))
+                    codetype = "Unknown";
                 if (codes.contains(codetype)) {
                     codes[codetype].emplace_back(i);
                 } else {

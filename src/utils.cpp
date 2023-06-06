@@ -55,6 +55,17 @@ std::string UEncrypt::GetMD5(const void *data, std::size_t size) {
     return std::string(md5_str);
 }
 
+std::string UEncrypt::md5(const std::string &data) {
+    unsigned char md[MD5_DIGEST_LENGTH];
+    MD5(reinterpret_cast<const unsigned char*>(data.data()), data.size(), md);
+
+    std::stringstream ss;
+    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i) {
+        ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(md[i]);
+    }
+    return ss.str();
+}
+
 int Utils::paCallback(const void *inputBuffer, void *outputBuffer, unsigned long framesPerBuffer,
                       const PaStreamCallbackTimeInfo *timeInfo, PaStreamCallbackFlags statusFlags, void *userData) {
     paUserData *data = (paUserData *) userData;
