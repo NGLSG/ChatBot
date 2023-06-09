@@ -154,8 +154,7 @@ private:
         return text.empty() || text == "";
     }
 
-    int countTokens(const std::string& str)
-    {
+    int countTokens(const std::string &str) {
         // 单一字符的token数量，包括回车
         const int singleCharTokenCount = 1;
 
@@ -163,32 +162,23 @@ private:
         std::vector<std::string> tokens;
         std::string token;
 
-        for (char c : str)
-        {
-            if ((c >= 0 && c <= 127) || (c >= -64 && c <= -33))
-            {
+        for (char c: str) {
+            if ((c >= 0 && c <= 127) || (c >= -64 && c <= -33)) {
                 // 遇到ASCII码或者中文字符的第一个部分，加入前一个token
-                if (!token.empty())
-                {
+                if (!token.empty()) {
                     tokens.push_back(token);
                     token.clear();
                 }
 
                 // 加入当前字符所对应的token数量，根据字节数判断是否是中文字符
-                if ((c >= 0 && c <= 127) || c == '\n')
-                {
+                if ((c >= 0 && c <= 127) || c == '\n') {
                     tokens.push_back(std::string(singleCharTokenCount, c));
-                }
-                else
-                {
+                } else {
                     tokens.push_back(std::string(2, c));
                 }
-            }
-            else if (c >= -128 && c <= -65)
-            {
+            } else if (c >= -128 && c <= -65) {
                 // 中文字符第二个部分，加入前一个token
-                if (!token.empty())
-                {
+                if (!token.empty()) {
                     tokens.push_back(token);
                     token.clear();
                 }
@@ -197,62 +187,45 @@ private:
                 token = std::string(2, c);
                 tokens.push_back(token);
                 token.clear();
-            }
-            else if ((c >= '0' && c <= '9')
-                     || (c >= 'a' && c <= 'z')
-                     || (c >= 'A' && c <= 'Z'))
-            {
+            } else if ((c >= '0' && c <= '9')
+                       || (c >= 'a' && c <= 'z')
+                       || (c >= 'A' && c <= 'Z')) {
                 // 数字或者字母的一段，加入前一个token
-                if (token.empty())
-                {
+                if (token.empty()) {
                     token += c;
-                }
-                else if (isdigit(c) == isdigit(token[0]))
-                {
+                } else if (isdigit(c) == isdigit(token[0])) {
                     token += c;
-                }
-                else
-                {
+                } else {
                     tokens.push_back(token);
                     token = c;
                 }
-            }
-            else
-            {
+            } else {
                 // 特殊字符或者emoji等，加入前一个token
-                if (!token.empty())
-                {
+                if (!token.empty()) {
                     tokens.push_back(token);
                     token.clear();
                 }
 
                 // 根据不同类型的字符加入当前字符所对应的token数量
-                if (c == '\n')
-                {
+                if (c == '\n') {
                     tokens.push_back(std::string(singleCharTokenCount, c));
-                }
-                else if (c == 0xF0)
-                {
+                } else if (c == 0xF0) {
                     tokens.push_back(std::string(6, ' '));
-                }
-                else if (c == '[' || c == ']')
-                {
+                } else if (c == '[' || c == ']') {
                     tokens.push_back(std::string(singleCharTokenCount, c));
-                }
-                else if (c == ' ' || c == '\t' || c == '.' || c == ',' || c == ';' || c == ':' || c == '!' || c == '?' || c == '(' || c == ')' || c == '{' || c == '}' || c == '/' || c == '\\' || c == '+' || c == '-' || c == '*' || c == '=' || c == '<' || c == '>' || c == '|' || c == '&' || c == '^' || c == '%' || c == '$' || c == '#' || c == '@')
-                {
+                } else if (c == ' ' || c == '\t' || c == '.' || c == ',' || c == ';' || c == ':' || c == '!' ||
+                           c == '?' || c == '(' || c == ')' || c == '{' || c == '}' || c == '/' || c == '\\' ||
+                           c == '+' || c == '-' || c == '*' || c == '=' || c == '<' || c == '>' || c == '|' ||
+                           c == '&' || c == '^' || c == '%' || c == '$' || c == '#' || c == '@') {
                     tokens.push_back(std::string(singleCharTokenCount, c));
-                }
-                else
-                {
+                } else {
                     tokens.push_back(std::string(singleCharTokenCount, c));
                 }
             }
         }
 
         // 加入最后一个token
-        if (!token.empty())
-        {
+        if (!token.empty()) {
             tokens.push_back(token);
         }
 

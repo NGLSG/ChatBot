@@ -22,66 +22,67 @@ string ChatBot::sendRequest(std::string data) {
             std::string url = "";
             if (!chat_data_.useWebProxy) {
                 url = "https://api.openai.com/";
-                if (!chat_data_.proxy.empty()) {
-                    session.SetProxies(cpr::Proxies{
-                            {"http",  chat_data_.proxy},
-                            {"https", chat_data_.proxy}
-                    });
-                }
             } else {
                 url = WebProxies[chat_data_.webproxy];
             }
 
+            CURL *curl;
+            CURLcode res;
+            struct curl_slist *headers = NULL;
+            headers = curl_slist_append(headers, "Content-Type: application/json");
+            headers = curl_slist_append(headers, ("Authorization: Bearer " + chat_data_.api_key).c_str());
+            headers = curl_slist_append(headers, "Transfer-Encoding: chunked");
 
-            session.SetUrl(cpr::Url{url + "v1/chat/completions"});
-            session.SetBody(cpr::Body{data});
-            session.SetHeader(cpr::Header{
-                    {"Authorization",     "Bearer " + chat_data_.api_key},
-                    {"Content-Type",      "application/json"},
-                    {"Transfer-Encoding", "chunked"}
-            });
-            session.SetTimeout(cpr::Timeout(0)); // 设置超时时间为0
-            session.SetVerifySsl(cpr::VerifySsl{false});
-
-            // 发送HTTP请求
-            cpr::Response response = session.Post();
-
-            if (response.status_code != 200) {
-                LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
-                parsed_response = {};
-                return "";
+            curl = curl_easy_init();
+            if (curl) {
+                std::string response = "";
+                curl_easy_setopt(curl, CURLOPT_URL, (url + "v1/chat/completions").c_str());
+                curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
+                curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+                curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+                curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+                if (!chat_data_.useWebProxy && !chat_data_.proxy.empty()) {
+                    curl_easy_setopt(curl, CURLOPT_PROXY, chat_data_.proxy.c_str());
+                }
+                curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); // disable SSL verification
+                res = curl_easy_perform(curl);
+                if (res != CURLE_OK) {
+                    LogError("OpenAI Error: Request failed with error code " + std::to_string(res));
+                    parsed_response = {};
+                    return "";
+                }
+                curl_easy_cleanup(curl);
+                curl_slist_free_all(headers);
+                std::stringstream stream(response);
+                std::string line;
+                while (std::getline(stream, line)) {
+                    if (line.empty()) {
+                        continue;
+                    }
+                    // Remove "data: "
+                    line = line.substr(6);
+                    if (line == "[DONE]") {
+                        break;
+                    }
+                    json resp = json::parse(line);
+                    json choices = resp.value("choices", json::array());
+                    if (choices.empty()) {
+                        continue;
+                    }
+                    json delta = choices[0].value("delta", json::object());
+                    if (delta.empty()) {
+                        continue;
+                    }
+                    if (delta.count("role")) {
+                        response_role = delta["role"].get<std::string>();
+                    }
+                    if (delta.count("content")) {
+                        std::string content = delta["content"].get<std::string>();
+                        full_response += content;
+                    }
+                }
+                return full_response;
             }
-
-            //打印输出
-            std::stringstream stream(response.text);
-            std::string line;
-            while (std::getline(stream, line)) {
-                if (line.empty()) {
-                    continue;
-                }
-                // Remove "data: "
-                line = line.substr(6);
-                if (line == "[DONE]") {
-                    break;
-                }
-                json resp = json::parse(line);
-                json choices = resp.value("choices", json::array());
-                if (choices.empty()) {
-                    continue;
-                }
-                json delta = choices[0].value("delta", json::object());
-                if (delta.empty()) {
-                    continue;
-                }
-                if (delta.count("role")) {
-                    response_role = delta["role"].get<std::string>();
-                }
-                if (delta.count("content")) {
-                    std::string content = delta["content"].get<std::string>();
-                    full_response += content;
-                }
-            }
-            return full_response;
         }
         catch (json::exception &e) {
             LogError("OpenAI Error: " + std::string(e.what()));
@@ -91,6 +92,11 @@ string ChatBot::sendRequest(std::string data) {
     }
     LogError("OpenAI Error: Request failed after three retries.");
     return "";
+}
+
+size_t ChatBot::WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
+    ((std::string *) userp)->append((char *) contents, size * nmemb);
+    return size * nmemb;
 }
 
 std::future<std::string> ChatBot::SubmitAsync(std::string prompt, std::string role, std::string convid) {
@@ -117,8 +123,12 @@ std::string ChatBot::Submit(std::string prompt, std::string role, std::string co
                        + "}\n";
     string text = sendRequest(data);
 
-
-    LogInfo("Bot replied : {0}", text);
+    std::string str;
+    for (char c: text) {
+        str += c;
+        std::cout << "\rBot: " << str << flush;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     return text;
 }
 

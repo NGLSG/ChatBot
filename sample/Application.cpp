@@ -224,7 +224,7 @@ void Application::render_chat_box() {
                       ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoSavedSettings);
 
     // 显示聊天记录
-    for (auto chat: chat_history) {
+    for (auto &chat: chat_history) {
         Chat userAsk;
         Chat botAnswer;
         if (chat.flag == 0)
@@ -269,7 +269,6 @@ void Application::render_chat_box() {
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(8);
         }
-
         if (!botAnswer.content.empty()) {
             // Display the bot's answer
             text_pos = ImVec2(ImGui::GetWindowContentRegionMin().x, ImGui::GetCursorPosY());
@@ -300,11 +299,13 @@ void Application::render_chat_box() {
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
 
+
             // Display the multi-line input field
             ImGui::InputTextMultiline(("##" + to_string(botAnswer.timestamp)).c_str(),
                                       const_cast<char *>(botAnswer.content.c_str()), botAnswer.content.size() + 1,
                                       input_size,
                                       ImGuiInputTextFlags_ReadOnly);
+
 
             // Display the timestamp below the chat record
             ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(botAnswer.timestamp).c_str());
@@ -386,6 +387,7 @@ void Application::render_chat_box() {
     ImGui::End();
 }
 
+//Optimized code
 void Application::render_input_box() {
     static std::vector<std::shared_future<std::string>> submit_futures;
     if (listener && listener->IsRecorded()) {
@@ -1127,6 +1129,7 @@ vector <Application::Chat> Application::load(std::string name) {
                 int flag = record_node["flag"].as<int>();
                 long long timestamp;
                 std::string content;
+                Chat record;
                 if (flag == 0) {
                     timestamp = record_node["user"]["timestamp"].as<long long>();
                     content = record_node["user"]["content"].as<std::string>();
@@ -1134,7 +1137,7 @@ vector <Application::Chat> Application::load(std::string name) {
                     timestamp = record_node["bot"]["timestamp"].as<long long>();
                     content = record_node["bot"]["content"].as<std::string>();
                 }
-                Chat record;
+
                 record.flag = flag;
                 record.content = content;
                 record.timestamp = timestamp;

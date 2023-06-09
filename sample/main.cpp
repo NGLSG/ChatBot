@@ -20,6 +20,7 @@ int main(int argc, char *argv[]) {
 
         Application app(configure, setting);
         app.Renderer();
+
     }
     catch (const std::exception &e) {
         LogError(e.what());
