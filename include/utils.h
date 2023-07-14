@@ -13,6 +13,12 @@ using json = nlohmann::json;
 
 extern bool NoRecord;
 extern std::mutex mtx;
+extern float DownloadProgress;
+extern int FileSize;
+extern int DownloadedSize;
+extern double DownloadSpeed;
+extern double RemainingTime;
+extern std::string FileName;
 
 #endif
 
@@ -36,7 +42,7 @@ public:
 
     static std::string GetMD5(const void *data, std::size_t size);
 
-    static std::string md5(const std::string& data);
+    static std::string md5(const std::string &data);
 
 };
 
@@ -101,7 +107,7 @@ public:
     // 下载文件
     static bool UDownload(const std::pair<std::string, std::string> &task, int num_threads = 8);
 
-    static bool UDownloads(const std::map<std::string, std::string> &tasks, int num_threads = 8);
+    static std::future<bool> UDownloads(const std::map<std::string, std::string> &tasks, int num_threads = 8);
 
     static bool Decompress(std::string file, std::string path = "");
 
@@ -152,7 +158,19 @@ public:
         return timestamp / 86400000;
     }
 
+    static std::wstring Unicode2String(const std::string &str);
 
+    static std::string ReadFile(const std::string &filename);
+
+    static std::vector<std::string> JsonArrayToStringVector(const json &array) {
+        std::vector<std::string> result;
+        for (json::const_iterator it = array.begin(); it != array.end(); ++it) {
+            if (it->is_string()) {
+                result.push_back(it->get<std::string>());
+            }
+        }
+        return result;
+    }
 };
 
 #endif

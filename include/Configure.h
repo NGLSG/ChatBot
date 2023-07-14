@@ -36,6 +36,7 @@ struct VITSData {
     std::string model;
     std::string config;
     std::string lanType = "jp";
+    int speaker_id = 0;
 };
 
 struct WhisperData {
@@ -164,6 +165,7 @@ namespace YAML {
             node["config"] = data.config;
             node["lanType"] = data.lanType;
             node["enable"] = data.enable;
+            node["speaker_id"] = data.speaker_id;
             return node;
         }
 
@@ -174,6 +176,7 @@ namespace YAML {
             data.enable = node["enable"].as<bool>();
             data.model = node["model"].as<std::string>();
             data.config = node["config"].as<std::string>();
+            data.speaker_id = node["speaker_id"].as<int>();
             if (node["lanType"]) {
                 data.lanType = node["lanType"].as<std::string>();
             }

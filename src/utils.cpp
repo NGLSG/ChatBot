@@ -3,6 +3,12 @@
 
 bool NoRecord = false;
 std::mutex mtx;
+float DownloadProgress;
+int FileSize;
+int DownloadedSize;
+double DownloadSpeed;
+double RemainingTime;
+std::string FileName;
 
 bool UFile::Exists(const std::string &filename) {
     std::ifstream file(filename);
@@ -57,7 +63,7 @@ std::string UEncrypt::GetMD5(const void *data, std::size_t size) {
 
 std::string UEncrypt::md5(const std::string &data) {
     unsigned char md[MD5_DIGEST_LENGTH];
-    MD5(reinterpret_cast<const unsigned char*>(data.data()), data.size(), md);
+    MD5(reinterpret_cast<const unsigned char *>(data.data()), data.size(), md);
 
     std::stringstream ss;
     for (int i = 0; i < MD5_DIGEST_LENGTH; ++i) {
@@ -347,31 +353,40 @@ std::string Utils::GetFileName(const std::string &dir) {
     return path.filename().string();
 }
 
-bool Utils::UDownloads(const std::map<std::string, std::string> &tasks, int num_threads) {
-    bool success = true;
-    for (const auto &url_file_pair: tasks) {
-        if (!UDownload(url_file_pair, num_threads)) {
-            success = false;
+std::future<bool> Utils::UDownloads(const std::map<std::string, std::string> &tasks, int num_threads) {
+    return std::async(std::launch::async, [tasks, num_threads]() {
+        bool success = true;
+        std::vector<std::future<bool>> futures;
+        for (const auto &url_file_pair: tasks) {
+            futures.push_back(std::async(std::launch::async, [url_file_pair, num_threads]() {
+                return UDownload(url_file_pair, num_threads);
+            }));
         }
-    }
-    return success;
+        for (auto &future : futures) {
+            if (!future.get()) {
+                success = false;
+            }
+        }
+        return success;
+    });
 }
 
 bool Utils::UDownload(const std::pair<std::string, std::string> &task, int num_threads) {
     try {
         // 获取文件大小
-        auto head = cpr::Head(cpr::Url{task.first});
+        auto head = cpr::Head(cpr::Url{task.first}, cpr::Redirect{true});
         if (head.status_code != 200) {
             LogError("Downloading Error: Failed to get file size: " + head.error.message);
             return false;
         }
         int file_size = stoi(head.header["Content-Length"]);
-
+        FileSize = file_size;
         // 判断是否支持分块下载
         bool support_range =
-                head.header.find("Accept-Ranges") != head.header.end() && head.header["Accept-Ranges"] == "bytes";
+                head.header.find("Accept-Ranges") != head.header.end() && head. header["Accept-Ranges"] == "bytes";
         if (!support_range) {
-            LogWarn("Downloading Warning: The server does not support range requests, cannot download in multiple threads.");
+            LogWarn("Downloading Warning: The server does not support range requests, cannot do"
+                    "wnload in multiple threads.");
             num_threads = 1;
         }
 
@@ -408,6 +423,10 @@ bool Utils::UDownload(const std::pair<std::string, std::string> &task, int num_t
                     std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time).count() / 1000.0;
             double speed = total_progress / elapsed_time;
             double remaining_time = (file_size - total_progress) / speed;
+            RemainingTime = remaining_time;
+            DownloadSpeed = speed;
+            DownloadedSize = total_progress;
+            DownloadProgress = total_progress / (double) file_size;
             progressBar.update(total_progress, "Downloaded " + ProgressBar::formatSize(total_progress) + " of " +
                                                ProgressBar::formatSize(file_size) + " (" +
                                                ProgressBar::formatTime(remaining_time) + " left)");
@@ -839,6 +858,46 @@ std::string Utils::ExtractNormalText(const std::string &text) {
     }
 
     return normalText;
+}
+
+std::wstring Utils::Unicode2String(const std::string &str) {
+    std::wstring result;
+    for (size_t i = 0; i < str.size(); i++) {
+        if (str[i] == '\\' && i + 5 < str.size() && str[i + 1] == 'u') {
+            // Found a Unicode escape sequence
+            wchar_t code_point = 0;
+            for (size_t j = 0; j < 4; j++) {
+                char hex_digit = str[i + 2 + j];
+                if (hex_digit >= '0' && hex_digit <= '9') {
+                    code_point = (code_point << 4) | (hex_digit - '0');
+                } else if (hex_digit >= 'a' && hex_digit <= 'f') {
+                    code_point = (code_point << 4) | (hex_digit - 'a' + 10);
+                } else if (hex_digit >= 'A' && hex_digit <= 'F') {
+                    code_point = (code_point << 4) | (hex_digit - 'A' + 10);
+                } else {
+                    // Invalid hex digit
+                    return L"";
+                }
+            }
+            result += code_point;
+            i += 5;
+        } else {
+            result += str[i];
+        }
+    }
+    return result;
+}
+
+std::string Utils::ReadFile(const std::string &filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        // Failed to open file
+        return "";
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
 }
 
 

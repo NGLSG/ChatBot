@@ -20,12 +20,16 @@
 #define TEXT_BUFFER 1024
 const std::string VERSION = reinterpret_cast<const char *>(u8"Listener v1.2");
 
+// 定义一个委托类型，它接受一个空参数列表，返回类型为 void
+typedef std::function<void()> ConfirmDelegate;
+
 enum State {
     OK = 0,
     NO_OPENAI_KEY,
     NO_VITS,
     NO_TRANSLATOR,
     NO_WHISPER,
+    NO_WHISPERMODEL,
     FIRST_USE,
 };
 
@@ -72,7 +76,7 @@ private:
     std::mutex submit_futures_mutex;
     std::mutex chat_history_mutex;
 
-    State state = state = State::OK;
+    State state = State::OK;
     Configure configure;
     int select_id = 0;
     int role_id = 0;
@@ -104,12 +108,15 @@ private:
     const std::vector<std::string> proxies = {"Cloudflare", "Tencent Cloud"};
 
     std::vector<std::string> mdirs;
+    std::vector<std::string> speakers = {reinterpret_cast<const char *>(u8"空空如也")};
     std::map<std::string, std::vector<std::string>> codes;
 
 
     bool vits = true;
     bool show_input_box = false;
     bool OnlySetting = false;
+    bool whisper = false;
+    bool mwhisper = false;
 
     void save(std::string name = "default");
 
@@ -154,93 +161,31 @@ private:
         return text.empty() || text == "";
     }
 
-    int countTokens(const std::string &str) {
-        // 单一字符的token数量，包括回车
-        const int singleCharTokenCount = 1;
+    void RuntimeDetector();
 
-        // 按照中文、英文、数字、特殊字符、emojis将字符串分割
-        std::vector<std::string> tokens;
-        std::string token;
+    int countTokens(const std::string &str);
 
-        for (char c: str) {
-            if ((c >= 0 && c <= 127) || (c >= -64 && c <= -33)) {
-                // 遇到ASCII码或者中文字符的第一个部分，加入前一个token
-                if (!token.empty()) {
-                    tokens.push_back(token);
-                    token.clear();
-                }
-
-                // 加入当前字符所对应的token数量，根据字节数判断是否是中文字符
-                if ((c >= 0 && c <= 127) || c == '\n') {
-                    tokens.push_back(std::string(singleCharTokenCount, c));
-                } else {
-                    tokens.push_back(std::string(2, c));
-                }
-            } else if (c >= -128 && c <= -65) {
-                // 中文字符第二个部分，加入前一个token
-                if (!token.empty()) {
-                    tokens.push_back(token);
-                    token.clear();
-                }
-
-                // 加入当前字符所对应的token数量
-                token = std::string(2, c);
-                tokens.push_back(token);
-                token.clear();
-            } else if ((c >= '0' && c <= '9')
-                       || (c >= 'a' && c <= 'z')
-                       || (c >= 'A' && c <= 'Z')) {
-                // 数字或者字母的一段，加入前一个token
-                if (token.empty()) {
-                    token += c;
-                } else if (isdigit(c) == isdigit(token[0])) {
-                    token += c;
-                } else {
-                    tokens.push_back(token);
-                    token = c;
-                }
-            } else {
-                // 特殊字符或者emoji等，加入前一个token
-                if (!token.empty()) {
-                    tokens.push_back(token);
-                    token.clear();
-                }
-
-                // 根据不同类型的字符加入当前字符所对应的token数量
-                if (c == '\n') {
-                    tokens.push_back(std::string(singleCharTokenCount, c));
-                } else if (c == 0xF0) {
-                    tokens.push_back(std::string(6, ' '));
-                } else if (c == '[' || c == ']') {
-                    tokens.push_back(std::string(singleCharTokenCount, c));
-                } else if (c == ' ' || c == '\t' || c == '.' || c == ',' || c == ';' || c == ':' || c == '!' ||
-                           c == '?' || c == '(' || c == ')' || c == '{' || c == '}' || c == '/' || c == '\\' ||
-                           c == '+' || c == '-' || c == '*' || c == '=' || c == '<' || c == '>' || c == '|' ||
-                           c == '&' || c == '^' || c == '%' || c == '$' || c == '#' || c == '@') {
-                    tokens.push_back(std::string(singleCharTokenCount, c));
-                } else {
-                    tokens.push_back(std::string(singleCharTokenCount, c));
-                }
-            }
-        }
-
-        // 加入最后一个token
-        if (!token.empty()) {
-            tokens.push_back(token);
-        }
-
-        return tokens.size();
+    static void EmptyFunction() {
+        // Do nothing
     }
+
+    void ShowConfirmationDialog(const char *title, const char *content, bool &mstate,
+                                ConfirmDelegate on_confirm = nullptr,
+                                const char *failure = nullptr,
+                                const char *success = nullptr,
+                                const char *confirm = reinterpret_cast<const char *>(u8"确定"),
+                                const char *cancel = reinterpret_cast<const char *>(u8"取消")
+    );
 
     Billing billing;
 public:
     std::string WhisperConvertor(const std::string &file);
 
-    bool WhisperModelDownload(const std::string &model = "ggml-base.bin");
+    void WhisperModelDownload(const std::string &model = "ggml-base.bin");
 
-    bool WhisperExeInstaller();
+    void WhisperExeInstaller();
 
-    bool VitsExeInstaller();
+    void VitsExeInstaller();
 
     bool Installer(std::map<std::string, std::string> tasks);
 

@@ -1,5 +1,5 @@
 ﻿#include "Application.h"
-
+;
 
 Application::Application(const OpenAIData &chat_data, const TranslateData &data, const VITSData &VitsData,
                          const WhisperData &WhisperData, const Live2D &Live2D, bool setting) {
@@ -24,7 +24,7 @@ Application::Application(const OpenAIData &chat_data, const TranslateData &data,
         Utils::SaveFile(live2D.model, "Lconfig.txt");
         Utils::OpenProgram(live2D.bin.c_str());
     }
-    if (whisperData.enable)
+    if (whisperData.enable && whisper && mwhisper)
         listener->listen();
 }
 
@@ -51,7 +51,7 @@ Application::Application(const Configure &configure, bool setting) {
         Utils::SaveFile(live2D.model, "Lconfig.txt");
         Utils::OpenProgram(live2D.bin.c_str());
     }
-    if (whisperData.enable)
+    if (whisperData.enable && whisper && mwhisper)
         listener->listen();
 }
 
@@ -565,6 +565,7 @@ void Application::render_input_box() {
                 } else {
                     codes.insert({codetype, {i}});
                 }
+                ImGui::SetClipboardText(i.c_str());
             }
             if (vits && vitsData.enable) {
                 std::string VitsText = translator->translate(Utils::ExtractNormalText(response), vitsData.lanType);
@@ -711,12 +712,34 @@ void Application::render_setting_box() {
 
     // 显示 VITS 配置
     if (ImGui::CollapsingHeader("VITS")) {
+        static char search_text[256] = "";
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Vits"), &configure.vits.enable);
         ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(), TEXT_BUFFER);
         ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 配置文件位置"), configure.vits.config.data(),
                          TEXT_BUFFER);
         ImGui::InputText(reinterpret_cast<const char *>(u8"Vits的语言类型"), configure.vits.lanType.data(),
                          TEXT_BUFFER);
+        // 开始下拉列表
+        if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"角色"), speakers[configure.vits.speaker_id].c_str())) {
+            // 在下拉框中添加一个文本输入框
+            ImGui::InputTextWithHint("##Search", reinterpret_cast<const char *>(u8"搜索"), search_text,
+                                     sizeof(search_text));
+
+            // 遍历所有选项
+            for (int i = 0; i < speakers.size(); i++) {
+                // 如果搜索关键字为空，或者当前选项匹配搜索关键字
+                if (search_text[0] == '\0' || strstr(speakers[i].c_str(), search_text) != nullptr) {
+                    bool is_selected = (configure.vits.speaker_id == i);
+                    if (ImGui::Selectable(speakers[i].c_str(), is_selected)) {
+                        configure.vits.speaker_id = i;
+                    }
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
     }
 
 #ifdef WIN32
@@ -813,118 +836,6 @@ void Application::render_setting_box() {
     }
 }
 
-bool Application::Initialize() {
-    std::filesystem::path path_to_directory = "Conversations/";
-    for (const auto &entry: std::filesystem::directory_iterator(path_to_directory)) {
-        if (entry.is_regular_file()) {
-            const auto &file_path = entry.path();
-            std::string file_name = file_path.stem().string();
-            if (!file_name.empty()) {
-                conversations.emplace_back(file_name);
-            }
-            if (!conversations.size() > 0) {
-                bot->Add(convid);
-                conversations.emplace_back(convid);
-            }
-        }
-    }
-    convid = conversations[0];
-
-    bot->Load(convid);
-    load(convid);
-
-    // 遍历文件夹数组
-    for (const auto &dir: dirs) {
-        // 检查文件夹是否存在
-        if (!UDirectory::Exists(dir)) {
-            // 如果文件夹不存在，则输出警告信息
-            LogWarn("Initialize Warning: Folder {0} does not exist!", dir);
-            UDirectory::Create(dir);
-        }
-    }
-    if (whisperData.enable) {
-        if (whisperData.useLocalModel) {
-            if (!CheckFileExistence(bin + WhisperPath, "Whisper", "main", true)) {
-                std::string yn;
-                LogInfo("Initialize: It is detected that you do not have the \"Whisper Executable file\" and the \"useLocalModel\" option is enabled. Do you want to download the executable file?(y\\n)");
-                std::cin >> yn;
-                if (yn == "y") {
-                    if (!WhisperExeInstaller()) {
-                        LogWarn("Initialize Waring: \"Executable file\" download failure!Please download {0} \"Executable\" file by yourself",
-                                VitsConvertUrl);
-                        LogWarn("Initialize Warning: Since you don't have a \"Executable file\", the voice conversation function isn't working properly!");
-                        return false;
-                    }
-                } else {
-                    LogWarn("Initialize Warning: Since you don't have a \"Whisper Executable file\", the voice conversation function isn't working properly!");
-                    return false;
-                }
-            }
-            if (!CheckFileExistence(whisperData.model, "Whisper")) {
-                std::string yn;
-                LogInfo("Initialize: It is detected that you do not have the \"Whisper model\" and the \"useLocalModel\" option is enabled. Do you want to download the model?(y\\n)");
-                std::cin >> yn;
-                if (yn == "y") {
-                    if (!WhisperModelDownload(Utils::GetFileName(whisperData.model))) {
-                        LogWarn("Initialize Warning: Model download failure!Please download model by yourself");
-                        LogWarn("Initialize Warning: Since you don't have a \"Whisper model\", the voice conversation function isn't working properly!");
-                        return false;
-                    }
-                } else {
-                    LogWarn("Initialize Warning: Since you don't have a \"Whisper model\", the voice conversation function isn't working properly!");
-                    return false;
-                }
-            }
-        }
-    }
-
-    if (vitsData.enable) {
-        // 检查VITS可执行文件是否存在
-        if (!CheckFileExistence(bin + VitsConvertor, "VITS", "VitsConvertor", true)) {
-            std::string yn;
-            LogInfo("Initialize: It is detected that you do not have the \"VITS Executable file\" and the \"vits.enable\" option is enabled. Do you want to download the executable file?(y\\n)");
-            std::cin >> yn;
-            if (yn == "y") {
-                if (!VitsExeInstaller()) {
-                    LogWarn("Initialize Waring: \"Executable file\" download failure!Please download \"Executable\" file by yourself");
-                    LogWarn("Initialize Warning: Since you don't have a \"Executable file\", the voice conversation function isn't working properly!");
-                    vits = false;
-                    return false;
-                }
-            } else {
-                LogWarn("Initialize Warning: Since you don't have a \"Vits Executable file\", the voice conversation function isn't working properly!");
-                vits = false;
-                return false;
-            }
-            return false;
-        }
-
-        // 检查VITS模型文件是否存在
-        if (!CheckFileExistence(vitsData.model, "model file") ||
-            !CheckFileExistence(vitsData.config, "Configuration file")) {
-            vits = false;
-            return false;
-        }
-    }
-
-    if (live2D.enable) {
-        if (!CheckFileExistence(live2D.bin, "Live2D executable file")) {
-            LogWarn("Initialize Warning: Since you don't have a \"Live2D Executable file\", the Live2D function isn't working properly!");
-            live2D.enable = false;
-            return false;
-        }
-        if (!CheckFileExistence(live2D.model + "/" + Utils::GetFileName(live2D.model) + ".model3.json",
-                                "Live2D model")) {
-            live2D.enable = false;
-            return false;
-        }
-
-    }
-
-    LogInfo("Successful initialization!");
-    return true;
-}
-
 bool Application::CheckFileExistence(const std::string &filePath, const std::string &fileType,
                                      const std::string &executableFile, bool isExecutable) {
     if (isExecutable) {
@@ -946,13 +857,6 @@ bool Application::CheckFileExistence(const std::string &filePath, const std::str
     return true;
 }
 
-bool Application::WhisperModelDownload(const std::string &model) {
-    std::map<std::string, std::string> tasks = {
-            {"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + model,
-             this->model + WhisperPath + model}
-    };
-    return Installer(tasks);
-}
 
 std::string Application::WhisperConvertor(const std::string &file) {
     if (!CheckFileExistence(whisperData.model, "Whisper Model")) {
@@ -969,22 +873,34 @@ std::string Application::WhisperConvertor(const std::string &file) {
     return res;
 }
 
-bool Application::WhisperExeInstaller() {
+void Application::WhisperModelDownload(const std::string &model) {
     std::map<std::string, std::string> tasks = {
-            {whisperUrl, bin + "Whisper.zip"}
+            {"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + model,
+             this->model + WhisperPath + model}
     };
-    return Installer(tasks) && Utils::Decompress(bin + "Whisper.zip");
+    whisper = Installer(tasks);
+    //return whisper;
 }
 
-bool Application::VitsExeInstaller() {
+void Application::WhisperExeInstaller() {
     std::map<std::string, std::string> tasks = {
-            {VitsConvertUrl, bin + vitsFile}
+            {whisperUrl, bin + WhisperPath + "Whisper.zip"}
     };
-    return Installer(tasks) && Utils::Decompress(bin + vitsFile);
+    whisper = Installer(tasks) && Utils::Decompress(bin + WhisperPath + "Whisper.zip");
+    //return whisper;
+}
+
+void Application::VitsExeInstaller() {
+    std::map<std::string, std::string> tasks = {
+            {VitsConvertUrl, bin + VitsPath + vitsFile}
+    };
+    vits = Installer(tasks) && Utils::Decompress(bin + VitsPath + vitsFile);
+    //return vits;
 }
 
 bool Application::Installer(std::map<std::string, std::string> tasks) {
-    bool success = Utils::UDownloads(tasks, 16);
+    std::future<bool> download_future = Utils::UDownloads(tasks);
+    bool success = download_future.get();
     if (success) {
         LogInfo("Application: Download completed successfully.");
         return true;
@@ -996,6 +912,7 @@ bool Application::Installer(std::map<std::string, std::string> tasks) {
 
 void Application::render_ui() {
     ImGui::DockSpaceOverViewport();
+    RuntimeDetector();
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
     if (!OnlySetting) {
         render_input_box();
@@ -1191,3 +1108,228 @@ void Application::save(std::string name) {
         LogError("Application Error: Unable to save session {0},{1}", name, ".");
     }
 }
+
+bool Application::Initialize() {
+    bool success = true;
+    std::filesystem::path path_to_directory = "Conversations/";
+    for (const auto &entry: std::filesystem::directory_iterator(path_to_directory)) {
+        if (entry.is_regular_file()) {
+            const auto &file_path = entry.path();
+            std::string file_name = file_path.stem().string();
+            if (!file_name.empty()) {
+                conversations.emplace_back(file_name);
+            }
+            if (!conversations.size() > 0) {
+                bot->Add(convid);
+                conversations.emplace_back(convid);
+            }
+        }
+    }
+    convid = conversations[0];
+
+    bot->Load(convid);
+    load(convid);
+    whisper = true;
+    mwhisper = true;
+
+    // 遍历文件夹数组
+    for (const auto &dir: dirs) {
+        // 检查文件夹是否存在
+        if (!UDirectory::Exists(dir)) {
+            // 如果文件夹不存在，则输出警告信息
+            LogWarn("Initialize Warning: Folder {0} does not exist!", dir);
+            UDirectory::Create(dir);
+        }
+    }
+    if (whisperData.enable) {
+        if (whisperData.useLocalModel) {
+            if (!CheckFileExistence(bin + WhisperPath, "Whisper", "main", true)) {
+                state = State::NO_WHISPER;
+                whisper = false;
+                LogInfo("Initialize: It is detected that you do not have the \"Whisper Executable file\" and the \"useLocalModel\" option is enabled.");
+                success = false;
+            }
+            if (!CheckFileExistence(whisperData.model, "Whisper Model")) {
+                mwhisper = false;
+                state = State::NO_WHISPER;
+                LogInfo("Initialize: It is detected that you do not have the \"Whisper model\" and the \"useLocalModel\" option is enabled.");
+                success = false;
+            }
+        }
+    }
+    if (vitsData.enable) {
+        // 检查VITS可执行文件是否存在
+        if (!CheckFileExistence(bin + VitsConvertor, "VITS", "VitsConvertor", true)) {
+            state = State::NO_VITS;
+            vits = false;
+            LogInfo("Initialize: It is detected that you do not have the \"VITS Executable file\" and the \"vits.enable\" option is enabled.");
+            success = false;
+        }
+
+        // 检查VITS模型文件是否存在
+        if (!CheckFileExistence(vitsData.model, "model file") ||
+            !CheckFileExistence(vitsData.config, "Configuration file")) {
+            vits = false;
+            success = false;
+        }
+    }
+    if (CheckFileExistence(vitsData.config, "Configuration file")) {
+        std::string config;
+        config = Utils::ReadFile(vitsData.config);
+        if (!config.empty()) {
+            json _config = json::parse(config);
+            speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
+        }
+    }
+    if (live2D.enable) {
+        if (!CheckFileExistence(live2D.bin, "Live2D executable file")) {
+            LogWarn("Initialize Warning: Since you don't have a \"Live2D Executable file\", the Live2D function isn't working properly!");
+            live2D.enable = false;
+            success = false;
+        }
+        if (!CheckFileExistence(live2D.model + "/" + Utils::GetFileName(live2D.model) + ".model3.json",
+                                "Live2D model")) {
+            live2D.enable = false;
+            success = false;
+        }
+
+    }
+
+    LogInfo("Successful initialization!");
+    return success;
+}
+
+int Application::countTokens(const string &str) {
+    // 单一字符的token数量，包括回车
+    const int singleCharTokenCount = 1;
+
+    // 按照中文、英文、数字、特殊字符、emojis将字符串分割
+    std::vector<std::string> tokens;
+    std::string token;
+
+    for (char c: str) {
+        if ((c >= 0 && c <= 127) || (c >= -64 && c <= -33)) {
+            // 遇到ASCII码或者中文字符的第一个部分，加入前一个token
+            if (!token.empty()) {
+                tokens.push_back(token);
+                token.clear();
+            }
+
+            // 加入当前字符所对应的token数量，根据字节数判断是否是中文字符
+            if ((c >= 0 && c <= 127) || c == '\n') {
+                tokens.push_back(std::string(singleCharTokenCount, c));
+            } else {
+                tokens.push_back(std::string(2, c));
+            }
+        } else if (c >= -128 && c <= -65) {
+            // 中文字符第二个部分，加入前一个token
+            if (!token.empty()) {
+                tokens.push_back(token);
+                token.clear();
+            }
+
+            // 加入当前字符所对应的token数量
+            token = std::string(2, c);
+            tokens.push_back(token);
+            token.clear();
+        } else if ((c >= '0' && c <= '9')
+                   || (c >= 'a' && c <= 'z')
+                   || (c >= 'A' && c <= 'Z')) {
+            // 数字或者字母的一段，加入前一个token
+            if (token.empty()) {
+                token += c;
+            } else if (isdigit(c) == isdigit(token[0])) {
+                token += c;
+            } else {
+                tokens.push_back(token);
+                token = c;
+            }
+        } else {
+            // 特殊字符或者emoji等，加入前一个token
+            if (!token.empty()) {
+                tokens.push_back(token);
+                token.clear();
+            }
+
+            // 根据不同类型的字符加入当前字符所对应的token数量
+            if (c == '\n') {
+                tokens.push_back(std::string(singleCharTokenCount, c));
+            } else if (c == 0xF0) {
+                tokens.push_back(std::string(6, ' '));
+            } else if (c == '[' || c == ']') {
+                tokens.push_back(std::string(singleCharTokenCount, c));
+            } else if (c == ' ' || c == '\t' || c == '.' || c == ',' || c == ';' || c == ':' || c == '!' ||
+                       c == '?' || c == '(' || c == ')' || c == '{' || c == '}' || c == '/' || c == '\\' ||
+                       c == '+' || c == '-' || c == '*' || c == '=' || c == '<' || c == '>' || c == '|' ||
+                       c == '&' || c == '^' || c == '%' || c == '$' || c == '#' || c == '@') {
+                tokens.push_back(std::string(singleCharTokenCount, c));
+            } else {
+                tokens.push_back(std::string(singleCharTokenCount, c));
+            }
+        }
+    }
+
+    // 加入最后一个token
+    if (!token.empty()) {
+        tokens.push_back(token);
+    }
+
+    return tokens.size();
+}
+
+void Application::ShowConfirmationDialog(const char *title, const char *content, bool &mstate,
+                                         ConfirmDelegate on_confirm,
+                                         const char *failure,
+                                         const char *success,
+                                         const char *confirm,
+                                         const char *cancel) {
+    static bool Start = false;
+    static bool reject = false;
+    if (!reject) {
+        ImGui::OpenPopup(title);
+        if (ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("%s", content);
+            ImGui::Separator();
+
+            if (ImGui::Button(confirm)) {
+                mstate = true;
+                if (on_confirm != nullptr) {
+                    std::thread t(on_confirm);
+                    t.detach();
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(cancel)) {
+                mstate = false;
+                reject = true;
+                ImGui::CloseCurrentPopup();
+            }
+
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void Application::RuntimeDetector() {
+    if (!whisper) {
+        ShowConfirmationDialog(reinterpret_cast<const char *>(u8"下载通知"),
+                               reinterpret_cast<const char *>(u8"检测到你并没安装Whisper,是否安装?"), whisper,
+                               [this]() { WhisperExeInstaller(); },
+                               reinterpret_cast<const char *>(u8"安装Whisper失败"),
+                               reinterpret_cast<const char *>(u8"安装Whisper成功"));
+    } else if (!vits) {
+        ShowConfirmationDialog(reinterpret_cast<const char *>(u8"下载通知"),
+                               reinterpret_cast<const char *>(u8"检测到你并没安装VitsConvertor,是否安装?"), vits,
+                               [this]() { VitsExeInstaller(); },
+                               reinterpret_cast<const char *>(u8"安装VitsConvertor失败"),
+                               reinterpret_cast<const char *>(u8"安装VitsConvertor成功"));
+    } else if (!mwhisper) {
+        ShowConfirmationDialog(reinterpret_cast<const char *>(u8"下载通知"),
+                               reinterpret_cast<const char *>(u8"检测到你并没安装Whisper Model,是否下载?"), mwhisper,
+                               [this]() { WhisperModelDownload(Utils::GetFileName(whisperData.model)); },
+                               reinterpret_cast<const char *>(u8"安装Whisper Model失败"),
+                               reinterpret_cast<const char *>(u8"安装Whisper Model成功"));
+    }
+}
+
