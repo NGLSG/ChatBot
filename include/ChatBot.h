@@ -21,85 +21,50 @@ struct Billing {
 
 class ChatBot {
 public:
-    ChatBot(const OpenAIData &chat_data);
 
-    std::string
-    Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult");
+    virtual std::string Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") = 0;
+
+    virtual void Reset() = 0;
+
+    virtual void Load(std::string name = "default") = 0;
+
+    virtual void Save(std::string name = "default") = 0;
+
+    virtual void Del(std::string name) = 0;
+
+    virtual void Add(std::string name) = 0;
+
+    virtual Billing GetBilling() = 0;
+
+    virtual map<long long, string> GetHistory() = 0;
+
+    map<long long, string> History;
+};
+
+class ChatGPT : public ChatBot {
+
+public:
+
+    ChatGPT(const OpenAIData &chat_data);
+
+    virtual std::string
+    Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") override;
 
     std::future<std::string> SubmitAsync(std::string prompt, std::string role, std::string convid);
 
-    void Reset();
+    virtual void Reset() override;
 
-    void Load(std::string name = "default");
+    virtual void Load(std::string name = "default") override;
 
-    void Save(std::string name = "default");
+    virtual void Save(std::string name = "default") override;
 
-    void Del(std::string name);
+    virtual void Del(std::string name) override;
 
-    void Add(std::string name);
+    virtual void Add(std::string name) override;
 
-    Billing GetBilling() {
-        std::string url;
-        Billing billing;
+    virtual Billing GetBilling() override;
 
-        if (!chat_data_.useWebProxy) {
-            url = "https://api.openai.com/";
-            if (!chat_data_.proxy.empty()) {
-                session.SetProxies(cpr::Proxies{
-                        {"http",  chat_data_.proxy},
-                        {"https", chat_data_.proxy}
-                });
-            }
-        } else {
-            url = WebProxies[chat_data_.webproxy];
-        }
-
-        auto t1 = std::async(std::launch::async, [&] { // execute the first API request asynchronously
-            cpr::Session session;
-            session.SetUrl(cpr::Url{url + "v1/dashboard/billing/subscription"});
-            session.SetHeader(cpr::Header{
-                    {"Authorization", "Bearer " + chat_data_.api_key},
-            });
-            session.SetVerifySsl(cpr::VerifySsl{false});
-
-            auto response = session.Get();
-            if (response.status_code != 200) {
-                LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
-                return;
-            }
-
-            json data = json::parse(response.text);
-            billing.total = data["system_hard_limit_usd"];
-            billing.date = data["access_until"];
-        });
-
-        auto t2 = std::async(std::launch::async, [&] { // execute the second API request asynchronously
-            cpr::Session session;
-            string start = Stamp2Time(getTimestampBefore(100));
-            string end = Stamp2Time(getCurrentTimestamp());
-            url = url + "v1/dashboard/billing/usage?start_date=" + start + "&end_date=" + end;
-            session.SetUrl(cpr::Url{url});
-            session.SetHeader(cpr::Header{
-                    {"Authorization", "Bearer " + chat_data_.api_key}
-            });
-            session.SetVerifySsl(cpr::VerifySsl{false});
-
-            auto response = session.Get();
-            if (response.status_code != 200) {
-                LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
-                return;
-            }
-
-            json data = json::parse(response.text);
-            billing.used = float(data["total_usage"]) / 100;
-            billing.available = billing.total - billing.used;
-        });
-
-        t1.wait(); // wait for both tasks to finish
-        t2.wait();
-
-        return billing;
-    }
+    virtual map<long long, string> GetHistory() override { return map<long long, string>(); }
 
     std::string Stamp2Time(long long timestamp) {
         time_t tick = (time_t) (timestamp / 1000);//转换时间
@@ -112,7 +77,6 @@ public:
     }
 
     json history;
-
 private:
 
     cpr::Session session;
@@ -148,6 +112,108 @@ private:
     string sendRequest(std::string data);
 
     static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp);
+
 };
+
+
+class Claude : public ChatBot {
+public:
+    Claude(const ClaudeData &data) : claudeData(data) {
+    }
+
+    virtual std::string
+    Submit(std::string text, std::string role = Role::User, std::string convid = "defult") override {
+        cpr::Payload payload{
+                {"token",   claudeData.slackToken},
+                {"channel", claudeData.channelID},
+                {"text",    text}};
+
+        cpr::Response r = cpr::Post(cpr::Url{"https://slack.com/api/chat.postMessage"},
+                                    payload);
+        if (r.status_code == 200) {
+            // 发送成功
+        } else {
+            // 发送失败,打印错误信息
+            LogError(r.error.message);
+        }
+        json response = json::parse(r.text);
+
+        return "";
+    }
+
+    virtual void Reset() override {
+/*        cpr::Payload payload{
+                {"token",   claudeData.slackToken},
+                {"channel", claudeData.channelID},
+                {"command", "/reset"}};
+        cpr::Header header{{"Cookie", claudeData.cookies}};
+        std::string url = "https://" + claudeData.userName + ".slack.com/api/chat.command";
+        cpr::Response r = cpr::Post(cpr::Url{url},
+                                    payload, header);
+        if (r.status_code == 200) {
+            // 发送成功
+        } else {
+            // 发送失败,打印错误信息
+            LogError(r.error.message);
+        }*/
+        LogInfo("Claude : 不支持的操作");
+    };
+
+    virtual void Load(std::string name = "default") override {
+        LogInfo("Claude : 不支持的操作");
+    }
+
+    virtual void Save(std::string name = "default") override {
+        LogInfo("Claude : 不支持的操作");
+    }
+
+    virtual void Del(std::string id) override {
+
+        LogInfo("Claude : 不支持的操作");
+    }
+
+    virtual void Add(std::string name = "default") override {
+        LogInfo("Claude : 不支持的操作");
+    }
+
+    virtual Billing GetBilling() override {
+        return {999, 999, 0, 999};
+    };
+
+    virtual map<long long, string> GetHistory() override {
+        try {
+            History.clear();
+            auto _ts=to_string(Logger::getCurrentTimestamp());
+            cpr::Payload payload = {
+                    {"channel", claudeData.channelID},
+                    {"latest",  _ts},
+                    {"token",   claudeData.slackToken}
+            };
+            cpr::Response r2 = cpr::Post(cpr::Url{"https://slack.com/api/conversations.history"},
+                                         payload);
+            json j = json::parse(r2.text);
+            if (j["ok"].get<bool>()) {
+                for (auto &message: j["messages"]) {
+                    if (message["bot_profile"]["name"] == "Claude") {
+
+                        long long ts = (long long) (atof(message["ts"].get<string>().c_str()) * 1000);
+                        std::string text = message["blocks"][0]["elements"][0]["elements"][0]["text"].get<string>();
+
+                        History[ts] = text;
+                    }
+                }
+            }
+        } catch (const std::exception &e) {
+            // 捕获并处理异常
+            LogError("获取历史记录失败:" + string(e.what()));
+        }
+        return History;
+    };
+private:
+    map <string, string> ChannelListName;
+    map <string, string> ChannelListID;
+    ClaudeData claudeData;
+};
+
 
 #endif

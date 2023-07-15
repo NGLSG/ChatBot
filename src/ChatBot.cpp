@@ -1,6 +1,6 @@
 #include "ChatBot.h"
 
-ChatBot::ChatBot(const OpenAIData &chat_data) : chat_data_(chat_data) {
+ChatGPT::ChatGPT(const OpenAIData &chat_data) : chat_data_(chat_data) {
     Logger::Init();
     defaultJson["content"] = sys;
     defaultJson["role"] = "system";
@@ -11,14 +11,14 @@ ChatBot::ChatBot(const OpenAIData &chat_data) : chat_data_(chat_data) {
     }
 }
 
-string ChatBot::sendRequest(std::string data) {
+string ChatGPT::sendRequest(std::string data) {
     json parsed_response;
     std::string response_role = "";
     std::string full_response = "";
     int retry_count = 0;
     while (retry_count < 3) {
         try {
-            LogInfo("ChatBot: Post request to openai...");
+            LogInfo("ChatGPT: Post request to openai...");
             std::string url = "";
             if (!chat_data_.useWebProxy) {
                 url = "https://api.openai.com/";
@@ -94,16 +94,16 @@ string ChatBot::sendRequest(std::string data) {
     return "";
 }
 
-size_t ChatBot::WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
+size_t ChatGPT::WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
     ((std::string *) userp)->append((char *) contents, size * nmemb);
     return size * nmemb;
 }
 
-std::future<std::string> ChatBot::SubmitAsync(std::string prompt, std::string role, std::string convid) {
-    return std::async(std::launch::async, &ChatBot::Submit, this, prompt, role, convid);
+std::future<std::string> ChatGPT::SubmitAsync(std::string prompt, std::string role, std::string convid) {
+    return std::async(std::launch::async, &ChatGPT::Submit, this, prompt, role, convid);
 }
 
-std::string ChatBot::Submit(std::string prompt, std::string role, std::string convid) {
+std::string ChatGPT::Submit(std::string prompt, std::string role, std::string convid) {
     convid_ = convid;
     json ask;
     ask["content"] = prompt;
@@ -132,13 +132,13 @@ std::string ChatBot::Submit(std::string prompt, std::string role, std::string co
     return text;
 }
 
-void ChatBot::Reset() {
+void ChatGPT::Reset() {
     history.clear();
     history.push_back(defaultJson);
     Conversation[convid_] = history;
 }
 
-void ChatBot::Load(std::string name) {
+void ChatGPT::Load(std::string name) {
     std::stringstream buffer;
     std::ifstream session_file(ConversationPath + name + suffix);
     if (session_file.is_open()) {
@@ -150,7 +150,7 @@ void ChatBot::Load(std::string name) {
     LogInfo("Bot: 加载 {0} 成功", name);
 }
 
-void ChatBot::Save(std::string name) {
+void ChatGPT::Save(std::string name) {
     std::ofstream session_file(ConversationPath + name + suffix);
 
     if (session_file.is_open()) {
@@ -162,15 +162,78 @@ void ChatBot::Save(std::string name) {
     }
 }
 
-void ChatBot::Del(std::string name) {
+void ChatGPT::Del(std::string name) {
     if (remove((ConversationPath + name + suffix).c_str()) != 0) {
         LogError("OpenAI Error: Unable to delete session {0},{1}", name, ".");
     }
     LogInfo("Bot : 删除 {0} 成功", name);
 }
 
-void ChatBot::Add(std::string name) {
+void ChatGPT::Add(std::string name) {
     history.clear();
     history.emplace_back(defaultJson);
     Save(name);
+}
+
+Billing ChatGPT::GetBilling() {
+    std::string url;
+    Billing billing;
+
+    if (!chat_data_.useWebProxy) {
+        url = "https://api.openai.com/";
+        if (!chat_data_.proxy.empty()) {
+            session.SetProxies(cpr::Proxies{
+                    {"http",  chat_data_.proxy},
+                    {"https", chat_data_.proxy}
+            });
+        }
+    } else {
+        url = WebProxies[chat_data_.webproxy];
+    }
+
+    auto t1 = std::async(std::launch::async, [&] { // execute the first API request asynchronously
+        cpr::Session session;
+        session.SetUrl(cpr::Url{url + "v1/dashboard/billing/subscription"});
+        session.SetHeader(cpr::Header{
+                {"Authorization", "Bearer " + chat_data_.api_key},
+        });
+        session.SetVerifySsl(cpr::VerifySsl{false});
+
+        auto response = session.Get();
+        if (response.status_code != 200) {
+            LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
+            return;
+        }
+
+        json data = json::parse(response.text);
+        billing.total = data["system_hard_limit_usd"];
+        billing.date = data["access_until"];
+    });
+
+    auto t2 = std::async(std::launch::async, [&] { // execute the second API request asynchronously
+        cpr::Session session;
+        string start = Stamp2Time(getTimestampBefore(100));
+        string end = Stamp2Time(getCurrentTimestamp());
+        url = url + "v1/dashboard/billing/usage?start_date=" + start + "&end_date=" + end;
+        session.SetUrl(cpr::Url{url});
+        session.SetHeader(cpr::Header{
+                {"Authorization", "Bearer " + chat_data_.api_key}
+        });
+        session.SetVerifySsl(cpr::VerifySsl{false});
+
+        auto response = session.Get();
+        if (response.status_code != 200) {
+            LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
+            return;
+        }
+
+        json data = json::parse(response.text);
+        billing.used = float(data["total_usage"]) / 100;
+        billing.available = billing.total - billing.used;
+    });
+
+    t1.wait(); // wait for both tasks to finish
+    t2.wait();
+
+    return billing;
 }

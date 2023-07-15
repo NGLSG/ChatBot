@@ -18,6 +18,7 @@ int main(int argc, char *argv[]) {
 
         auto configure = Utils::LoadYaml<Configure>("config.yaml");
 
+
         Application app(configure, setting);
         app.Renderer();
 

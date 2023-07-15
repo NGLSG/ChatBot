@@ -1,10 +1,10 @@
 <p align="center">
-    <img src="https://github.com/NGLSG/ChatBot/raw/main/img/self.png" width="200" height="200" alt="ChatBot">
+    <img src="https://github.com/NGLSG/ChatGPT/raw/main/img/self.png" width="200" height="200" alt="ChatGPT">
 </p>
 
 <div align="center">
 
-# ChatBot
+# ChatGPT
 
 _✨基于nlohmann,cpr,spdlog的ChatGPT API✨_
 
@@ -15,11 +15,11 @@ _✨基于nlohmann,cpr,spdlog的ChatGPT API✨_
 
 <p align="center">
   <img src="https://img.shields.io/badge/Author-Ge%E6%B1%81%E8%8F%8C-yellow">
-  <a href="https://raw.githubusercontent.com/NGLSG/ChatBot/main/LICENSE">
-    <img src="https://img.shields.io/github/license/NGLSG/ChatBot" alt="license">
+  <a href="https://raw.githubusercontent.com/NGLSG/ChatGPT/main/LICENSE">
+    <img src="https://img.shields.io/github/license/NGLSG/ChatGPT" alt="license">
   </a>
-  <img src="https://img.shields.io/github/stars/NGLSG/ChatBot.svg" alt="stars">
-  <img src="https://img.shields.io/github/forks/NGLSG/ChatBot.svg" alt="forks">
+  <img src="https://img.shields.io/github/stars/NGLSG/ChatGPT.svg" alt="stars">
+  <img src="https://img.shields.io/github/forks/NGLSG/ChatGPT.svg" alt="forks">
 </p>
 
 # 使用
@@ -27,10 +27,10 @@ _✨基于nlohmann,cpr,spdlog的ChatGPT API✨_
 * 初始化
 
     ```c++
-    #include <ChatBot.h>
+    #include <ChatGPT.h>
     OpenAIData chatData;
     chatData.api_key = "sk-xxxx";//设置你的API_Key
-    ChatBot bot(chatData);//初始化
+    ChatGPT bot(chatData);//初始化
     ```
 
 * **会话**
@@ -99,11 +99,11 @@ _✨基于nlohmann,cpr,spdlog的ChatGPT API✨_
 *
     * 使用示例
       ```c++
-      #include <ChatBot.h>
+      #include <ChatGPT.h>
       #include <Listener.h>
       OpenAIData chatData;
       chatData.api_key = "sk-xxxx";//设置你的API_Key
-      ChatBot bot(chatData);//初始化
+      ChatGPT bot(chatData);//初始化
       Listener listener(sampleRate, framesPerBuffer);
       listener.listen();//开始倾听
       while (true) {
@@ -215,7 +215,7 @@ vcpkg integrate install
 # 编译
 
 ```bash
-cd ChatBot
+cd ChatGPT
 mkdir build
 cd build
 cmake -B build/ -S . -DCMAKE_TOOLCHAIN_FILE=path/to/vcpkg.cmake

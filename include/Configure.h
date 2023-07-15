@@ -51,6 +51,15 @@ struct LConfigure {
     float scaleY = 1;
 };
 
+struct ClaudeData {
+    bool enable = true;
+    std::string channelID;
+    std::string slackToken;
+    std::string userName;
+    std::string cookies;
+};
+
+
 struct Live2D {
     bool enable = false;
     std::string model = "./model/Live2D/Mao";
@@ -63,9 +72,37 @@ struct Configure {
     VITSData vits;
     WhisperData whisper;
     Live2D live2D;
+    ClaudeData claude;
 };
 
 namespace YAML {
+    template<>
+    struct convert<ClaudeData> {
+
+        static Node encode(const ClaudeData &data) {
+            Node node;
+            node["enable"] = data.enable;
+            node["channelID"] = data.channelID;
+            node["userName"] = data.userName;
+            node["cookies"] = data.cookies;
+            node["slackToken"] = data.slackToken;
+            return node;
+        }
+
+        static bool decode(const Node &node, ClaudeData &data) {
+            if (!node["channelID"]) {
+                return false;
+            }
+            data.cookies = node["cookies"].as<std::string>();
+            data.userName = node["userName"].as<std::string>();
+            data.enable = node["enable"].as<bool>();
+            data.channelID = node["channelID"].as<std::string>();
+            data.slackToken = node["slackToken"].as<std::string>();
+            return true;
+        }
+
+    };
+
     template<>
     struct convert<TranslateData> {
         static Node encode(const TranslateData &data) {
@@ -91,7 +128,6 @@ namespace YAML {
     struct convert<OpenAIData> {
         static Node encode(const OpenAIData &data) {
             Node node;
-            node["useLocalModel"] = data.useLocalModel;
             node["useLocalModel"] = data.useLocalModel;
             node["modelPath"] = data.modelPath;
             node["api_key"] = data.api_key;
@@ -252,6 +288,7 @@ namespace YAML {
         static Node encode(const Configure &config) {
             Node node;
             node["openAi"] = config.openAi;
+            node["claude"] = config.claude;
             node["baiDuTranslator"] = config.baiDuTranslator;
             node["vits"] = config.vits;
             node["whisper"] = config.whisper;
@@ -264,6 +301,7 @@ namespace YAML {
                 return false;
             }
             config.openAi = node["openAi"].as<OpenAIData>();
+            config.claude = node["claude"].as<ClaudeData>();
             config.baiDuTranslator = node["baiDuTranslator"].as<TranslateData>();
             config.vits = node["vits"].as<VITSData>();
             config.whisper = node["whisper"].as<WhisperData>();

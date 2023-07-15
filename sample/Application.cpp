@@ -1,32 +1,4 @@
 ﻿#include "Application.h"
-;
-
-Application::Application(const OpenAIData &chat_data, const TranslateData &data, const VITSData &VitsData,
-                         const WhisperData &WhisperData, const Live2D &Live2D, bool setting) {
-    configure = Configure(chat_data, data, VitsData, whisperData);
-    OnlySetting = setting;
-    if (chat_data.api_key.empty()) {
-        OnlySetting = true;
-        state = State::NO_OPENAI_KEY;
-    }
-    translator = CreateRef<Translate>(data);
-    bot = CreateRef<ChatBot>(chat_data);
-    billing = bot->GetBilling();
-    voiceToText = CreateRef<VoiceToText>(chat_data);
-    listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
-    vitsData = VitsData;
-    whisperData = WhisperData;
-    live2D = Live2D;
-    if (!Initialize()) {
-        LogWarn("Warning: Initialization failed!Maybe some function can not working");
-    }
-    if (live2D.enable) {
-        Utils::SaveFile(live2D.model, "Lconfig.txt");
-        Utils::OpenProgram(live2D.bin.c_str());
-    }
-    if (whisperData.enable && whisper && mwhisper)
-        listener->listen();
-}
 
 Application::Application(const Configure &configure, bool setting) {
     this->configure = configure;
@@ -36,7 +8,13 @@ Application::Application(const Configure &configure, bool setting) {
         state = State::NO_OPENAI_KEY;
     }
     translator = CreateRef<Translate>(configure.baiDuTranslator);
-    bot = CreateRef<ChatBot>(configure.openAi);
+    if (configure.claude.enable) {
+        bot = CreateRef<Claude>(configure.claude);
+        convid = "ClaudeOnly";
+        ClaudeHitsory();
+    } else {
+        bot = CreateRef<ChatGPT>(configure.openAi);
+    }
     billing = bot->GetBilling();
     voiceToText = CreateRef<VoiceToText>(configure.openAi);
     listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
@@ -78,6 +56,7 @@ void Application::Vits(std::string text) {
     task.model = Utils::GetAbsolutePath(vitsData.model);
     task.config = Utils::GetAbsolutePath(vitsData.config);
     task.text = text;
+    task.sid = vitsData.speaker_id;
     static bool is_playing = false;
     Utils::SaveYaml("task.yaml", Utils::toYaml(task));
 
@@ -354,14 +333,17 @@ void Application::render_chat_box() {
         if (ImGui::BeginMenu(reinterpret_cast<const char *>(u8"会话"))) {
             ImGuiStyle &item_style = ImGui::GetStyle();
             item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-            for (int i = 0; i < conversations.size(); i++) {
-                const bool is_selected = (select_id == i);
-                if (ImGui::MenuItem(reinterpret_cast<const char *>(conversations[i].c_str()), nullptr, is_selected)) {
-                    if (select_id != i) {
-                        select_id = i;
-                        convid = conversations[select_id];
-                        bot->Load(convid);
-                        load(convid);
+            if (!configure.claude.enable) {
+                for (int i = 0; i < conversations.size(); i++) {
+                    const bool is_selected = (select_id == i);
+                    if (ImGui::MenuItem(reinterpret_cast<const char *>(conversations[i].c_str()), nullptr,
+                                        is_selected)) {
+                        if (select_id != i) {
+                            select_id = i;
+                            convid = conversations[select_id];
+                            bot->Load(convid);
+                            load(convid);
+                        }
                     }
                 }
             }
@@ -529,6 +511,7 @@ void Application::render_input_box() {
         if (whisperData.enable)
             listener->ResetRecorded();
         std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]() {
+            LogInfo(last_input);
             return bot->Submit(last_input, role);
         }).share();
         submit_futures.push_back(std::move(submit_future));
@@ -542,36 +525,42 @@ void Application::render_input_box() {
     // 处理已完成的submit_future
     for (auto it = submit_futures.begin(); it != submit_futures.end();) {
         if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-            std::string response = it->get();
-            std::lock_guard<std::mutex> lock(chat_history_mutex);
-            Chat bot;
-            bot.flag = 1;
-            bot.timestamp = Utils::getCurrentTimestamp();
-            bot.content = response;
-            add_chat_record(bot);
-            it = submit_futures.erase(it);
-            auto tmp_code = Utils::GetAllCodesFromText(response);
-            for (auto &i: tmp_code) {
-                std::size_t pos = i.find('\n'); // 查找第一个换行符的位置
-                std::string codetype;
-                if (pos != std::string::npos) { // 如果找到了换行符
-                    codetype = i.substr(0, pos);
-                    i = i.substr(pos + 1); // 删除第一行
+            if (!configure.claude.enable) {
+                std::string response = it->get();
+                std::lock_guard<std::mutex> lock(chat_history_mutex);
+                Chat botR;
+                botR.flag = 1;
+
+                botR.timestamp = Utils::getCurrentTimestamp();
+                botR.content = response;
+                add_chat_record(botR);
+
+                it = submit_futures.erase(it);
+                auto tmp_code = Utils::GetAllCodesFromText(response);
+                for (auto &i: tmp_code) {
+                    std::size_t pos = i.find('\n'); // 查找第一个换行符的位置
+                    std::string codetype;
+                    if (pos != std::string::npos) { // 如果找到了换行符
+                        codetype = i.substr(0, pos);
+                        i = i.substr(pos + 1); // 删除第一行
+                    }
+                    if (is_valid_text(codetype))
+                        codetype = "Unknown";
+                    if (codes.contains(codetype)) {
+                        codes[codetype].emplace_back(i);
+                    } else {
+                        codes.insert({codetype, {i}});
+                    }
+                    ImGui::SetClipboardText(i.c_str());
                 }
-                if (is_valid_text(codetype))
-                    codetype = "Unknown";
-                if (codes.contains(codetype)) {
-                    codes[codetype].emplace_back(i);
-                } else {
-                    codes.insert({codetype, {i}});
+                if (vits && vitsData.enable) {
+                    std::string VitsText = translator->translate(Utils::ExtractNormalText(response), vitsData.lanType);
+                    Vits(VitsText);
+                } else if (whisperData.enable) {
+                    listener->listen();
                 }
-                ImGui::SetClipboardText(i.c_str());
-            }
-            if (vits && vitsData.enable) {
-                std::string VitsText = translator->translate(Utils::ExtractNormalText(response), vitsData.lanType);
-                Vits(VitsText);
-            } else if (whisperData.enable) {
-                listener->listen();
+            } else {
+                it = submit_futures.erase(it);
             }
         } else {
             ++it;
@@ -602,10 +591,10 @@ void Application::render_setting_box() {
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground);
 
     // 显示 OpenAI 配置
-    if (ImGui::CollapsingHeader("OpenAI")) {
-        ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用ChatGLM"), &configure.openAi.useLocalModel);
+    if (ImGui::CollapsingHeader("ChatBot")) {
+        ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用Claude (实验性功能)"), &configure.claude.enable);
 
-        if (!configure.openAi.useLocalModel) {
+        if (!configure.claude.enable) {
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
             double currentTime = ImGui::GetTime();
@@ -663,8 +652,52 @@ void Application::render_setting_box() {
                 }
             }
         } else {
-            ImGui::InputText(reinterpret_cast<const char *>(u8"ChatGLM的位置"),
+/*            ImGui::InputText(reinterpret_cast<const char *>(u8"ChatGLM的位置"),
                              configure.openAi.modelPath.data(),
+                             TEXT_BUFFER);*/
+            static bool showPassword = false, clicked = false;
+            static double lastInputTime = 0.0;
+            double currentTime = ImGui::GetTime();
+            strcpy_s(api_buffer, configure.claude.slackToken.c_str());
+            if (currentTime - lastInputTime > 0.5) {
+                showPassword = false;
+            }
+            if (showPassword || clicked) {
+                if (ImGui::InputText(reinterpret_cast<const char *>(u8"Claude Token"),
+                                     api_buffer,
+                                     sizeof(input_buffer))) {
+                    configure.claude.slackToken = api_buffer;
+                }
+
+            } else {
+                if (ImGui::InputText(reinterpret_cast<const char *>(u8"Claude Token"),
+                                     api_buffer,
+                                     sizeof(input_buffer),
+                                     ImGuiInputTextFlags_Password)) {
+                    configure.claude.slackToken = api_buffer;
+                    showPassword = true;
+                    lastInputTime = ImGui::GetTime();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::ImageButton(reinterpret_cast<void *>(eye_texture),
+                                   ImVec2(16, 16),
+                                   ImVec2(0, 0),
+                                   ImVec2(1, -1),
+                                   -1,
+                                   ImVec4(0, 0, 0, 0),
+                                   ImVec4(1, 1, 1, 1))) {
+                clicked = !clicked;
+            }
+            ImGui::InputText(reinterpret_cast<const char *>(u8"用户名"), configure.claude.userName.data(),
+                             TEXT_BUFFER);
+
+
+            ImGui::InputText("Claude Cookie",
+                             configure.claude.cookies.data(),
+                             TEXT_BUFFER);
+
+            ImGui::InputText(reinterpret_cast<const char *>(u8"Claude ID"), configure.claude.channelID.data(),
                              TEXT_BUFFER);
         }
     }
@@ -1005,7 +1038,7 @@ int Application::Renderer() {
     }
 
     // 清理资源
-
+    AppRunning = false;
     listener.reset();
     voiceToText.reset();
     bot.reset();
@@ -1073,7 +1106,7 @@ vector <Application::Chat> Application::load(std::string name) {
     return chat_history;
 }
 
-void Application::save(std::string name) {
+void Application::save(std::string name, bool out) {
     std::ofstream session_file(Conversation + name + ".yaml");
     session_file.imbue(std::locale("en_US.UTF-8"));
     if (session_file.is_open()) {
@@ -1103,9 +1136,11 @@ void Application::save(std::string name) {
         session_file << node;
 
         session_file.close();
-        LogInfo("Application : Save {0} successfully", name);
+        if (out)
+            LogInfo("Application : Save {0} successfully", name);
     } else {
-        LogError("Application Error: Unable to save session {0},{1}", name, ".");
+        if (out)
+            LogError("Application Error: Unable to save session {0},{1}", name, ".");
     }
 }
 
@@ -1125,7 +1160,8 @@ bool Application::Initialize() {
             }
         }
     }
-    convid = conversations[0];
+    if (!configure.claude.enable)
+        convid = conversations[0];
 
     bot->Load(convid);
     load(convid);
@@ -1277,12 +1313,13 @@ int Application::countTokens(const string &str) {
     return tokens.size();
 }
 
-void Application::ShowConfirmationDialog(const char *title, const char *content, bool &mstate,
-                                         ConfirmDelegate on_confirm,
-                                         const char *failure,
-                                         const char *success,
-                                         const char *confirm,
-                                         const char *cancel) {
+void Application::
+ShowConfirmationDialog(const char *title, const char *content, bool &mstate,
+                       ConfirmDelegate on_confirm,
+                       const char *failure,
+                       const char *success,
+                       const char *confirm,
+                       const char *cancel) {
     static bool Start = false;
     static bool reject = false;
     if (!reject) {

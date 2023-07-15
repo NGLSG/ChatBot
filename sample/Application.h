@@ -17,7 +17,7 @@
 #include "Configure.h"
 #include "utils.h"
 
-#define TEXT_BUFFER 1024
+#define TEXT_BUFFER 4096
 const std::string VERSION = reinterpret_cast<const char *>(u8"Listener v1.2");
 
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
@@ -32,6 +32,7 @@ enum State {
     NO_WHISPERMODEL,
     FIRST_USE,
 };
+
 
 class Application {
 private:
@@ -52,7 +53,6 @@ private:
         long long timestamp;
         std::string content;
     };
-
     Ref<Translate> translator;
     Ref<ChatBot> bot;
     Ref<VoiceToText> voiceToText;
@@ -117,8 +117,11 @@ private:
     bool OnlySetting = false;
     bool whisper = false;
     bool mwhisper = false;
+    bool AppRunning = true;
 
-    void save(std::string name = "default");
+    long long FirstTime;
+
+    void save(std::string name = "default", bool out = true);
 
     std::vector<Chat> load(std::string name = "default");
 
@@ -126,6 +129,16 @@ private:
 
     void add_chat_record(const Chat &data) {
         chat_history.push_back(data);
+    }
+
+    void deleteAllBotChat() {
+        chat_history.erase(
+                std::remove_if(chat_history.begin(), chat_history.end(),
+                               [](const Chat &c) {
+                                   return c.flag == 1;
+                               }),
+                chat_history.end());
+
     }
 
     // 渲染聊天框
@@ -165,6 +178,44 @@ private:
 
     int countTokens(const std::string &str);
 
+    void ClaudeHitsory() {
+        thread([&]() {
+            while (AppRunning) {
+                Chat botR;
+                botR.flag = 1;
+                auto _history = bot->GetHistory();
+                deleteAllBotChat();
+                for (auto &it: _history) {
+                    if (it.second != "Please note:") {
+                        botR.timestamp = it.first;
+                        botR.content = it.second;
+                        add_chat_record(botR);
+                    }
+                }
+                // 按时间戳排序
+                std::sort(chat_history.begin(), chat_history.end(), compareByTimestamp);
+
+                for (const auto &chat: chat_history) {
+                    if (chat.flag == 0) {
+                        FirstTime = chat.timestamp;
+                        break;
+                    }
+                }
+
+                // 删除早于FirstTime的对话
+                chat_history.erase(
+                        std::remove_if(chat_history.begin(), chat_history.end(),
+                                       [&](const Chat &c) {
+                                           return c.timestamp < FirstTime;
+                                       }),
+                        chat_history.end());
+                save(convid, false);
+                // 延迟1s
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            }
+        }).detach();
+    }
+
     static void EmptyFunction() {
         // Do nothing
     }
@@ -177,6 +228,10 @@ private:
                                 const char *cancel = reinterpret_cast<const char *>(u8"取消")
     );
 
+    static bool compareByTimestamp(const Chat &a, const Chat &b) {
+        return a.timestamp < b.timestamp;
+    }
+
     Billing billing;
 public:
     std::string WhisperConvertor(const std::string &file);
@@ -188,9 +243,6 @@ public:
     void VitsExeInstaller();
 
     bool Installer(std::map<std::string, std::string> tasks);
-
-    Application(const OpenAIData &chat_data, const TranslateData &data, const VITSData &VitsData,
-                const WhisperData &WhisperData, const Live2D &Live2D, bool setting = false);
 
     explicit Application(const Configure &configure, bool setting = false);
 
