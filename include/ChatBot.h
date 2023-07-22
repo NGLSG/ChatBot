@@ -156,7 +156,8 @@ public:
             // 发送失败,打印错误信息
             LogError(r.error.message);
         }*/
-        LogInfo("Claude : 不支持的操作");
+        Submit("请忘记上面的会话内容");
+        LogInfo("Claude : 重置成功");
     };
 
     virtual void Load(std::string name = "default") override {
@@ -177,13 +178,13 @@ public:
     }
 
     virtual Billing GetBilling() override {
-        return {999, 999, 0, 999};
+        return {999, 999, 0, Utils::getCurrentTimestamp()};
     };
 
     virtual map<long long, string> GetHistory() override {
         try {
             History.clear();
-            auto _ts=to_string(Logger::getCurrentTimestamp());
+            auto _ts = to_string(Logger::getCurrentTimestamp());
             cpr::Payload payload = {
                     {"channel", claudeData.channelID},
                     {"latest",  _ts},
@@ -214,6 +215,40 @@ private:
     map <string, string> ChannelListID;
     ClaudeData claudeData;
 };
+
+/*
+class Claude2 {
+public:
+    Claude2(const std::string &sessionKey) : sessionKey_(sessionKey) {}
+
+    std::string startConversation(const std::string &message) {
+        // 1. 开始新对话
+        cpr::Response r = cpr::Post(cpr::Url{"https://api.claude.ai/conversation"},
+                                    cpr::Body{{"message", message}},
+                                    cpr::Header{{"Content-Type", "application/json"},
+                                                {"Cookie",       "sessionKey=" + sessionKey_}});
+
+        // 2. 获取对话ID,使用 nlohmann::json 解析
+        json response = json::parse(r.text);
+        std::string conversationId = response["conversationId"];
+
+
+        // 3. 发送消息
+        r = cpr::Post(cpr::Url{"https://api.claude.ai/conversation/" + conversationId},
+                      cpr::Body{{"message", message}},
+                      cpr::Header{{"Content-Type", "application/json"},
+                                  {"Cookie",       "sessionKey=" + sessionKey_}});
+
+        // 4. 获取回复
+        std::string reply = r.text;
+
+        return reply;
+    }
+
+private:
+    std::string sessionKey_;
+};
+*/
 
 
 #endif

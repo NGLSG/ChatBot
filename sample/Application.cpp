@@ -10,7 +10,7 @@ Application::Application(const Configure &configure, bool setting) {
     translator = CreateRef<Translate>(configure.baiDuTranslator);
     if (configure.claude.enable) {
         bot = CreateRef<Claude>(configure.claude);
-        convid = "ClaudeOnly";
+        convid = "Claude";
         ClaudeHitsory();
     } else {
         bot = CreateRef<ChatGPT>(configure.openAi);
@@ -29,8 +29,12 @@ Application::Application(const Configure &configure, bool setting) {
         Utils::SaveFile(live2D.model, "Lconfig.txt");
         Utils::OpenProgram(live2D.bin.c_str());
     }
-    if (whisperData.enable && whisper && mwhisper)
+    if (whisperData.enable && whisper && mwhisper) {
         listener->listen();
+    }
+    if (vits) {
+        VitsListener();
+    }
 }
 
 GLuint Application::load_texture(const char *path) {
@@ -57,20 +61,33 @@ void Application::Vits(std::string text) {
     task.config = Utils::GetAbsolutePath(vitsData.config);
     task.text = text;
     task.sid = vitsData.speaker_id;
-    static bool is_playing = false;
     Utils::SaveYaml("task.yaml", Utils::toYaml(task));
+}
+
+void Application::VitsListener() {
+    static bool is_playing = false;
 
     std::thread([&]() {
-        std::string result = Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
+        std::thread([&]() {
+            Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
+        }).detach();
+        VitsTask task;
+        while (AppRunning) {
+            //std::string result = Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
 
-        if (result.find("Successfully saved!")) {
-            // 等待音频完成后再播放下一个
-            while (is_playing) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            //if (result.find("Synthesized and saved!")) {
+            if (UFile::Exists(task.outpath)) {
+                // 等待音频完成后再播放下一个
+                while (is_playing) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                is_playing = true;
+                listener->playRecorded(whisperData.enable);
+                is_playing = false;
+
+                std::remove(task.outpath.c_str());
             }
-            is_playing = true;
-            listener->playRecorded(whisperData.enable);
-            is_playing = false;
+            //}
         }
     }).detach();
 }
@@ -93,7 +110,8 @@ void Application::render_code_box() {
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
     style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
 
-    ImGui::Begin("Code Box", nullptr, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
+    ImGui::Begin("Code Box", nullptr,
+                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
 
     static bool show_codes = false;
@@ -319,6 +337,9 @@ void Application::render_chat_box() {
             if (ImGui::Button(reinterpret_cast<const char *>(u8"重置会话"), ImVec2(200, 30))) {
                 chat_history.clear();
                 bot->Reset();
+                if(configure.claude.enable){
+                    FirstTime = Utils::getCurrentTimestamp();
+                }
                 save(convid);
             }
             if (ImGui::Button(reinterpret_cast<const char *>(u8"删除当前会话"), ImVec2(200, 30)) &&
@@ -554,7 +575,8 @@ void Application::render_input_box() {
                     ImGui::SetClipboardText(i.c_str());
                 }
                 if (vits && vitsData.enable) {
-                    std::string VitsText = translator->translate(Utils::ExtractNormalText(response), vitsData.lanType);
+                    std::string VitsText = translator->translate(Utils::ExtractNormalText(response),
+                                                                 vitsData.lanType);
                     Vits(VitsText);
                 } else if (whisperData.enable) {
                     listener->listen();
@@ -633,7 +655,8 @@ void Application::render_setting_box() {
                              TEXT_BUFFER);
             ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用远程代理"), &configure.openAi.useWebProxy);
             if (!configure.openAi.useWebProxy)
-                ImGui::InputText(reinterpret_cast<const char *>(u8"对OpenAI使用的代理"), configure.openAi.proxy.data(),
+                ImGui::InputText(reinterpret_cast<const char *>(u8"对OpenAI使用的代理"),
+                                 configure.openAi.proxy.data(),
                                  TEXT_BUFFER);
             else {
                 if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"远程代理"),
@@ -747,13 +770,15 @@ void Application::render_setting_box() {
     if (ImGui::CollapsingHeader("VITS")) {
         static char search_text[256] = "";
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Vits"), &configure.vits.enable);
-        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(), TEXT_BUFFER);
+        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(),
+                         TEXT_BUFFER);
         ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 配置文件位置"), configure.vits.config.data(),
                          TEXT_BUFFER);
         ImGui::InputText(reinterpret_cast<const char *>(u8"Vits的语言类型"), configure.vits.lanType.data(),
                          TEXT_BUFFER);
         // 开始下拉列表
-        if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"角色"), speakers[configure.vits.speaker_id].c_str())) {
+        if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"角色"),
+                              speakers[configure.vits.speaker_id].c_str())) {
             // 在下拉框中添加一个文本输入框
             ImGui::InputTextWithHint("##Search", reinterpret_cast<const char *>(u8"搜索"), search_text,
                                      sizeof(search_text));
@@ -1363,7 +1388,8 @@ void Application::RuntimeDetector() {
                                reinterpret_cast<const char *>(u8"安装VitsConvertor成功"));
     } else if (!mwhisper) {
         ShowConfirmationDialog(reinterpret_cast<const char *>(u8"下载通知"),
-                               reinterpret_cast<const char *>(u8"检测到你并没安装Whisper Model,是否下载?"), mwhisper,
+                               reinterpret_cast<const char *>(u8"检测到你并没安装Whisper Model,是否下载?"),
+                               mwhisper,
                                [this]() { WhisperModelDownload(Utils::GetFileName(whisperData.model)); },
                                reinterpret_cast<const char *>(u8"安装Whisper Model失败"),
                                reinterpret_cast<const char *>(u8"安装Whisper Model成功"));

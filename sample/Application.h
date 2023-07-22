@@ -37,13 +37,13 @@ enum State {
 class Application {
 private:
 #ifdef _WIN32
-    const std::string VitsConvertUrl = "https://github.com/NGLSG/MoeGoe/releases/download/1.0/VitsConvertor-win64.tar.gz";
+    const std::string VitsConvertUrl = "https://github.com/NGLSG/MoeGoe/releases/download/1.1/VitsConvertor-win64.tar.gz";
     const std::string whisperUrl = "https://github.com/ggerganov/whisper.cpp/releases/download/v1.3.0/whisper-bin-Win32.zip";
     const std::string vitsFile = "VitsConvertor.tar.gz";
     const std::string exeSuffix = ".exe";
 #else
     const std::string whisperUrl = "https://github.com/ggerganov/whisperData.cpp/releases/download/v1.3.0/whisper-bin-x64.zip";
-    const std::string VitsConvertUrl = "https://github.com/NGLSG/MoeGoe/releases/download/1.0/VitsConvertor-linux64.tar.xz";
+    const std::string VitsConvertUrl = "https://github.com/NGLSG/MoeGoe/releases/download/1.1/VitsConvertor-linux64.tar.xz";
     const std::string vitsFile = "VitsConvertor.tar.gz";
     const std::string exeSuffix = "";
 #endif
@@ -118,8 +118,7 @@ private:
     bool whisper = false;
     bool mwhisper = false;
     bool AppRunning = true;
-
-    long long FirstTime;
+    long long FirstTime = 0;
 
     void save(std::string name = "default", bool out = true);
 
@@ -140,6 +139,8 @@ private:
                 chat_history.end());
 
     }
+
+    void VitsListener();
 
     // 渲染聊天框
     void render_chat_box();
@@ -180,6 +181,7 @@ private:
 
     void ClaudeHitsory() {
         thread([&]() {
+            FirstTime = Utils::getCurrentTimestamp();
             while (AppRunning) {
                 Chat botR;
                 botR.flag = 1;
@@ -210,8 +212,8 @@ private:
                                        }),
                         chat_history.end());
                 save(convid, false);
-                // 延迟1s
-                std::this_thread::sleep_for(std::chrono::seconds(1));
+                // 延迟0.002s
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
         }).detach();
     }
