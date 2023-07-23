@@ -1,10 +1,10 @@
 <p align="center">
-    <img src="https://github.com/NGLSG/ChatGPT/raw/main/img/self.png" width="200" height="200" alt="ChatGPT">
+    <img src="https://github.com/NGLSG/ChatBot/raw/main/img/self.png" width="200" height="200" alt="ChatGPT">
 </p>
 
 <div align="center">
 
-# ChatGPT
+# ChatBot
 
 _✨基于nlohmann,cpr,spdlog的ChatGPT API✨_
 

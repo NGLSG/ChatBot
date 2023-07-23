@@ -47,8 +47,8 @@ struct WhisperData {
 
 struct LConfigure {
     std::string model = "Mao";
-    float scaleX = 1;
-    float scaleY = 1;
+    float scaleX = 1.0;
+    float scaleY = 1.0;
 };
 
 struct ClaudeData {

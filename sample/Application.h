@@ -18,7 +18,7 @@
 #include "utils.h"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char *>(u8"Listener v1.2");
+const std::string VERSION = reinterpret_cast<const char *>(u8"Listener v1.2.1");
 
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
 typedef std::function<void()> ConfirmDelegate;
@@ -78,6 +78,7 @@ private:
 
     State state = State::OK;
     Configure configure;
+    LConfigure lConfigure;
     int select_id = 0;
     int role_id = 0;
     int Rnum = 0;

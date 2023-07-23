@@ -25,9 +25,8 @@ Application::Application(const Configure &configure, bool setting) {
         LogWarn("Warning: Initialization failed!Maybe some function can not working");
     }
     if (live2D.enable) {
-
-        Utils::SaveFile(live2D.model, "Lconfig.txt");
         Utils::OpenProgram(live2D.bin.c_str());
+        lConfigure=Utils::LoadYaml<LConfigure>("Lconfig.yml");
     }
     if (whisperData.enable && whisper && mwhisper) {
         listener->listen();
@@ -337,7 +336,7 @@ void Application::render_chat_box() {
             if (ImGui::Button(reinterpret_cast<const char *>(u8"重置会话"), ImVec2(200, 30))) {
                 chat_history.clear();
                 bot->Reset();
-                if(configure.claude.enable){
+                if (configure.claude.enable) {
                     FirstTime = Utils::getCurrentTimestamp();
                 }
                 save(convid);
@@ -806,10 +805,15 @@ void Application::render_setting_box() {
         auto it = std::find(mdirs.begin(), mdirs.end(), configure.live2D.model);
         if (it != mdirs.end() && mdirs.size() > 1) {
             selected_dir = std::distance(mdirs.begin(), it);
+            lConfigure.model = configure.live2D.model;
         }
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Live2D"), &configure.live2D.enable);
         ImGui::InputText(reinterpret_cast<const char *>(u8"Live2D 可执行文件"), configure.live2D.bin.data(),
                          TEXT_BUFFER);
+        ImGui::InputFloat(reinterpret_cast<const char *>(u8"宽度缩放(400 * ScaleX)"), &lConfigure.scaleX,
+                          0.1f, 1.0f, "%.2f");
+        ImGui::InputFloat(reinterpret_cast<const char *>(u8"高度缩放(400 * ScaleY)"), &lConfigure.scaleY,
+                          0.1f, 1.0f, "%.2f");
 
         if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"Live2D 模型"),
                               Utils::GetFileName(mdirs[selected_dir]).c_str())) // 开始下拉列表
@@ -845,6 +849,7 @@ void Application::render_setting_box() {
     // 保存配置
     if (ImGui::Button(reinterpret_cast<const char *>(u8"保存配置"))) {
         Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+        Utils::SaveYaml("Lconfig.yml", Utils::toYaml(lConfigure));
         should_restart = true;
     }
 
@@ -950,9 +955,9 @@ void Application::WhisperExeInstaller() {
 
 void Application::VitsExeInstaller() {
     std::map<std::string, std::string> tasks = {
-            {VitsConvertUrl, bin + VitsPath + vitsFile}
+            {VitsConvertUrl, bin + VitsConvertor + vitsFile}
     };
-    vits = Installer(tasks) && Utils::Decompress(bin + VitsPath + vitsFile);
+    vits = Installer(tasks) && Utils::Decompress(bin + VitsConvertor + vitsFile);
     //return vits;
 }
 
