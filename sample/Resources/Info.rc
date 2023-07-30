@@ -19,13 +19,13 @@ BEGIN
         BLOCK "080404b0"
         BEGIN
             VALUE "CompanyName", "Gezhi Studio"
-            VALUE "FileDescription", "ÇãÌýÕß³ÌÐò"
-            VALUE "FileVersion", "1.0.0.1"
-            VALUE "InternalName", "ChatBot.exe"
+            VALUE "FileDescription", ""
+            VALUE "FileVersion", "1.2.0.1"
+            VALUE "InternalName", "CyberGirl.exe"
             VALUE "LegalCopyright", "Copyright (C) 2023 Gezhi Studio"
-            VALUE "OriginalFilename", "ChatBot.exe"
-            VALUE "ProductName", "ÇãÌýÕß"
-            VALUE "ProductVersion", "1.0.0.1"
+            VALUE "OriginalFilename", "CyberGirl.exe"
+            VALUE "ProductName", ""
+            VALUE "ProductVersion", "1.2.0.1"
         END
     END
     BLOCK "VarFileInfo"

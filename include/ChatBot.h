@@ -86,7 +86,7 @@ private:
     std::map<std::string, json> Conversation;
     std::mutex print_mutex;
     const std::string ConversationPath = "Conversations/";
-    const std::string sys = "You are ChatGPT, a large language model trained by OpenAI. Respond conversationally";
+    const std::string sys = "You are ChatGPT, a large language model trained by OpenAI. Respond conversationally.";
     const std::string suffix = ".dat";
     const std::vector<std::string> WebProxies{"https://nglsg.ml/",
                                               "https://service-hbv9ql2m-1306800451.sg.apigw.tencentcs.com/"};

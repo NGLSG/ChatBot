@@ -842,8 +842,6 @@ std::string Utils::ReadFile(const std::string &filename) {
 #ifdef WIN32
 
 #include <windows.h>
-#include <tchar.h>
-#include <string>
 #include <thread>
 
 void Utils::OpenProgram(const char *path) {
@@ -899,7 +897,6 @@ void Utils::OpenProgram(const char *path) {
     });
     worker.detach();
 }
-
 #else
 void Utils::OpenProgram(const char *path){}
 #endif

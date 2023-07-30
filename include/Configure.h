@@ -33,6 +33,7 @@ struct VitsTask {
 
 struct VITSData {
     bool enable = false;
+    std::string modelName="empty";
     std::string model;
     std::string config;
     std::string lanType = "jp";
@@ -197,6 +198,7 @@ namespace YAML {
     struct convert<VITSData> {
         static Node encode(const VITSData &data) {
             Node node;
+            node["modelName"] = data.modelName;
             node["model"] = data.model;
             node["config"] = data.config;
             node["lanType"] = data.lanType;
@@ -211,6 +213,7 @@ namespace YAML {
             }
             data.enable = node["enable"].as<bool>();
             data.model = node["model"].as<std::string>();
+            data.modelName = node["modelName"].as<std::string>();
             data.config = node["config"].as<std::string>();
             data.speaker_id = node["speaker_id"].as<int>();
             if (node["lanType"]) {

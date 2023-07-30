@@ -127,7 +127,6 @@ std::string ChatGPT::Submit(std::string prompt, std::string role, std::string co
     for (char c: text) {
         str += c;
         std::cout << "\rBot: " << str << flush;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     return text;
 }

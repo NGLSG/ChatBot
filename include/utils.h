@@ -25,6 +25,27 @@ extern std::string FileName;
 class UFile {
 public:
     static bool Exists(const std::string &filename);
+
+    // 获取目录下所有文件
+    static std::vector<std::string> GetFilesInDirectory(const std::string &folder) {
+
+        std::vector<std::string> result;
+
+        // 使用filesystem遍历目录
+        for (const auto &entry: std::filesystem::directory_iterator(folder)) {
+            result.push_back(entry.path().string());
+        }
+
+        return result;
+
+    }
+
+    // 检查是否以某后缀结尾
+    static bool EndsWith(const std::string &str, const std::string &suffix) {
+
+        return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
+
+    }
 };
 
 class UDirectory {
@@ -170,6 +191,37 @@ public:
             }
         }
         return result;
+    }
+
+    // 获取文件夹下所有指定后缀的文件
+    static std::vector<std::string> GetFilesWithExt(const std::string& folder,
+                                                    const std::string& ext = ".txt") {
+
+        std::vector<std::string> files = UFile::GetFilesInDirectory(folder);
+
+        std::vector<std::string> result;
+
+        // 找到所有匹配的文件
+        for(const auto& file : files) {
+            if(UFile::EndsWith(file, ext)) {
+                result.push_back(file);
+            }
+        }
+
+        return result;
+
+    }
+    // 如果vector为空,返回默认值。否则返回第一个元素。
+    static std::string GetDefaultIfEmpty(const std::vector<std::string>& vec,
+                                  const std::string& defaultValue) {
+
+        if (vec.empty()) {
+            return defaultValue;
+
+        } else {
+            return vec[0];
+        }
+
     }
 };
 

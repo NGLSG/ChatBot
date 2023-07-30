@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(ChatBot)
+project(CyberGirl)
 
 set(CMAKE_CXX_STANDARD 20)
 add_definitions(-w)
@@ -48,12 +48,12 @@ set(HEADERS
 
 # 添加可执行文件
 
-add_executable(ChatBot ${SOURCES} ${HEADERS})
-target_precompile_headers(ChatBot PRIVATE ../include/pch.h)
+add_executable(CyberGirl ${SOURCES} ${HEADERS})
+target_precompile_headers(CyberGirl PRIVATE ../include/pch.h)
 # 添加头文件目录
-target_include_directories(ChatBot PRIVATE ../include)
+target_include_directories(CyberGirl PRIVATE ../include)
 # 链接依赖库
-target_link_libraries(ChatBot
+target_link_libraries(CyberGirl
         PRIVATE portaudio
         PRIVATE ${SNDFILE_LIBRARIES}
         PRIVATE OpenGL::GL
@@ -66,20 +66,20 @@ target_link_libraries(ChatBot
         PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 
 # 添加资源文件
-target_sources(ChatBot PRIVATE
+target_sources(CyberGirl PRIVATE
         Resources/Info.rc
         Resources/Info.plist
         Resources/icon.png)
 
 # 指定资源文件输出目录
-set_target_properties(ChatBot PROPERTIES
+set_target_properties(CyberGirl PROPERTIES
         RESOURCE "Resources/Info.rc"
         RESOURCE "Resources/Info.plist"
         RESOURCE "Resources/icon.png"
         )
 
 # 指定资源文件输出目录
-set_target_properties(ChatBot PROPERTIES
+set_target_properties(CyberGirl PROPERTIES
         VS_RESOURCE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Resources"
         XCODE_ATTRIBUTE_RESOURCE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Resources"
         )

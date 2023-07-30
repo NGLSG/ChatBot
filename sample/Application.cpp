@@ -11,11 +11,11 @@ Application::Application(const Configure &configure, bool setting) {
     if (configure.claude.enable) {
         bot = CreateRef<Claude>(configure.claude);
         convid = "Claude";
-        ClaudeHitsory();
+        claudeHistory();
     } else {
         bot = CreateRef<ChatGPT>(configure.openAi);
     }
-    billing = bot->GetBilling();
+    //billing = bot->GetBilling();
     voiceToText = CreateRef<VoiceToText>(configure.openAi);
     listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
     vitsData = configure.vits;
@@ -26,17 +26,25 @@ Application::Application(const Configure &configure, bool setting) {
     }
     if (live2D.enable) {
         Utils::OpenProgram(live2D.bin.c_str());
-        lConfigure=Utils::LoadYaml<LConfigure>("Lconfig.yml");
+        lConfigure = Utils::LoadYaml<LConfigure>("Lconfig.yml");
     }
     if (whisperData.enable && whisper && mwhisper) {
         listener->listen();
     }
-    if (vits) {
+    if (vitsData.enable && vits && vitsModel) {
+        Vits(" ");
+#ifdef WIN32
+        Utils::OpenProgram("bin/VitsConvertor/VitsConvertor.exe");
+#else
+        std::thread([&]() {
+            Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
+        }).detach();
+#endif
         VitsListener();
     }
 }
 
-GLuint Application::load_texture(const char *path) {
+GLuint Application::LoadTexture(const char *path) {
     int width, height, channels;
     stbi_set_flip_vertically_on_load(true);
     unsigned char *data = stbi_load(path, &width, &height, &channels, 0);
@@ -65,11 +73,8 @@ void Application::Vits(std::string text) {
 
 void Application::VitsListener() {
     static bool is_playing = false;
-
     std::thread([&]() {
-        std::thread([&]() {
-            Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
-        }).detach();
+
         VitsTask task;
         while (AppRunning) {
             //std::string result = Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
@@ -91,23 +96,8 @@ void Application::VitsListener() {
     }).detach();
 }
 
-void Application::render_code_box() {
-    ImGuiStyle &style = ImGui::GetStyle();
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_Header] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_Button] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+void Application::RenderCodeBox() {
+    UniversalStyle();
 
     ImGui::Begin("Code Box", nullptr,
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
@@ -132,20 +122,8 @@ void Application::render_code_box() {
     ImGui::End();
 }
 
-void Application::render_popup_box() {
-    // 定制样式
-    ImVec4 button_color(0.8f, 0.8f, 0.8f, 1.0f); // 将按钮颜色设置为浅白色
-    ImVec4 button_hovered_color(0.15f, 0.45f, 0.65f, 1.0f);
-    ImGuiStyle &style = ImGui::GetStyle();
-    style.Colors[ImGuiCol_PopupBg] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.FrameRounding = 5.0f;
-    style.GrabRounding = 5.0f;
-    style.WindowRounding = 5.0f;
-    style.Colors[ImGuiCol_Button] = button_color;
-    style.Colors[ImGuiCol_ButtonHovered] = button_hovered_color;
-    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+void Application::RenderPopupBox() {
+    UniversalStyle();
     if (show_input_box) {
         ImGui::OpenPopup(reinterpret_cast<const char *>(u8"新建对话##popup"));
     }
@@ -187,32 +165,10 @@ void Application::render_popup_box() {
         }
         ImGui::EndPopup();
     }
-    // 恢复默认样式
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.94f, 0.94f, 0.94f, 1.0f);
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.27f, 0.27f, 0.27f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.32f, 0.32f, 0.32f, 1.0f);
-    style.FrameRounding = 0.0f;
-    style.GrabRounding = 0.0f;
-    style.WindowRounding = 9.0f;
 }
 
-void Application::render_chat_box() {
-    ImGuiStyle &style = ImGui::GetStyle();
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_Header] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_Button] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+void Application::RenderChatBox() {
+    UniversalStyle();
     // 创建一个子窗口
     ImGui::Begin("Chat", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
 
@@ -385,12 +341,11 @@ void Application::render_chat_box() {
         }
         ImGui::EndMenuBar();
     }
-
     ImGui::End();
 }
 
 //Optimized code
-void Application::render_input_box() {
+void Application::RenderInputBox() {
     static std::vector<std::shared_future<std::string>> submit_futures;
     if (listener && listener->IsRecorded()) {
         std::thread([&]() {
@@ -421,11 +376,12 @@ void Application::render_input_box() {
                         if (whisperData.enable)
                             listener->listen();
                     } else {
+                        text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
                         last_input = text;
                         Chat user;
                         user.timestamp = Utils::getCurrentTimestamp();
                         user.content = last_input;
-                        add_chat_record(user);
+                        AddChatRecord(user);
 
                         Rnum -= 1;
 
@@ -448,12 +404,8 @@ void Application::render_input_box() {
             listener->changeFile("recorded" + std::to_string(Rnum) + ".wav");
         }).detach();
     }
-
     {
-        ImGuiStyle &style = ImGui::GetStyle();
-        style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-        style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-        style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+        UniversalStyle();
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 5));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(5, 5));
@@ -467,7 +419,7 @@ void Application::render_input_box() {
         ImGui::Begin("Input filed", NULL,
                      ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
                      ImGuiWindowFlags_NoTitleBar);
-        ImGui::BeginGroup();
+/*        ImGui::BeginGroup();
         // 设置子窗口的背景颜色为浅灰色
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
 // 设置子窗口的圆角半径为10像素
@@ -502,7 +454,7 @@ void Application::render_input_box() {
         ImGui::PopStyleColor(2);
 // 结束子窗口
         ImGui::EndChild();
-        ImGui::EndGroup();
+        ImGui::EndGroup();*/
 
         ImVec2 size(50, 0);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
@@ -523,11 +475,11 @@ void Application::render_input_box() {
         input_text.clear();
     }
 
-    if ((strlen(last_input.c_str()) > 0 && ImGui::IsKeyPressed(ImGuiKey_Enter) && !ImGui::GetIO().KeyCtrl)) {
+    if ((strlen(last_input.c_str()) > 0 && ImGui::IsKeyPressed(ImGuiKey_Enter) && (!ImGui::GetIO().KeyCtrl))) {
         Chat user;
         user.timestamp = Utils::getCurrentTimestamp();
         user.content = last_input;
-        add_chat_record(user); // 使用last_input作为键
+        AddChatRecord(user); // 使用last_input作为键
         if (whisperData.enable)
             listener->ResetRecorded();
         std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]() {
@@ -553,7 +505,7 @@ void Application::render_input_box() {
 
                 botR.timestamp = Utils::getCurrentTimestamp();
                 botR.content = response;
-                add_chat_record(botR);
+                AddChatRecord(botR);
 
                 it = submit_futures.erase(it);
                 auto tmp_code = Utils::GetAllCodesFromText(response);
@@ -590,7 +542,53 @@ void Application::render_input_box() {
     ImGui::PopStyleVar(9);
 }
 
-void Application::render_setting_box() {
+void Application::RenderConversationBox() {
+
+    UniversalStyle();
+    ImGui::Begin("Conversation", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
+    if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["add"]), ImVec2(16, 16),
+                           ImVec2(0, 0),
+                           ImVec2(1, -1))) {
+        // 显示输入框
+        show_input_box = true;
+    }
+    ImGui::SameLine();
+    ImGui::Text(reinterpret_cast<const char *>(u8"新建会话"));
+    for (const auto &conversation: conversations) {
+        ImGui::BeginGroup();
+        // 消息框
+        ImGui::Image(reinterpret_cast<void *>(TextureCache["message"]), ImVec2(32, 32),
+                     ImVec2(0, 0),
+                     ImVec2(1, -1));
+
+        // 消息文本
+        ImGui::SameLine();
+        if (ImGui::Button(conversation.c_str(), ImVec2(100, 30))) {
+            convid = conversation;
+            bot->Load(convid);
+            load(convid);
+        }
+
+        // 删除按钮
+        ImGui::SameLine();
+        if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["del"]), ImVec2(16, 16),
+                               ImVec2(0, 0),
+                               ImVec2(1, -1)) &&
+            conversations.size() > 1) {
+            bot->Del(convid);
+            del(convid);
+            bot->Load(convid);
+            load(convid);
+            ImGui::EndGroup();
+            break;
+        }
+        ImGui::EndGroup();
+    }
+    ImGui::End();
+}
+
+void Application::RenderConfigBox() {
+    UniversalStyle();
     static bool no_key = false;
     static bool first = false;
     switch (state) {
@@ -608,10 +606,10 @@ void Application::render_setting_box() {
     }
     static bool should_restart = false;
 
-    ImGui::Begin(reinterpret_cast<const char *>(u8"设置"), NULL,
+    ImGui::Begin(reinterpret_cast<const char *>(u8"配置"), NULL,
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground);
 
-    // 显示 OpenAI 配置
+    // 显示 ChatBot 配置
     if (ImGui::CollapsingHeader("ChatBot")) {
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用Claude (实验性功能)"), &configure.claude.enable);
 
@@ -641,7 +639,7 @@ void Application::render_setting_box() {
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void *>(eye_texture),
+            if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["eye"]),
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, -1),
@@ -702,7 +700,7 @@ void Application::render_setting_box() {
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void *>(eye_texture),
+            if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["eye"]),
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, -1),
@@ -750,7 +748,7 @@ void Application::render_setting_box() {
             }
         }
         ImGui::SameLine();
-        if (ImGui::ImageButton(reinterpret_cast<void *>(eye_texture),
+        if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["eye"]),
                                ImVec2(16, 16),
                                ImVec2(0, 0),
                                ImVec2(1, -1),
@@ -767,35 +765,102 @@ void Application::render_setting_box() {
 
     // 显示 VITS 配置
     if (ImGui::CollapsingHeader("VITS")) {
+        vitsModels = Utils::GetDirectories(model + VitsPath);
+        auto it = std::find(vitsModels.begin(), vitsModels.end(), configure.vits.modelName);
+        if (it != vitsModels.end()) {
+            // 找到了,计算索引
+            vselected_dir = std::distance(vitsModels.begin(), it);
+            if (UFile::Exists(configure.vits.config)) {
+                std::string config;
+                config = Utils::ReadFile(configure.vits.config);
+                if (!config.empty()) {
+                    json _config = json::parse(config);
+                    speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
+                }
+            }
+
+        } else {
+            // 没找到,设置为0
+            vselected_dir = 0;
+        }
+
         static char search_text[256] = "";
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Vits"), &configure.vits.enable);
-        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(),
-                         TEXT_BUFFER);
-        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 配置文件位置"), configure.vits.config.data(),
-                         TEXT_BUFFER);
-        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits的语言类型"), configure.vits.lanType.data(),
-                         TEXT_BUFFER);
+/*        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(),
+                         TEXT_BUFFER);*/
         // 开始下拉列表
-        if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"角色"),
-                              speakers[configure.vits.speaker_id].c_str())) {
+        if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"模型"),
+                              Utils::GetFileName(vitsModels[vselected_dir]).c_str())) {
             // 在下拉框中添加一个文本输入框
-            ImGui::InputTextWithHint("##Search", reinterpret_cast<const char *>(u8"搜索"), search_text,
+            ImGui::InputTextWithHint("##Search1", reinterpret_cast<const char *>(u8"搜索"), search_text,
                                      sizeof(search_text));
 
             // 遍历所有选项
-            for (int i = 0; i < speakers.size(); i++) {
+            for (int i = 0; i < vitsModels.size(); i++) {
                 // 如果搜索关键字为空，或者当前选项匹配搜索关键字
-                if (search_text[0] == '\0' || strstr(speakers[i].c_str(), search_text) != nullptr) {
-                    bool is_selected = (configure.vits.speaker_id == i);
-                    if (ImGui::Selectable(speakers[i].c_str(), is_selected)) {
-                        configure.vits.speaker_id = i;
+                if (search_text[0] == '\0' ||
+                    strstr(Utils::GetFileName(vitsModels[i]).c_str(), search_text) != nullptr) {
+                    bool is_selected = (vselected_dir == i);
+                    if (ImGui::Selectable(Utils::GetFileName(vitsModels[i]).c_str(), is_selected)) {
+                        vselected_dir = i;
                     }
                     if (is_selected) {
                         ImGui::SetItemDefaultFocus();
                     }
                 }
             }
+            configure.vits.modelName = vitsModels[vselected_dir].c_str();
+            // 检查vitsModels数组不为空并且当前项不为"empty"
+            if (vitsModels.size() > 0 && vitsModels[vselected_dir] != "empty") {
+
+                // 获取.pth和.json文件
+                std::vector<std::string> pth_files = Utils::GetFilesWithExt(vitsModels[vselected_dir] + "/", ".pth");
+                std::vector<std::string> json_files = Utils::GetFilesWithExt(vitsModels[vselected_dir] + "/", ".json");
+
+                // 设置模型和配置文件
+                configure.vits.model = Utils::GetDefaultIfEmpty(pth_files, "model.pth");
+                configure.vits.config = Utils::GetDefaultIfEmpty(json_files, "config.json");
+
+                // 检查配置文件是否存在
+                if (UFile::Exists(configure.vits.config)) {
+
+                    // 读取配置文件
+                    std::string config = Utils::ReadFile(configure.vits.config);
+
+                    if (!config.empty()) {
+                        // 解析配置,获取speakers
+                        json j = json::parse(config);
+                        speakers = Utils::JsonArrayToStringVector(j["speakers"]);
+                    }
+                    configure.vits.speaker_id = 0;
+                }
+
+            }
             ImGui::EndCombo();
+        }
+        // 开始下拉列表
+        if (vitsModels[vselected_dir] != "empty") {
+            if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"角色"),
+                                  speakers[configure.vits.speaker_id].c_str())) {
+                // 在下拉框中添加一个文本输入框
+                ImGui::InputTextWithHint("##Search", reinterpret_cast<const char *>(u8"搜索"), search_text,
+                                         sizeof(search_text));
+
+                // 遍历所有选项
+                for (int i = 0; i < speakers.size(); i++) {
+                    // 如果搜索关键字为空，或者当前选项匹配搜索关键字
+                    if (search_text[0] == '\0' || strstr(speakers[i].c_str(), search_text) != nullptr) {
+                        bool is_selected = (configure.vits.speaker_id == i);
+                        if (ImGui::Selectable(speakers[i].c_str(), is_selected)) {
+                            configure.vits.speaker_id = i;
+                        }
+                        if (is_selected) {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                }
+                ImGui::EndCombo();
+            }
         }
     }
 
@@ -899,6 +964,121 @@ void Application::render_setting_box() {
     }
 }
 
+void Application::RenderUI() {
+    ImGui::DockSpaceOverViewport();
+    RuntimeDetector();
+    ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+    if (!OnlySetting) {
+        RenderInputBox();
+        RenderPopupBox();
+        RenderConfigBox();
+        RenderChatBox();
+        RenderCodeBox();
+        RenderConversationBox();
+    } else {
+        RenderConfigBox();
+    }
+}
+
+int Application::Renderer() {
+    // 初始化GLFW
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    // 创建窗口
+    GLFWwindow *window = glfwCreateWindow(800, 600, VERSION.c_str(), NULL, NULL);
+    glfwMakeContextCurrent(window);
+
+    // 初始化OpenGL
+    glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // 初始化ImGui
+    GLFWimage images[1];
+    images[0].pixels = stbi_load("Resources/icon.png", &images[0].width, &images[0].height, 0, 4); //rgba channels
+    glfwSetWindowIcon(window, 1, images);
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+
+    ImFontConfig config;
+    config.OversampleH = 1;
+    config.OversampleV = 1;
+    config.PixelSnapH = true;
+    config.GlyphExtraSpacing = ImVec2(0.0f, 1.0f);
+    ImFont *font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", 16.0f, &config,
+                                                io.Fonts->GetGlyphRangesChineseFull());
+    IM_ASSERT(font != NULL);
+    io.DisplayFramebufferScale = ImVec2(0.8f, 0.8f);
+    (void) io;
+    ImGui::StyleColorsDark();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+
+    // 启用Docking
+    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    // 设置 ImGui 全局样式属性
+
+    ImGuiStyle &style = ImGui::GetStyle();
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
+    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+    style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+    style.Colors[ImGuiCol_Header] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+    style.Colors[ImGuiCol_Button] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+    style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+    style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
+
+    TextureCache["eye"] = LoadTexture("Resources/eye.png");
+    TextureCache["message"] = LoadTexture("Resources/message.png");
+    TextureCache["del"] = LoadTexture("Resources/del.png");
+    TextureCache["add"] = LoadTexture("Resources/add.png");
+    // 渲染循环
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        RenderUI();
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        glfwSwapBuffers(window);
+    }
+
+    // 清理资源
+    AppRunning = false;
+    listener.reset();
+    voiceToText.reset();
+    bot.reset();
+    translator.reset();
+
+    stbi_image_free(images[0].pixels);
+    for (auto &it: TextureCache) {
+        glDeleteTextures(1, &it.second);
+    }
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    glfwTerminate();
+    return 0;
+}
+
 bool Application::CheckFileExistence(const std::string &filePath, const std::string &fileType,
                                      const std::string &executableFile, bool isExecutable) {
     if (isExecutable) {
@@ -971,116 +1151,6 @@ bool Application::Installer(std::map<std::string, std::string> tasks) {
         LogError("Application Error: Download failed.");
         return false;
     }
-}
-
-void Application::render_ui() {
-    ImGui::DockSpaceOverViewport();
-    RuntimeDetector();
-    ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
-    if (!OnlySetting) {
-        render_input_box();
-        render_popup_box();
-        render_setting_box();
-        render_chat_box();
-        render_code_box();
-    } else {
-        render_setting_box();
-    }
-}
-
-int Application::Renderer() {
-    // 初始化GLFW
-    glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    // 创建窗口
-    GLFWwindow *window = glfwCreateWindow(800, 600, VERSION.c_str(), NULL, NULL);
-    glfwMakeContextCurrent(window);
-
-    // 初始化OpenGL
-    glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    // 初始化ImGui
-    GLFWimage images[1];
-    images[0].pixels = stbi_load("Resources/icon.png", &images[0].width, &images[0].height, 0, 4); //rgba channels
-    glfwSetWindowIcon(window, 1, images);
-
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
-
-    ImFontConfig config;
-    config.OversampleH = 1;
-    config.OversampleV = 1;
-    config.PixelSnapH = true;
-    config.GlyphExtraSpacing = ImVec2(0.0f, 1.0f);
-    ImFont *font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", 16.0f, &config,
-                                                io.Fonts->GetGlyphRangesChineseFull());
-    IM_ASSERT(font != NULL);
-    io.DisplayFramebufferScale = ImVec2(0.8f, 0.8f);
-    (void) io;
-    ImGui::StyleColorsDark();
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 330");
-
-    // 启用Docking
-    ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    // 设置 ImGui 全局样式属性
-
-    ImGuiStyle &style = ImGui::GetStyle();
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_FrameBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_Header] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_Button] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-    style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-    style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-
-    //send_texture = load_texture("Resources/send.png");
-    eye_texture = load_texture("Resources/eye.png");
-    // 渲染循环
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-        render_ui();
-
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-        glfwSwapBuffers(window);
-    }
-
-    // 清理资源
-    AppRunning = false;
-    listener.reset();
-    voiceToText.reset();
-    bot.reset();
-    translator.reset();
-
-    stbi_image_free(images[0].pixels);
-    glDeleteTextures(1, &send_texture);
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-    glfwTerminate();
-    return 0;
 }
 
 void Application::del(std::string name) {
@@ -1235,18 +1305,11 @@ bool Application::Initialize() {
         // 检查VITS模型文件是否存在
         if (!CheckFileExistence(vitsData.model, "model file") ||
             !CheckFileExistence(vitsData.config, "Configuration file")) {
-            vits = false;
+            vitsModel = false;
             success = false;
         }
     }
-    if (CheckFileExistence(vitsData.config, "Configuration file")) {
-        std::string config;
-        config = Utils::ReadFile(vitsData.config);
-        if (!config.empty()) {
-            json _config = json::parse(config);
-            speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
-        }
-    }
+
     if (live2D.enable) {
         if (!CheckFileExistence(live2D.bin, "Live2D executable file")) {
             LogWarn("Initialize Warning: Since you don't have a \"Live2D Executable file\", the Live2D function isn't working properly!");
@@ -1400,4 +1463,45 @@ void Application::RuntimeDetector() {
                                reinterpret_cast<const char *>(u8"安装Whisper Model成功"));
     }
 }
+
+void Application::claudeHistory() {
+    thread([&]() {
+        FirstTime = Utils::getCurrentTimestamp();
+        while (AppRunning) {
+            Chat botR;
+            botR.flag = 1;
+            auto _history = bot->GetHistory();
+            DeleteAllBotChat();
+            for (auto &it: _history) {
+                if (it.second != "Please note:") {
+                    botR.timestamp = it.first;
+                    botR.content = it.second;
+                    AddChatRecord(botR);
+                }
+            }
+            // 按时间戳排序
+            std::sort(chat_history.begin(), chat_history.end(), compareByTimestamp);
+
+            for (const auto &chat: chat_history) {
+                if (chat.flag == 0) {
+                    FirstTime = chat.timestamp;
+                    break;
+                }
+            }
+
+            // 删除早于FirstTime的对话
+            chat_history.erase(
+                    std::remove_if(chat_history.begin(), chat_history.end(),
+                                   [&](const Chat &c) {
+                                       return c.timestamp < FirstTime;
+                                   }),
+                    chat_history.end());
+            save(convid, false);
+            // 延迟0.002s
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    }).detach();
+}
+
+
 

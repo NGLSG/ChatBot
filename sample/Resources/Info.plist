@@ -4,15 +4,15 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>ChatGPT</string>
+	<string>CyberGirl</string>
 	<key>CFBundleExecutable</key>
-	<string>ChatGPT</string>
+	<string>CyberGirl</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.gezhi.chatbot</string>
+	<string>com.gezhi.cybergirl</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>ChatGPT</string>
+	<string>CyberGirl</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -22,7 +22,7 @@
 	<key>CFBundleIconFile</key>
 	<string>icon.icns</string>
 	<key>CFBundleGetInfoString</key>
-	<string>ChatGPT</string>
+	<string>CyberGirl</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh</string>
 </dict>

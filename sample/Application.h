@@ -9,6 +9,7 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 #include <regex>
+#include <stb_image_write.h>
 #include "stb_image.h"
 #include "ChatBot.h"
 #include "VoiceToText.h"
@@ -18,7 +19,7 @@
 #include "utils.h"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char *>(u8"Listener v1.2.1");
+const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.2.1");
 
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
 typedef std::function<void()> ConfirmDelegate;
@@ -53,6 +54,15 @@ private:
         long long timestamp;
         std::string content;
     };
+
+    // 纹理元数据
+    struct TextureMetaData {
+        std::string path;
+        int width;
+        int height;
+        int channels;
+    };
+
     Ref<Translate> translator;
     Ref<ChatBot> bot;
     Ref<VoiceToText> voiceToText;
@@ -70,8 +80,11 @@ private:
     std::string selected_text = "";
     std::string convid = "default";
     std::string role = "user";
-    GLuint send_texture;
-    GLuint eye_texture;
+    map<string, GLuint> TextureCache = {{"eye",     0},
+                                        {"del",     0},
+                                        {"message", 0},
+                                        {"add",     0},
+                                        {"send",    0}};
 
     std::mutex submit_futures_mutex;
     std::mutex chat_history_mutex;
@@ -83,6 +96,7 @@ private:
     int role_id = 0;
     int Rnum = 0;
     int selected_dir = 0;
+    int vselected_dir = 0;
     int token;
 
     char input_buffer[4096 * 32];
@@ -110,10 +124,12 @@ private:
 
     std::vector<std::string> mdirs;
     std::vector<std::string> speakers = {reinterpret_cast<const char *>(u8"空空如也")};
+    std::vector<std::string> vitsModels = {reinterpret_cast<const char *>(u8"空空如也")};
     std::map<std::string, std::vector<std::string>> codes;
 
 
     bool vits = true;
+    bool vitsModel = true;
     bool show_input_box = false;
     bool OnlySetting = false;
     bool whisper = false;
@@ -127,11 +143,11 @@ private:
 
     void del(std::string name = "default");
 
-    void add_chat_record(const Chat &data) {
+    void AddChatRecord(const Chat &data) {
         chat_history.push_back(data);
     }
 
-    void deleteAllBotChat() {
+    void DeleteAllBotChat() {
         chat_history.erase(
                 std::remove_if(chat_history.begin(), chat_history.end(),
                                [](const Chat &c) {
@@ -143,22 +159,74 @@ private:
 
     void VitsListener();
 
+    inline void UniversalStyle() {
+        // 定义通用样式
+        ImGuiStyle &style = ImGui::GetStyle();
+
+        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
+        style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+        style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+        style.Colors[ImGuiCol_FrameBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+        style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+        style.Colors[ImGuiCol_Header] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+        style.Colors[ImGuiCol_HeaderHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+        style.Colors[ImGuiCol_HeaderActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+        style.Colors[ImGuiCol_ScrollbarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+        style.Colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+        style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+        style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+
+        // popup 样式
+        ImVec4 button_color(0.8f, 0.8f, 0.8f, 1.0f);
+        ImVec4 button_hovered_color(0.15f, 0.45f, 0.65f, 1.0f);
+
+        style.Colors[ImGuiCol_PopupBg] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        style.Colors[ImGuiCol_TitleBg] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+        style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+        style.FrameRounding = 5.0f;
+        style.GrabRounding = 5.0f;
+        style.WindowRounding = 5.0f;
+        style.Colors[ImGuiCol_Button] = button_color;
+        style.Colors[ImGuiCol_ButtonHovered] = button_hovered_color;
+        style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+    }
+
+    inline void RestoreDefaultStyle() {
+
+        ImGuiStyle &style = ImGui::GetStyle();
+
+        // 恢复默认样式
+        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.94f, 0.94f, 0.94f, 1.0f);
+        style.Colors[ImGuiCol_TitleBg] = ImVec4(0.27f, 0.27f, 0.27f, 1.0f);
+        style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.32f, 0.32f, 0.32f, 1.0f);
+        style.FrameRounding = 0.0f;
+        style.GrabRounding = 0.0f;
+        style.WindowRounding = 0.0f;
+
+        // 恢复默认颜色
+        style.Colors[ImGuiCol_Text] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+        style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);
+        // ......
+
+    }
     // 渲染聊天框
-    void render_chat_box();
+    void RenderChatBox();
 
     // 渲染设置
-    void render_setting_box();
+    void RenderConfigBox();
 
     // 渲染输入框
-    void render_input_box();
+    void RenderInputBox();
 
     //渲染弹窗
-    void render_popup_box();
+    void RenderPopupBox();
 
-    void render_code_box();
+    void RenderCodeBox();
+
+    void RenderConversationBox();
 
     // 渲染UI
-    void render_ui();
+    void RenderUI();
 
     void ImGuiCopyTextToClipboard(const char *text) {
         if (strlen(text) > 0) {
@@ -166,7 +234,8 @@ private:
         }
     }
 
-    GLuint load_texture(const char *path);
+    // 加载纹理,并保存元数据
+    GLuint LoadTexture(const char *path);
 
     void Vits(std::string text);
 
@@ -180,44 +249,7 @@ private:
 
     int countTokens(const std::string &str);
 
-    void ClaudeHitsory() {
-        thread([&]() {
-            FirstTime = Utils::getCurrentTimestamp();
-            while (AppRunning) {
-                Chat botR;
-                botR.flag = 1;
-                auto _history = bot->GetHistory();
-                deleteAllBotChat();
-                for (auto &it: _history) {
-                    if (it.second != "Please note:") {
-                        botR.timestamp = it.first;
-                        botR.content = it.second;
-                        add_chat_record(botR);
-                    }
-                }
-                // 按时间戳排序
-                std::sort(chat_history.begin(), chat_history.end(), compareByTimestamp);
-
-                for (const auto &chat: chat_history) {
-                    if (chat.flag == 0) {
-                        FirstTime = chat.timestamp;
-                        break;
-                    }
-                }
-
-                // 删除早于FirstTime的对话
-                chat_history.erase(
-                        std::remove_if(chat_history.begin(), chat_history.end(),
-                                       [&](const Chat &c) {
-                                           return c.timestamp < FirstTime;
-                                       }),
-                        chat_history.end());
-                save(convid, false);
-                // 延迟0.002s
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
-            }
-        }).detach();
-    }
+    void claudeHistory();
 
     static void EmptyFunction() {
         // Do nothing
