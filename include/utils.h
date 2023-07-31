@@ -46,6 +46,21 @@ public:
         return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
 
     }
+
+    static bool UCopyFile(const std::string &src, const std::string &dst) {
+
+        try {
+            std::filesystem::copy_file(
+                    std::filesystem::path(src),
+                    std::filesystem::path(dst)
+            );
+        } catch (std::filesystem::filesystem_error &e) {
+            // 处理错误
+            return false;
+        }
+
+        return true;
+    }
 };
 
 class UDirectory {
@@ -194,16 +209,16 @@ public:
     }
 
     // 获取文件夹下所有指定后缀的文件
-    static std::vector<std::string> GetFilesWithExt(const std::string& folder,
-                                                    const std::string& ext = ".txt") {
+    static std::vector<std::string> GetFilesWithExt(const std::string &folder,
+                                                    const std::string &ext = ".txt") {
 
         std::vector<std::string> files = UFile::GetFilesInDirectory(folder);
 
         std::vector<std::string> result;
 
         // 找到所有匹配的文件
-        for(const auto& file : files) {
-            if(UFile::EndsWith(file, ext)) {
+        for (const auto &file: files) {
+            if (UFile::EndsWith(file, ext)) {
                 result.push_back(file);
             }
         }
@@ -211,9 +226,10 @@ public:
         return result;
 
     }
+
     // 如果vector为空,返回默认值。否则返回第一个元素。
-    static std::string GetDefaultIfEmpty(const std::vector<std::string>& vec,
-                                  const std::string& defaultValue) {
+    static std::string GetDefaultIfEmpty(const std::vector<std::string> &vec,
+                                         const std::string &defaultValue) {
 
         if (vec.empty()) {
             return defaultValue;
@@ -223,6 +239,8 @@ public:
         }
 
     }
+
+
 };
 
 #endif

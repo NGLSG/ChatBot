@@ -16,7 +16,9 @@ find_package(OpenGL REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(yaml-cpp CONFIG REQUIRED)
 find_package(LibArchive REQUIRED)
-
+find_package(Stb REQUIRED)
+find_package(SDL2 CONFIG REQUIRED)
+find_package(SDL2_image CONFIG REQUIRED)
 # 添加源文件
 set(SOURCES
         ../src/utils.cpp
@@ -44,7 +46,9 @@ set(HEADERS
         ../include/Configure.h
         ../include/Progress.hpp
         Application.h
-        ../include/pch.h)
+        ../include/pch.h
+        ../include/imfilebrowser.h
+)
 
 # 添加可执行文件
 
@@ -63,7 +67,12 @@ target_link_libraries(CyberGirl
         PRIVATE imgui::imgui
         PRIVATE cpr::cpr
         PRIVATE spdlog::spdlog spdlog::spdlog_header_only
-        PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+        PRIVATE OpenSSL::SSL OpenSSL::Crypto
+        PRIVATE ${Stb_INCLUDE_DIR}
+        PRIVATE
+        $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+        $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
+        PRIVATE $<IF:$<TARGET_EXISTS:SDL2_image::SDL2_image>,SDL2_image::SDL2_image,SDL2_image::SDL2_image-static>)
 
 # 添加资源文件
 target_sources(CyberGirl PRIVATE

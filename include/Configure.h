@@ -15,7 +15,7 @@ struct OpenAIData {
     bool useLocalModel = false;
     bool useWebProxy = true;
     std::string modelPath = "model/ChatGLM/";
-    std::string api_key;
+    std::string api_key = "";
     std::string model = "gpt-3.5-turbo";
     std::string proxy = "";
     int webproxy = 0;
@@ -33,7 +33,7 @@ struct VitsTask {
 
 struct VITSData {
     bool enable = false;
-    std::string modelName="empty";
+    std::string modelName = "empty";
     std::string model;
     std::string config;
     std::string lanType = "jp";

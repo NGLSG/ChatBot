@@ -9,7 +9,8 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 #include <regex>
-#include <stb_image_write.h>
+#include <SDL_image.h>
+#include "stb_image_write.h"
 #include "stb_image.h"
 #include "ChatBot.h"
 #include "VoiceToText.h"
@@ -17,6 +18,8 @@
 #include "Recorder.h"
 #include "Configure.h"
 #include "utils.h"
+#include "imfilebrowser.h"
+
 
 #define TEXT_BUFFER 4096
 const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.2.1");
@@ -55,14 +58,6 @@ private:
         std::string content;
     };
 
-    // 纹理元数据
-    struct TextureMetaData {
-        std::string path;
-        int width;
-        int height;
-        int channels;
-    };
-
     Ref<Translate> translator;
     Ref<ChatBot> bot;
     Ref<VoiceToText> voiceToText;
@@ -80,11 +75,7 @@ private:
     std::string selected_text = "";
     std::string convid = "default";
     std::string role = "user";
-    map<string, GLuint> TextureCache = {{"eye",     0},
-                                        {"del",     0},
-                                        {"message", 0},
-                                        {"add",     0},
-                                        {"send",    0}};
+
 
     std::mutex submit_futures_mutex;
     std::mutex chat_history_mutex;
@@ -92,11 +83,7 @@ private:
     State state = State::OK;
     Configure configure;
     LConfigure lConfigure;
-    int select_id = 0;
-    int role_id = 0;
     int Rnum = 0;
-    int selected_dir = 0;
-    int vselected_dir = 0;
     int token;
 
     char input_buffer[4096 * 32];
@@ -119,15 +106,28 @@ private:
                                            bin + ChatGLMPath, bin + Live2DPath, model, model + VitsPath,
                                            model + WhisperPath, model + Live2DPath,
                                            Resources};
+    const std::vector<std::string> whisperModel = {"tiny", "base", "small", "medium", "large"};
+    const std::vector<std::string> tmpWhisperModel = {"model/Whisper/ggml-tiny.bin", "model/Whisper/ggml-base.bin",
+                                                      "model/Whisper/ggml-small.bin", "model/Whisper/ggml-medium.bin",
+                                                      "model/Whisper/ggml-large.bin"};
     const std::vector<std::string> roles = {"user", "system", "assistant"};
     const std::vector<std::string> proxies = {"Cloudflare", "Tencent Cloud"};
 
-    std::vector<std::string> mdirs;
+    std::vector<std::string> live2dModel;
     std::vector<std::string> speakers = {reinterpret_cast<const char *>(u8"空空如也")};
     std::vector<std::string> vitsModels = {reinterpret_cast<const char *>(u8"空空如也")};
     std::map<std::string, std::vector<std::string>> codes;
-
-
+    map <string, GLuint> TextureCache = {{"eye",     0},
+                                         {"del",     0},
+                                         {"message", 0},
+                                         {"add",     0},
+                                         {"send",    0},
+                                         {"avatar",  0}};
+    map<string, int> SelectDir = {{"Live2D",       0},
+                                  {"whisper",      0},
+                                  {"vits",         0},
+                                  {"conversation", 0},
+                                  {"role",         0}};
     bool vits = true;
     bool vitsModel = true;
     bool show_input_box = false;
@@ -209,6 +209,7 @@ private:
         // ......
 
     }
+
     // 渲染聊天框
     void RenderChatBox();
 
@@ -228,11 +229,51 @@ private:
     // 渲染UI
     void RenderUI();
 
-    void ImGuiCopyTextToClipboard(const char *text) {
-        if (strlen(text) > 0) {
-            ImGui::SetClipboardText(text);
+    std::string title = reinterpret_cast<const char *>(u8"文件选择");
+    std::vector<std::string> typeFilters;
+    bool fileBrowser = false;
+    std::string BrowserPath;
+    ConfirmDelegate PathOnConfirm = nullptr;
+
+    inline void FileChooser() {
+        static ImGui::FileBrowser fileDialog(ImGuiFileBrowserFlags_MultipleSelection | ImGuiFileBrowserFlags_NoModal);
+        static std::string path;
+
+        if (fileBrowser) {
+            fileDialog.SetTitle(title);
+            fileDialog.SetTypeFilters(typeFilters);
+            fileDialog.Open();
+            fileDialog.Display();
+            if (fileDialog.IsOpened()) {
+                if (fileDialog.HasSelected()) {
+                    // Get all selected files (if multiple selections are allowed)
+                    auto selectedFiles = fileDialog.GetMultiSelected();
+                    if (!selectedFiles.empty()) {
+                        // Return the first selected file's path
+                        path = selectedFiles[0].string();
+                        BrowserPath = path;
+                        if (PathOnConfirm != nullptr) {
+                            PathOnConfirm();
+                        }
+                    }
+                    fileBrowser = false;
+                    title = reinterpret_cast<const char *>(u8"文件选择");
+                    typeFilters.clear();
+                    PathOnConfirm = nullptr;
+                    fileDialog.Close();
+                }
+            }
+            if (!fileDialog.IsOpened()) {
+                BrowserPath = path;
+                fileBrowser = false;
+                title = reinterpret_cast<const char *>(u8"文件选择");
+                typeFilters.clear();
+                PathOnConfirm = nullptr;
+                fileDialog.Close();
+            }
         }
     }
+
 
     // 加载纹理,并保存元数据
     GLuint LoadTexture(const char *path);

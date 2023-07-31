@@ -1,9 +1,16 @@
-﻿#include "Application.h"
+﻿#include <stb_image_resize.h>
+#include "Application.h"
 
 Application::Application(const Configure &configure, bool setting) {
     this->configure = configure;
     OnlySetting = setting;
-    if (configure.openAi.api_key.empty() || configure.openAi.api_key == "") {
+    if (!configure.claude.enable && (configure.openAi.api_key.empty() ||
+                                     configure.openAi.api_key == "")) {
+        OnlySetting = true;
+        state = State::NO_OPENAI_KEY;
+    } else if (configure.claude.enable &&
+               (configure.claude.slackToken.empty() ||
+                configure.claude.slackToken == "")) {
         OnlySetting = true;
         state = State::NO_OPENAI_KEY;
     }
@@ -45,20 +52,68 @@ Application::Application(const Configure &configure, bool setting) {
 }
 
 GLuint Application::LoadTexture(const char *path) {
-    int width, height, channels;
-    stbi_set_flip_vertically_on_load(true);
-    unsigned char *data = stbi_load(path, &width, &height, &channels, 0);
-    if (data == NULL) {
-        std::cerr << "Failed to load texture: " << path << std::endl;
+    int maxSize = 256;
+
+    SDL_Surface *surface = IMG_Load(path);
+    if (!surface) {
+        // 错误处理
         return 0;
     }
+
+    int width = surface->w;
+    int height = surface->h;
+    int newWidth = width;
+    int newHeight = height;
+
+    if (width > maxSize || height > maxSize) {
+        // 计算新的宽度和高度，保持纵横比
+        if (width > height) {
+            newWidth = maxSize;
+            newHeight = (maxSize * height) / width;
+        } else {
+            newHeight = maxSize;
+            newWidth = (maxSize * width) / height;
+        }
+
+        // 创建目标surface
+        SDL_Surface *surface_scaled = SDL_CreateRGBSurface(0, newWidth, newHeight, 32, 0, 0, 0, 0);
+
+        // 缩放
+        SDL_BlitScaled(surface, NULL, surface_scaled, NULL);
+
+        // 释放原surface
+        SDL_FreeSurface(surface);
+        surface = surface_scaled;
+    }
+
+    // 获取像素数据
+    uint8_t *data = (uint8_t *)surface->pixels;
+
+    // 倒置像素数据（垂直翻转）
+    int pitch = surface->pitch;
+    uint8_t* tempRow = new uint8_t[pitch];
+    for (int y = 0; y < newHeight / 2; y++) {
+        uint8_t* row1 = data + y * pitch;
+        uint8_t* row2 = data + (newHeight - y - 1) * pitch;
+        memcpy(tempRow, row1, pitch);
+        memcpy(row1, row2, pitch);
+        memcpy(row2, tempRow, pitch);
+    }
+    delete[] tempRow;
+
+    // 创建OpenGL纹理
     GLuint texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, newWidth, newHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+
+    // 设置过滤参数
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    stbi_image_free(data);
+
+    // 释放SDL surface
+    SDL_FreeSurface(surface);
+
     return texture;
 }
 
@@ -147,9 +202,9 @@ void Application::RenderPopupBox() {
                 chat_history.clear();
                 auto iter = std::find(conversations.begin(), conversations.end(), text);
                 if (iter != conversations.end()) {
-                    select_id = std::distance(conversations.begin(), iter);
+                    SelectDir["conversation"] = std::distance(conversations.begin(), iter);
                 }
-                convid = conversations[select_id];
+                convid = conversations[SelectDir["conversation"]];
                 ImGui::CloseCurrentPopup();
                 save(convid);
                 bot->Load(convid);
@@ -251,7 +306,23 @@ void Application::RenderChatBox() {
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
 
+            if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["avatar"]), ImVec2(24, 24),
+                                   ImVec2(0, 0),
+                                   ImVec2(1, -1))) {
+                fileBrowser = true;
+                title = reinterpret_cast<const char *>(u8"图片选择");
+                typeFilters = {".png", ".jpg"};
+                PathOnConfirm = [this]() {
+                    LogInfo(BrowserPath.c_str());
+                    TextureCache["avatar"] = LoadTexture(BrowserPath.c_str());
+                    UFile::UCopyFile(Resources + "avatar.png", Resources + "avatar.png.bak");
+                    std::remove((Resources + "avatar.png").c_str());
+                    UFile::UCopyFile(BrowserPath, Resources + "avatar.png");
+                };
+            }
 
+
+            ImGui::SameLine();
             // Display the multi-line input field
             ImGui::InputTextMultiline(("##" + to_string(botAnswer.timestamp)).c_str(),
                                       const_cast<char *>(botAnswer.content.c_str()), botAnswer.content.size() + 1,
@@ -311,12 +382,12 @@ void Application::RenderChatBox() {
             item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
             if (!configure.claude.enable) {
                 for (int i = 0; i < conversations.size(); i++) {
-                    const bool is_selected = (select_id == i);
+                    const bool is_selected = (SelectDir["conversation"] == i);
                     if (ImGui::MenuItem(reinterpret_cast<const char *>(conversations[i].c_str()), nullptr,
                                         is_selected)) {
-                        if (select_id != i) {
-                            select_id = i;
-                            convid = conversations[select_id];
+                        if (SelectDir["conversation"] != i) {
+                            SelectDir["conversation"] = i;
+                            convid = conversations[SelectDir["conversation"]];
                             bot->Load(convid);
                             load(convid);
                         }
@@ -329,11 +400,11 @@ void Application::RenderChatBox() {
             ImGuiStyle &item_style = ImGui::GetStyle();
             item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
             for (int i = 0; i < roles.size(); i++) {
-                const bool is_selected = (role_id == i);
+                const bool is_selected = (SelectDir["role"] == i);
                 if (ImGui::MenuItem(reinterpret_cast<const char *>(roles[i].c_str()), nullptr, is_selected)) {
-                    if (role_id != i) {
-                        role_id = i;
-                        role = roles[role_id];
+                    if (SelectDir["role"] != i) {
+                        SelectDir["role"] = i;
+                        role = roles[SelectDir["role"]];
                     }
                 }
             }
@@ -709,13 +780,13 @@ void Application::RenderConfigBox() {
                                    ImVec4(1, 1, 1, 1))) {
                 clicked = !clicked;
             }
-            ImGui::InputText(reinterpret_cast<const char *>(u8"用户名"), configure.claude.userName.data(),
+/*            ImGui::InputText(reinterpret_cast<const char *>(u8"用户名"), configure.claude.userName.data(),
                              TEXT_BUFFER);
 
 
             ImGui::InputText("Claude Cookie",
                              configure.claude.cookies.data(),
-                             TEXT_BUFFER);
+                             TEXT_BUFFER);*/
 
             ImGui::InputText(reinterpret_cast<const char *>(u8"Claude ID"), configure.claude.channelID.data(),
                              TEXT_BUFFER);
@@ -769,7 +840,7 @@ void Application::RenderConfigBox() {
         auto it = std::find(vitsModels.begin(), vitsModels.end(), configure.vits.modelName);
         if (it != vitsModels.end()) {
             // 找到了,计算索引
-            vselected_dir = std::distance(vitsModels.begin(), it);
+            SelectDir["vits"] = std::distance(vitsModels.begin(), it);
             if (UFile::Exists(configure.vits.config)) {
                 std::string config;
                 config = Utils::ReadFile(configure.vits.config);
@@ -781,7 +852,7 @@ void Application::RenderConfigBox() {
 
         } else {
             // 没找到,设置为0
-            vselected_dir = 0;
+            SelectDir["vits"] = 0;
         }
 
         static char search_text[256] = "";
@@ -790,7 +861,7 @@ void Application::RenderConfigBox() {
                          TEXT_BUFFER);*/
         // 开始下拉列表
         if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"模型"),
-                              Utils::GetFileName(vitsModels[vselected_dir]).c_str())) {
+                              Utils::GetFileName(vitsModels[SelectDir["vits"]]).c_str())) {
             // 在下拉框中添加一个文本输入框
             ImGui::InputTextWithHint("##Search1", reinterpret_cast<const char *>(u8"搜索"), search_text,
                                      sizeof(search_text));
@@ -800,22 +871,24 @@ void Application::RenderConfigBox() {
                 // 如果搜索关键字为空，或者当前选项匹配搜索关键字
                 if (search_text[0] == '\0' ||
                     strstr(Utils::GetFileName(vitsModels[i]).c_str(), search_text) != nullptr) {
-                    bool is_selected = (vselected_dir == i);
+                    bool is_selected = (SelectDir["vits"] == i);
                     if (ImGui::Selectable(Utils::GetFileName(vitsModels[i]).c_str(), is_selected)) {
-                        vselected_dir = i;
+                        SelectDir["vits"] = i;
                     }
                     if (is_selected) {
                         ImGui::SetItemDefaultFocus();
                     }
                 }
             }
-            configure.vits.modelName = vitsModels[vselected_dir].c_str();
+            configure.vits.modelName = vitsModels[SelectDir["vits"]].c_str();
             // 检查vitsModels数组不为空并且当前项不为"empty"
-            if (vitsModels.size() > 0 && vitsModels[vselected_dir] != "empty") {
+            if (vitsModels.size() > 0 && vitsModels[SelectDir["vits"]] != "empty") {
 
                 // 获取.pth和.json文件
-                std::vector<std::string> pth_files = Utils::GetFilesWithExt(vitsModels[vselected_dir] + "/", ".pth");
-                std::vector<std::string> json_files = Utils::GetFilesWithExt(vitsModels[vselected_dir] + "/", ".json");
+                std::vector<std::string> pth_files = Utils::GetFilesWithExt(vitsModels[SelectDir["vits"]] + "/",
+                                                                            ".pth");
+                std::vector<std::string> json_files = Utils::GetFilesWithExt(vitsModels[SelectDir["vits"]] + "/",
+                                                                             ".json");
 
                 // 设置模型和配置文件
                 configure.vits.model = Utils::GetDefaultIfEmpty(pth_files, "model.pth");
@@ -839,7 +912,7 @@ void Application::RenderConfigBox() {
             ImGui::EndCombo();
         }
         // 开始下拉列表
-        if (vitsModels[vselected_dir] != "empty") {
+        if (vitsModels[SelectDir["vits"]] != "empty") {
             if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"角色"),
                                   speakers[configure.vits.speaker_id].c_str())) {
                 // 在下拉框中添加一个文本输入框
@@ -866,10 +939,10 @@ void Application::RenderConfigBox() {
 
 #ifdef WIN32
     if (ImGui::CollapsingHeader("Live2D")) {
-        mdirs = Utils::GetDirectories(model + Live2DPath);
-        auto it = std::find(mdirs.begin(), mdirs.end(), configure.live2D.model);
-        if (it != mdirs.end() && mdirs.size() > 1) {
-            selected_dir = std::distance(mdirs.begin(), it);
+        live2dModel = Utils::GetDirectories(model + Live2DPath);
+        auto it = std::find(live2dModel.begin(), live2dModel.end(), configure.live2D.model);
+        if (it != live2dModel.end() && live2dModel.size() > 1) {
+            SelectDir["Live2D"] = std::distance(live2dModel.begin(), it);
             lConfigure.model = configure.live2D.model;
         }
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Live2D"), &configure.live2D.enable);
@@ -881,13 +954,13 @@ void Application::RenderConfigBox() {
                           0.1f, 1.0f, "%.2f");
 
         if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"Live2D 模型"),
-                              Utils::GetFileName(mdirs[selected_dir]).c_str())) // 开始下拉列表
+                              Utils::GetFileName(live2dModel[SelectDir["Live2D"]]).c_str())) // 开始下拉列表
         {
-            for (int i = 0; i < mdirs.size(); i++) {
-                bool is_selected = (selected_dir == i);
-                if (ImGui::Selectable(Utils::GetFileName(mdirs[i]).c_str(), is_selected)) {
-                    selected_dir = i;
-                    if (select_id = 0) {
+            for (int i = 0; i < live2dModel.size(); i++) {
+                bool is_selected = (SelectDir["Live2D"] == i);
+                if (ImGui::Selectable(Utils::GetFileName(live2dModel[i]).c_str(), is_selected)) {
+                    SelectDir["Live2D"] = i;
+                    if (SelectDir["conversation"] = 0) {
                         configure.live2D.enable = false;
                     } else {
                         configure.live2D.enable = true;
@@ -897,7 +970,7 @@ void Application::RenderConfigBox() {
                     ImGui::SetItemDefaultFocus(); // 默认选中项
                 }
             }
-            configure.live2D.model = mdirs[selected_dir].c_str();
+            configure.live2D.model = live2dModel[SelectDir["Live2D"]].c_str();
             ImGui::EndCombo(); // 结束下拉列表
         }
 
@@ -905,10 +978,28 @@ void Application::RenderConfigBox() {
 #endif
     // 显示 Whisper 配置
     if (ImGui::CollapsingHeader("Whisper")) {
+
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Whisper"), &configure.whisper.enable);
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用本地模型"), &configure.whisper.useLocalModel);
-        ImGui::InputText(reinterpret_cast<const char *>(u8"Whisper 模型位置"), configure.whisper.model.data(),
-                         TEXT_BUFFER);
+        auto it = std::find(tmpWhisperModel.begin(), tmpWhisperModel.end(), configure.whisper.model);
+        if (it != tmpWhisperModel.end() && tmpWhisperModel.size() > 1) {
+            SelectDir["whisper"] = std::distance(tmpWhisperModel.begin(), it);
+        }
+        if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"Whisper 模型"),
+                              Utils::GetFileName(whisperModel[SelectDir["whisper"]]).c_str())) // 开始下拉列表
+        {
+            for (int i = 0; i < whisperModel.size(); i++) {
+                bool is_selected = (SelectDir["whisper"] == i);
+                if (ImGui::Selectable(Utils::GetFileName(whisperModel[i]).c_str(), is_selected)) {
+                    SelectDir["whisper"] = i;
+                }
+                if (is_selected) {
+                    ImGui::SetItemDefaultFocus(); // 默认选中项
+                }
+            }
+            configure.whisper.model = tmpWhisperModel[SelectDir["whisper"]];
+            ImGui::EndCombo(); // 结束下拉列表
+        }
     }
 
     // 保存配置
@@ -928,9 +1019,18 @@ void Application::RenderConfigBox() {
         if (ImGui::BeginPopupModal(reinterpret_cast<const char *>(u8"需要重启应用"), NULL,
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::Text(reinterpret_cast<const char *>(u8"您需要重新启动应用程序以使更改生效。"));
-            if (ImGui::Button(reinterpret_cast<const char *>(u8"确定"), ImVec2(120, 0))) {
+            if (ImGui::Button(reinterpret_cast<const char *>(u8"确定"), ImVec2(80, 0))) {
+                ImGui::CloseCurrentPopup();
+                std::exit(0);
+            }
+
+            ImGui::SameLine(ImGui::GetWindowSize().x - 120 - ImGui::GetStyle().ItemSpacing.x);
+            if (ImGui::Button(reinterpret_cast<const char *>(u8"取消"), ImVec2(80, 0))) {
+                // 点击取消按钮时，关闭Popup
                 ImGui::CloseCurrentPopup();
             }
+
+
             ImGui::EndPopup();
         }
 
@@ -949,13 +1049,13 @@ void Application::RenderConfigBox() {
         }
 
         if (no_key) {
-            ImGui::OpenPopup(reinterpret_cast<const char *>(u8"需要配置OpenAI Key"));
+            ImGui::OpenPopup(reinterpret_cast<const char *>(u8"需要配置OpenAI Key或者填写Claude token"));
             no_key = false;
         }
 
-        if (ImGui::BeginPopupModal(reinterpret_cast<const char *>(u8"需要配置OpenAI Key"), NULL,
+        if (ImGui::BeginPopupModal(reinterpret_cast<const char *>(u8"需要配置OpenAI Key或者填写Claude token"), NULL,
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text(reinterpret_cast<const char *>(u8"您需要填写OpenAI API key 以启用本程序。"));
+            ImGui::Text(reinterpret_cast<const char *>(u8"您需要填写OpenAI API key 或Claude token 以正常启用本程序。"));
             if (ImGui::Button(reinterpret_cast<const char *>(u8"确定"), ImVec2(120, 0))) {
                 ImGui::CloseCurrentPopup();
             }
@@ -975,6 +1075,7 @@ void Application::RenderUI() {
         RenderChatBox();
         RenderCodeBox();
         RenderConversationBox();
+        FileChooser();
     } else {
         RenderConfigBox();
     }
@@ -1041,10 +1142,14 @@ int Application::Renderer() {
     style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
     style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
 
-    TextureCache["eye"] = LoadTexture("Resources/eye.png");
+/*    TextureCache["eye"] = LoadTexture("Resources/eye.png");
     TextureCache["message"] = LoadTexture("Resources/message.png");
     TextureCache["del"] = LoadTexture("Resources/del.png");
-    TextureCache["add"] = LoadTexture("Resources/add.png");
+    TextureCache["add"] = LoadTexture("Resources/add.png");*/
+#pragma omp parallel for
+    for (auto &it: TextureCache) {
+        it.second = LoadTexture(std::string(Resources + it.first + ".png").c_str());
+    }
     // 渲染循环
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -1157,9 +1262,9 @@ void Application::del(std::string name) {
     if (remove((Conversation + name + ".yaml").c_str()) != 0) {
         LogError("OpenAI Error: Unable to delete session {0},{1}", name, ".");
     }
-    conversations.erase(conversations.begin() + select_id);
-    select_id = conversations.size() - 1;
-    convid = conversations[select_id];
+    conversations.erase(conversations.begin() + SelectDir["conversation"]);
+    SelectDir["conversation"] = conversations.size() - 1;
+    convid = conversations[SelectDir["conversation"]];
 
     LogInfo("Bot : 删除 {0} 成功", name);
 }
