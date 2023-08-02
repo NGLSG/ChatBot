@@ -6,7 +6,7 @@
 
 # ChatBot
 
-_✨基于nlohmann,cpr,spdlog的ChatBot API✨_
+_✨基于nlohmann,cpr,spdlog的ChatBot✨_
 
 如果你喜欢这个项目请点一个⭐吧
 

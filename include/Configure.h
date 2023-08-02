@@ -32,11 +32,10 @@ struct VitsTask {
 };
 
 struct StableDiffusionData {
-    std::string apiPath = "http://127.0.0.1:7860/sdapi/v1/txt2img";
+    std::string apiPath = "http://127.0.0.1:7860";
     std::string sampler_index = "Euler a";
     std::string negative_prompt = "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, bad feet";
     int steps = 50;
-    int denoising_strength = 0;
     int width = 5112;
     int height = 512;
     float cfg_scale = 7;
@@ -269,7 +268,6 @@ namespace YAML {
             data.enable = node["enable"].as<bool>();
             if (node["model"]) {
                 data.model = node["model"].as<std::string>();
-
             }
             data.bin = node["bin"].as<std::string>();
             return true;
@@ -290,7 +288,6 @@ namespace YAML {
 
             if (node["model"]) {
                 data.model = node["model"].as<std::string>();
-
             }
             data.scaleX = node["scaleX"].as<float>();
             data.scaleY = node["scaleY"].as<float>();
@@ -307,7 +304,6 @@ namespace YAML {
             node["sampler_index"] = data.sampler_index;
             node["negative_prompt"] = data.negative_prompt;
             node["steps"] = data.steps;
-            node["denoising_strength"] = data.denoising_strength;
             node["width"] = data.width;
             node["height"] = data.height;
             node["cfg_scale"] = data.cfg_scale;
@@ -315,15 +311,10 @@ namespace YAML {
         }
 
         static bool decode(const Node &node, StableDiffusionData &data) {
-            if (!node["apiPath"] || !node["sampler_index"] || !node["negative_prompt"] || !node["steps"] || !node["denoising_strength"] ||
-                !node["width"] || !node["height"] || !node["cfg_scale"]) {
-                return false;
-            }
             data.apiPath = node["apiPath"].as<std::string>();
             data.sampler_index = node["sampler_index"].as<std::string>();
             data.negative_prompt = node["negative_prompt"].as<std::string>();
             data.steps = node["steps"].as<int>();
-            data.denoising_strength = node["denoising_strength"].as<int>();
             data.width = node["width"].as<int>();
             data.height = node["height"].as<int>();
             data.cfg_scale = node["cfg_scale"].as<float>();

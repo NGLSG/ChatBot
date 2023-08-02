@@ -157,9 +157,9 @@ void Application::RenderPopupBox() {
                 chat_history.clear();
                 auto iter = std::find(conversations.begin(), conversations.end(), text);
                 if (iter != conversations.end()) {
-                    SelectDir["conversation"] = std::distance(conversations.begin(), iter);
+                    SelectIndices["conversation"] = std::distance(conversations.begin(), iter);
                 }
-                convid = conversations[SelectDir["conversation"]];
+                convid = conversations[SelectIndices["conversation"]];
                 ImGui::CloseCurrentPopup();
                 save(convid);
                 bot->Load(convid);
@@ -360,12 +360,12 @@ void Application::RenderChatBox() {
             item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
             if (!configure.claude.enable) {
                 for (int i = 0; i < conversations.size(); i++) {
-                    const bool is_selected = (SelectDir["conversation"] == i);
+                    const bool is_selected = (SelectIndices["conversation"] == i);
                     if (ImGui::MenuItem(reinterpret_cast<const char *>(conversations[i].c_str()), nullptr,
                                         is_selected)) {
-                        if (SelectDir["conversation"] != i) {
-                            SelectDir["conversation"] = i;
-                            convid = conversations[SelectDir["conversation"]];
+                        if (SelectIndices["conversation"] != i) {
+                            SelectIndices["conversation"] = i;
+                            convid = conversations[SelectIndices["conversation"]];
                             bot->Load(convid);
                             load(convid);
                         }
@@ -378,11 +378,11 @@ void Application::RenderChatBox() {
             ImGuiStyle &item_style = ImGui::GetStyle();
             item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
             for (int i = 0; i < roles.size(); i++) {
-                const bool is_selected = (SelectDir["role"] == i);
+                const bool is_selected = (SelectIndices["role"] == i);
                 if (ImGui::MenuItem(reinterpret_cast<const char *>(roles[i].c_str()), nullptr, is_selected)) {
-                    if (SelectDir["role"] != i) {
-                        SelectDir["role"] = i;
-                        role = roles[SelectDir["role"]];
+                    if (SelectIndices["role"] != i) {
+                        SelectIndices["role"] = i;
+                        role = roles[SelectIndices["role"]];
                     }
                 }
             }
@@ -845,7 +845,7 @@ void Application::RenderConfigBox() {
         auto it = std::find(vitsModels.begin(), vitsModels.end(), configure.vits.modelName);
         if (it != vitsModels.end()) {
             // 找到了,计算索引
-            SelectDir["vits"] = std::distance(vitsModels.begin(), it);
+            SelectIndices["vits"] = std::distance(vitsModels.begin(), it);
             if (UFile::Exists(configure.vits.config)) {
                 std::string config;
                 config = Utils::ReadFile(configure.vits.config);
@@ -857,7 +857,7 @@ void Application::RenderConfigBox() {
 
         } else {
             // 没找到,设置为0
-            SelectDir["vits"] = 0;
+            SelectIndices["vits"] = 0;
         }
 
         static char search_text[256] = "";
@@ -866,7 +866,7 @@ void Application::RenderConfigBox() {
                          TEXT_BUFFER);*/
         // 开始下拉列表
         if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"模型"),
-                              Utils::GetFileName(vitsModels[SelectDir["vits"]]).c_str())) {
+                              Utils::GetFileName(vitsModels[SelectIndices["vits"]]).c_str())) {
             // 在下拉框中添加一个文本输入框
             ImGui::InputTextWithHint("##Search1", reinterpret_cast<const char *>(u8"搜索"), search_text,
                                      sizeof(search_text));
@@ -876,23 +876,23 @@ void Application::RenderConfigBox() {
                 // 如果搜索关键字为空，或者当前选项匹配搜索关键字
                 if (search_text[0] == '\0' ||
                     strstr(Utils::GetFileName(vitsModels[i]).c_str(), search_text) != nullptr) {
-                    bool is_selected = (SelectDir["vits"] == i);
+                    bool is_selected = (SelectIndices["vits"] == i);
                     if (ImGui::Selectable(Utils::GetFileName(vitsModels[i]).c_str(), is_selected)) {
-                        SelectDir["vits"] = i;
+                        SelectIndices["vits"] = i;
                     }
                     if (is_selected) {
                         ImGui::SetItemDefaultFocus();
                     }
                 }
             }
-            configure.vits.modelName = vitsModels[SelectDir["vits"]].c_str();
+            configure.vits.modelName = vitsModels[SelectIndices["vits"]].c_str();
             // 检查vitsModels数组不为空并且当前项不为"empty"
-            if (vitsModels.size() > 0 && vitsModels[SelectDir["vits"]] != "empty") {
+            if (vitsModels.size() > 0 && vitsModels[SelectIndices["vits"]] != "empty") {
 
                 // 获取.pth和.json文件
-                std::vector<std::string> pth_files = Utils::GetFilesWithExt(vitsModels[SelectDir["vits"]] + "/",
+                std::vector<std::string> pth_files = Utils::GetFilesWithExt(vitsModels[SelectIndices["vits"]] + "/",
                                                                             ".pth");
-                std::vector<std::string> json_files = Utils::GetFilesWithExt(vitsModels[SelectDir["vits"]] + "/",
+                std::vector<std::string> json_files = Utils::GetFilesWithExt(vitsModels[SelectIndices["vits"]] + "/",
                                                                              ".json");
 
                 // 设置模型和配置文件
@@ -917,7 +917,7 @@ void Application::RenderConfigBox() {
             ImGui::EndCombo();
         }
         // 开始下拉列表
-        if (vitsModels[SelectDir["vits"]] != "empty") {
+        if (vitsModels[SelectIndices["vits"]] != "empty") {
             if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"角色"),
                                   speakers[configure.vits.speaker_id].c_str())) {
                 // 在下拉框中添加一个文本输入框
@@ -947,7 +947,7 @@ void Application::RenderConfigBox() {
         live2dModel = Utils::GetDirectories(model + Live2DPath);
         auto it = std::find(live2dModel.begin(), live2dModel.end(), configure.live2D.model);
         if (it != live2dModel.end() && live2dModel.size() > 1) {
-            SelectDir["Live2D"] = std::distance(live2dModel.begin(), it);
+            SelectIndices["Live2D"] = std::distance(live2dModel.begin(), it);
             lConfigure.model = configure.live2D.model;
         }
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Live2D"), &configure.live2D.enable);
@@ -959,13 +959,13 @@ void Application::RenderConfigBox() {
                           0.1f, 1.0f, "%.2f");
 
         if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"Live2D 模型"),
-                              Utils::GetFileName(live2dModel[SelectDir["Live2D"]]).c_str())) // 开始下拉列表
+                              Utils::GetFileName(live2dModel[SelectIndices["Live2D"]]).c_str())) // 开始下拉列表
         {
             for (int i = 0; i < live2dModel.size(); i++) {
-                bool is_selected = (SelectDir["Live2D"] == i);
+                bool is_selected = (SelectIndices["Live2D"] == i);
                 if (ImGui::Selectable(Utils::GetFileName(live2dModel[i]).c_str(), is_selected)) {
-                    SelectDir["Live2D"] = i;
-                    if (SelectDir["conversation"] = 0) {
+                    SelectIndices["Live2D"] = i;
+                    if (SelectIndices["conversation"] = 0) {
                         configure.live2D.enable = false;
                     } else {
                         configure.live2D.enable = true;
@@ -975,7 +975,7 @@ void Application::RenderConfigBox() {
                     ImGui::SetItemDefaultFocus(); // 默认选中项
                 }
             }
-            configure.live2D.model = live2dModel[SelectDir["Live2D"]].c_str();
+            configure.live2D.model = live2dModel[SelectIndices["Live2D"]].c_str();
             ImGui::EndCombo(); // 结束下拉列表
         }
 
@@ -988,22 +988,63 @@ void Application::RenderConfigBox() {
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用本地模型"), &configure.whisper.useLocalModel);
         auto it = std::find(tmpWhisperModel.begin(), tmpWhisperModel.end(), configure.whisper.model);
         if (it != tmpWhisperModel.end() && tmpWhisperModel.size() > 1) {
-            SelectDir["whisper"] = std::distance(tmpWhisperModel.begin(), it);
+            SelectIndices["whisper"] = std::distance(tmpWhisperModel.begin(), it);
         }
         if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"Whisper 模型"),
-                              Utils::GetFileName(whisperModel[SelectDir["whisper"]]).c_str())) // 开始下拉列表
+                              Utils::GetFileName(whisperModel[SelectIndices["whisper"]]).c_str())) // 开始下拉列表
         {
             for (int i = 0; i < whisperModel.size(); i++) {
-                bool is_selected = (SelectDir["whisper"] == i);
+                bool is_selected = (SelectIndices["whisper"] == i);
                 if (ImGui::Selectable(Utils::GetFileName(whisperModel[i]).c_str(), is_selected)) {
-                    SelectDir["whisper"] = i;
+                    SelectIndices["whisper"] = i;
                 }
                 if (is_selected) {
                     ImGui::SetItemDefaultFocus(); // 默认选中项
                 }
             }
-            configure.whisper.model = tmpWhisperModel[SelectDir["whisper"]];
+            configure.whisper.model = tmpWhisperModel[SelectIndices["whisper"]];
             ImGui::EndCombo(); // 结束下拉列表
+        }
+    }
+
+    //显示Stable Diffusion配置
+    if (ImGui::CollapsingHeader("Stable Diffusion")) {
+        static char search_text[256] = "";
+        ImGui::InputText(reinterpret_cast<const char *>(u8"Http API"), configure.stableDiffusion.apiPath.data(),
+                         TEXT_BUFFER);
+        ImGui::InputText(reinterpret_cast<const char *>(u8"屏蔽词汇"), configure.stableDiffusion.negative_prompt.data(),
+                         TEXT_BUFFER);
+        ImGui::InputInt(reinterpret_cast<const char *>(u8"迭代次数(与质量相关)"), &configure.stableDiffusion.steps);
+        ImGui::InputInt(reinterpret_cast<const char *>(u8"高"), &configure.stableDiffusion.height);
+        ImGui::InputInt(reinterpret_cast<const char *>(u8"宽"), &configure.stableDiffusion.width);
+        ImGui::InputFloat(reinterpret_cast<const char *>(u8"相关度"), &configure.stableDiffusion.cfg_scale, 0.1f, 1.0f,
+                          "%.2f");
+        auto it = std::find(sampleIndices.begin(), sampleIndices.end(), configure.stableDiffusion.sampler_index);
+        if (it != sampleIndices.end()) {
+            // 找到了,计算索引
+            SelectIndices["stableDiffusion"] = std::distance(sampleIndices.begin(), it);
+
+        }
+        if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"采样方法"),
+                              sampleIndices[SelectIndices["stableDiffusion"]].c_str())) {
+            // 在下拉框中添加一个文本输入框
+            ImGui::InputTextWithHint("##Search", reinterpret_cast<const char *>(u8"搜索"), search_text,
+                                     sizeof(search_text));
+
+            // 遍历所有选项
+            for (int i = 0; i < sampleIndices.size(); i++) {
+                // 如果搜索关键字为空，或者当前选项匹配搜索关键字
+                if (search_text[0] == '\0' || strstr(sampleIndices[i].c_str(), search_text) != nullptr) {
+                    bool is_selected = (SelectIndices["stableDiffusion"] == i);
+                    if (ImGui::Selectable(sampleIndices[i].c_str(), is_selected)) {
+                        configure.stableDiffusion.sampler_index = sampleIndices[i];
+                    }
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+            }
+            ImGui::EndCombo();
         }
     }
 
@@ -1026,7 +1067,10 @@ void Application::RenderConfigBox() {
             ImGui::Text(reinterpret_cast<const char *>(u8"您需要重新启动应用程序以使更改生效。"));
             if (ImGui::Button(reinterpret_cast<const char *>(u8"确定"), ImVec2(80, 0))) {
                 ImGui::CloseCurrentPopup();
-                std::exit(0);
+                std::string executable = "CyberGirl" + exeSuffix;
+                const char *argv[] = {executable.c_str(), NULL};
+                execvp(executable.c_str(), const_cast<char *const *>(argv));
+                //std::exit(0);
             }
 
             ImGui::SameLine(ImGui::GetWindowSize().x - 120 - ImGui::GetStyle().ItemSpacing.x);
@@ -1236,18 +1280,26 @@ void Application::WhisperModelDownload(const std::string &model) {
 }
 
 void Application::WhisperExeInstaller() {
-    std::map<std::string, std::string> tasks = {
-            {whisperUrl, bin + WhisperPath + "Whisper.zip"}
-    };
-    whisper = Installer(tasks) && Utils::Decompress(bin + WhisperPath + "Whisper.zip");
+    if (UFile::Exists(bin + WhisperPath + "Whisper.zip")) {
+        whisper = Utils::Decompress(bin + WhisperPath + "Whisper.zip");
+    } else {
+        std::map<std::string, std::string> tasks = {
+                {whisperUrl, bin + WhisperPath + "Whisper.zip"}
+        };
+        whisper = Installer(tasks) && Utils::Decompress(bin + WhisperPath + "Whisper.zip");
+    }
     //return whisper;
 }
 
 void Application::VitsExeInstaller() {
-    std::map<std::string, std::string> tasks = {
-            {VitsConvertUrl, bin + VitsConvertor + vitsFile}
-    };
-    vits = Installer(tasks) && Utils::Decompress(bin + VitsConvertor + vitsFile);
+    if (UFile::Exists(bin + VitsConvertor + vitsFile)) {
+        vits = Utils::Decompress(bin + VitsConvertor + vitsFile);
+    } else {
+        std::map<std::string, std::string> tasks = {
+                {VitsConvertUrl, bin + VitsConvertor + vitsFile}
+        };
+        vits = Installer(tasks) && Utils::Decompress(bin + VitsConvertor + vitsFile);
+    }
     //return vits;
 }
 
@@ -1267,9 +1319,9 @@ void Application::del(std::string name) {
     if (remove((Conversation + name + ".yaml").c_str()) != 0) {
         LogError("OpenAI Error: Unable to delete session {0},{1}", name, ".");
     }
-    conversations.erase(conversations.begin() + SelectDir["conversation"]);
-    SelectDir["conversation"] = conversations.size() - 1;
-    convid = conversations[SelectDir["conversation"]];
+    conversations.erase(conversations.begin() + SelectIndices["conversation"]);
+    SelectIndices["conversation"] = conversations.size() - 1;
+    convid = conversations[SelectIndices["conversation"]];
 
     LogInfo("Bot : 删除 {0} 成功", name);
 }

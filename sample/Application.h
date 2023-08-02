@@ -22,7 +22,7 @@
 
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.2.1");
+const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.3");
 extern std::vector<std::string> scommands;
 extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
@@ -136,11 +136,12 @@ private:
                                          {"add",     0},
                                          {"send",    0},
                                          {"avatar",  0}};
-    map<string, int> SelectDir = {{"Live2D",       0},
-                                  {"whisper",      0},
-                                  {"vits",         0},
-                                  {"conversation", 0},
-                                  {"role",         0}};
+    map<string, int> SelectIndices = {{"Live2D",          0},
+                                      {"whisper",         0},
+                                      {"vits",            0},
+                                      {"conversation",    0},
+                                      {"stableDiffusion", 0},
+                                      {"role",            0}};
     map <string, GLuint> SDCache;
 
     bool vits = true;
@@ -175,29 +176,39 @@ private:
     void VitsListener();
 
     void _Draw(Ref<std::string> prompt, long long ts, bool callFromBot) {
-        std::string uid = stableDiffusion->Text2Img(*prompt);
+        if (is_valid_text(configure.stableDiffusion.apiPath)) {
+            std::string uid = stableDiffusion->Text2Img(*prompt);
 
-        if (callFromBot) {
-            // 使用互斥锁保护共享资源 chat_history
-            std::lock_guard<std::mutex> lock(chat_mutex);
-            for (auto &it: chat_history) {
-                if (it.flag == 1) {
-                    if (it.timestamp >= ts) {
-                        it.image = uid;
-                        break;
+            if (callFromBot) {
+                // 使用互斥锁保护共享资源 chat_history
+                std::lock_guard<std::mutex> lock(chat_mutex);
+                for (auto &it: chat_history) {
+                    if (it.flag == 1) {
+                        if (it.timestamp >= ts) {
+                            it.image = uid;
+                            break;
+                        }
+                    } else {
+                        continue;
                     }
-                } else {
-                    continue;
                 }
+            } else {
+                Chat img;
+                img.flag = 1;
+                img.timestamp = Utils::GetCurrentTimestamp();
+                img.content = "Finished!";
+                img.image = uid;
+
+                // 使用互斥锁保护共享资源 chat_history
+                std::lock_guard<std::mutex> lock(chat_mutex);
+                chat_history.emplace_back(img);
             }
+
         } else {
             Chat img;
             img.flag = 1;
-            img.timestamp = Utils::GetCurrentTimestamp();
-            img.content = "Finished!";
-            img.image = uid;
-
-            // 使用互斥锁保护共享资源 chat_history
+            img.timestamp = Utils::GetCurrentTimestamp() + 10;
+            img.content = reinterpret_cast<const char *>(u8"抱歉,我不能为您生成图片,因为您的api地址为空");
             std::lock_guard<std::mutex> lock(chat_mutex);
             chat_history.emplace_back(img);
         }

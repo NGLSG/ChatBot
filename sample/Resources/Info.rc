@@ -20,12 +20,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "Gezhi Studio"
             VALUE "FileDescription", ""
-            VALUE "FileVersion", "1.2.0.1"
+            VALUE "FileVersion", "1.3.0.1"
             VALUE "InternalName", "CyberGirl.exe"
             VALUE "LegalCopyright", "Copyright (C) 2023 Gezhi Studio"
             VALUE "OriginalFilename", "CyberGirl.exe"
             VALUE "ProductName", ""
-            VALUE "ProductVersion", "1.2.0.1"
+            VALUE "ProductVersion", "1.3.0.1"
         END
     END
     BLOCK "VarFileInfo"
