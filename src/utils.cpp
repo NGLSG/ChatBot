@@ -1,5 +1,4 @@
-﻿
-#include "utils.h"
+﻿#include "utils.h"
 
 bool NoRecord = false;
 std::mutex mtx;
@@ -842,7 +841,6 @@ std::string Utils::ReadFile(const std::string &filename) {
 #ifdef WIN32
 
 #include <windows.h>
-#include <thread>
 
 void Utils::OpenProgram(const char *path) {
     std::thread worker([=]() {
@@ -897,6 +895,133 @@ void Utils::OpenProgram(const char *path) {
     });
     worker.detach();
 }
+
 #else
 void Utils::OpenProgram(const char *path){}
 #endif
+
+void UImage::Base64ToImage(const std::string &str_base64, const std::string &dstPath) {
+    std::ofstream out(dstPath, std::ios::binary);
+    std::vector<unsigned char> image_data = Utils::Str2VUChar(base64_decode(str_base64));
+    out.write(reinterpret_cast<const char *>(image_data.data()), image_data.size());
+    out.close();
+}
+
+GLuint UImage::Base64ToTextureFromPath(const std::string &imgPath) {
+    std::ifstream in(imgPath);
+    if (!in) {
+        std::cerr << "Failed to open file: " << imgPath << std::endl;
+        return 0;
+    }
+
+    // Read the base64 data from the file
+    std::string base64Str;
+    in >> base64Str;
+
+    return Base64ToTexture(base64Str);
+}
+
+GLuint UImage::Base64ToTexture(const std::string &base64_str) {
+    std::vector<unsigned char> image_decode = Utils::Str2VUChar(base64_decode(base64_str));
+    int width, height, channels;
+    unsigned char *pixels = stbi_load_from_memory(image_decode.data(), static_cast<int>(image_decode.size()), &width,
+                                                  &height, &channels, 0);
+    if (!pixels) {
+        LogError("Failed to load image from base64 data");
+        return 0;
+    }
+
+    GLuint texture_id = CreateGLTexture(pixels, width, height, channels);
+    stbi_image_free(pixels);
+
+    return texture_id;
+}
+
+std::string UImage::Img2Base64(const std::string &path) {
+    std::ifstream fin(path, std::ios::binary);
+    if (!fin) {
+        LogError("Failed to open file: {}", path);
+        return "";
+    }
+
+    fin.seekg(0, std::ios::end);
+    size_t file_size = fin.tellg();
+    fin.seekg(0, std::ios::beg);
+
+    std::vector<char> buffer(file_size);
+    fin.read(buffer.data(), file_size);
+
+    return base64_encode(reinterpret_cast<const unsigned char *>(buffer.data()), buffer.size());
+}
+
+GLuint UImage::Img2Texture(const std::string &imgPath) {
+    int width, height, channels;
+    unsigned char *pixels = stbi_load(imgPath.c_str(), &width, &height, &channels, 0);
+    if (!pixels) {
+        LogError("Failed to load image from path: {0}", imgPath);
+        return 0;
+    }
+
+    GLuint texture_id = CreateGLTexture(pixels, width, height, channels);
+    stbi_image_free(pixels);
+
+    return texture_id;
+}
+
+GLuint UImage::CreateGLTexture(const unsigned char *image_data, int width, int height, int channels, int newWidth,
+                               int newHeight) {
+    GLuint texture_id;
+    glGenTextures(1, &texture_id);
+    glBindTexture(GL_TEXTURE_2D, texture_id);
+
+    GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, image_data);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    return texture_id;
+}
+
+void UImage::ImgResize(const std::string &base64_str, float scale, const std::string &path) {
+
+    std::vector<unsigned char> image_decode = Utils::Str2VUChar(base64_decode(base64_str));
+    int width, height, channels;
+    unsigned char *pixels = stbi_load_from_memory(image_decode.data(), static_cast<int>(image_decode.size()), &width,
+                                                  &height, &channels, 0);
+    if (!pixels) {
+        LogError("Failed to load image from path: {0}", path);
+        return;
+    }
+    int new_width = width * scale;
+    int new_height = height * scale;
+
+    unsigned char *resized_data = new unsigned char[new_width * new_height * channels];
+
+    stbir_resize_uint8(pixels, width, height, 0,
+                       resized_data, new_width, new_height, 0, channels);
+
+    stbi_write_png(path.c_str(), new_width, new_height, channels, resized_data, 0);
+
+    stbi_image_free(pixels);
+    delete[] resized_data;
+}
+
+GLuint UImage::CreateGLTexture(const unsigned char *image_data, int width, int height, int channels) {
+    GLuint texture_id;
+    glGenTextures(1, &texture_id);
+    glBindTexture(GL_TEXTURE_2D, texture_id);
+
+    GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
+    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, image_data);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    return texture_id;
+}
+

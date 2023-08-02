@@ -1,4 +1,5 @@
 #include "Application.h"
+#include "StableDiffusion.h"
 
 using namespace std;
 
@@ -15,9 +16,7 @@ int main(int argc, char *argv[]) {
             LogWarn("Application Warning: Please configure config.yaml! Then run this program again");
             setting = true;
         }
-
         auto configure = Utils::LoadYaml<Configure>("config.yaml");
-
 
         Application app(configure, setting);
         app.Renderer();

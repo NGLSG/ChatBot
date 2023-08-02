@@ -5,6 +5,12 @@
 #include <Logger.h>
 #include <Progress.hpp>
 #include <Configure.h>
+#include <gl/GL.h>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
+#include <stb_image.h>
+#include <stb_image_write.h>
+#include <stb_image_resize.h>
 
 using json = nlohmann::json;
 
@@ -186,7 +192,7 @@ public:
 
     static std::string ExtractNormalText(const std::string &text);
 
-    static long long getCurrentTimestamp() { return Logger::getCurrentTimestamp(); }
+    static long long GetCurrentTimestamp() { return Logger::getCurrentTimestamp(); }
 
     static std::string Stamp2Time(long long timestamp) { return Logger::Stamp2Time(timestamp); }
 
@@ -240,6 +246,60 @@ public:
 
     }
 
+    static void OpenFileManager(const std::string &path) {
+        std::string command;
+
+#ifdef _WIN32
+        // Windows
+        std::string winPath = path;
+        std::replace(winPath.begin(), winPath.end(), '/', '\\');
+        command = "explorer.exe  /select,\"" + winPath + "\"";
+#elif defined(__APPLE__)
+        // macOS
+    command = "open \"" + path + "\"";
+#elif defined(__linux__)
+    // Linux
+    command = "xdg-open \"" + path + "\"";
+#else
+    // Unsupported platform
+    std::cerr << "Error: Unsupported platform. Cannot open file manager." << std::endl;
+    return;
+#endif
+
+        // Execute the command to open the file manager
+        int result = std::system(command.c_str());
+
+        if (result != 0) {
+            // Failed to open the file manager
+            std::cerr << "Error: Failed to open file manager." << std::endl;
+        }
+    }
+
+    static std::vector<unsigned char> Str2VUChar(const std::string &str) {
+        std::vector<unsigned char> vuchar(str.begin(), str.end());
+        return vuchar;
+    }
+};
+
+class UImage {
+public:
+    static void Base64ToImage(const std::string &str_base64, const std::string &dstPath);
+
+    static GLuint Base64ToTextureFromPath(const std::string &imgPath);
+
+    static GLuint Base64ToTexture(const std::string &base64_str);
+
+    static std::string Img2Base64(const std::string &path);
+
+    static GLuint Img2Texture(const std::string &path);
+
+    static void ImgResize(const std::string &base64_str, float scale, const std::string &path);
+
+private:
+    static GLuint CreateGLTexture(const unsigned char *image_data, int width, int height, int channels);
+
+    static GLuint CreateGLTexture(const unsigned char *image_data, int width, int height, int channels, int newWidth,
+                                  int newHeight);
 
 };
 

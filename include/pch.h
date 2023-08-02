@@ -14,7 +14,10 @@
 #include <regex>
 #include <archive.h>
 #include <archive_entry.h>
-#include "cpr/cpr.h"
+#include <cpr/cpr.h>
+#include <gl/GL.h>
+#include <stb_image_write.h>
+#include <base64.h>
 
 #define FRAMES_PER_BUFFER (1024)
 const int kMaxThreads = 10; // 最大线程数

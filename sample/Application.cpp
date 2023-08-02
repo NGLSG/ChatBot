@@ -1,7 +1,10 @@
-﻿#include <stb_image_resize.h>
-#include "Application.h"
+﻿#include "Application.h"
+
+std::vector<std::string> scommands;
+bool cpshow = false;
 
 Application::Application(const Configure &configure, bool setting) {
+    scommands = commands;
     this->configure = configure;
     OnlySetting = setting;
     if (!configure.claude.enable && (configure.openAi.api_key.empty() ||
@@ -18,13 +21,14 @@ Application::Application(const Configure &configure, bool setting) {
     if (configure.claude.enable) {
         bot = CreateRef<Claude>(configure.claude);
         convid = "Claude";
-        claudeHistory();
+        GetClaudeHistory();
     } else {
         bot = CreateRef<ChatGPT>(configure.openAi);
     }
     //billing = bot->GetBilling();
     voiceToText = CreateRef<VoiceToText>(configure.openAi);
     listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
+    stableDiffusion = CreateRef<StableDiffusion>(configure.stableDiffusion);
     vitsData = configure.vits;
     whisperData = configure.whisper;
     live2D = configure.live2D;
@@ -51,70 +55,21 @@ Application::Application(const Configure &configure, bool setting) {
     }
 }
 
-GLuint Application::LoadTexture(const char *path) {
-    int maxSize = 256;
+GLuint Application::LoadTexture(const std::string &path) {
+/*    std::string metaPath = std::string(path) + ".meta";
+    if (UFile::Exists(metaPath)) {
+        return UImage::Base64ToTextureFromPath(metaPath);
+    } else {
+        std::string pathCopy = path;
+        std::string metaPathCopy = metaPath;
 
-    SDL_Surface *surface = IMG_Load(path);
-    if (!surface) {
-        // 错误处理
-        return 0;
-    }
+        std::thread([=] {
+            UImage::Base64ToImage(UImage::Img2Base64(pathCopy), metaPathCopy);
+        }).detach();
 
-    int width = surface->w;
-    int height = surface->h;
-    int newWidth = width;
-    int newHeight = height;
 
-    if (width > maxSize || height > maxSize) {
-        // 计算新的宽度和高度，保持纵横比
-        if (width > height) {
-            newWidth = maxSize;
-            newHeight = (maxSize * height) / width;
-        } else {
-            newHeight = maxSize;
-            newWidth = (maxSize * width) / height;
-        }
-
-        // 创建目标surface
-        SDL_Surface *surface_scaled = SDL_CreateRGBSurface(0, newWidth, newHeight, 32, 0, 0, 0, 0);
-
-        // 缩放
-        SDL_BlitScaled(surface, NULL, surface_scaled, NULL);
-
-        // 释放原surface
-        SDL_FreeSurface(surface);
-        surface = surface_scaled;
-    }
-
-    // 获取像素数据
-    uint8_t *data = (uint8_t *)surface->pixels;
-
-    // 倒置像素数据（垂直翻转）
-    int pitch = surface->pitch;
-    uint8_t* tempRow = new uint8_t[pitch];
-    for (int y = 0; y < newHeight / 2; y++) {
-        uint8_t* row1 = data + y * pitch;
-        uint8_t* row2 = data + (newHeight - y - 1) * pitch;
-        memcpy(tempRow, row1, pitch);
-        memcpy(row1, row2, pitch);
-        memcpy(row2, tempRow, pitch);
-    }
-    delete[] tempRow;
-
-    // 创建OpenGL纹理
-    GLuint texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, newWidth, newHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-
-    // 设置过滤参数
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    // 释放SDL surface
-    SDL_FreeSurface(surface);
-
-    return texture;
+    }*/
+    return UImage::Img2Texture(path);
 }
 
 void Application::Vits(std::string text) {
@@ -164,7 +119,7 @@ void Application::RenderCodeBox() {
         show_codes = ImGui::CollapsingHeader(it.first.c_str());
         if (show_codes) {
             for (const auto &code: it.second) {
-                if (!is_valid_text(code)) {
+                if (is_valid_text(code)) {
                     if (ImGui::Button(code.c_str(), ImVec2(-1, 0))) {
                         glfwSetClipboardString(nullptr, code.c_str());
                     }
@@ -196,7 +151,7 @@ void Application::RenderPopupBox() {
         ImVec2 button_size(120, 30);
         if (ImGui::IsKeyPressed(ImGuiKey_Enter) ||
             ImGui::Button(reinterpret_cast<const char *>(u8"确定"), button_size)) {
-            if (!is_valid_text(text)) {
+            if (is_valid_text(text)) {
                 bot->Add(text);
                 conversations.emplace_back(text);
                 chat_history.clear();
@@ -225,11 +180,12 @@ void Application::RenderPopupBox() {
 void Application::RenderChatBox() {
     UniversalStyle();
     // 创建一个子窗口
-    ImGui::Begin("Chat", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
+    ImGui::Begin(reinterpret_cast<const char *>(u8"对话"), NULL,
+                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
 
     ImGui::BeginChild("Chat Box Content", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing()), false,
                       ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoSavedSettings);
-
+    std::sort(chat_history.begin(), chat_history.end(), compareByTimestamp);
     // 显示聊天记录
     for (auto &chat: chat_history) {
         Chat userAsk;
@@ -267,7 +223,8 @@ void Application::RenderChatBox() {
             ImGui::InputTextMultiline(("##" + std::to_string(userAsk.timestamp)).c_str(),
                                       const_cast<char *>(userAsk.content.c_str()), userAsk.content.size() + 1,
                                       input_size,
-                                      ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_CtrlEnterForNewLine);
+                                      ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_CtrlEnterForNewLine |
+                                      ImGuiInputTextFlags_AutoSelectAll);
 
             // Display the timestamp below the chat record
             ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(userAsk.timestamp).c_str());
@@ -305,21 +262,21 @@ void Application::RenderChatBox() {
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, text_color);
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
-
-            if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["avatar"]), ImVec2(24, 24),
-                                   ImVec2(0, 0),
-                                   ImVec2(1, -1))) {
+            ImGui::PushID(botAnswer.timestamp);
+            if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["avatar"]), ImVec2(24, 24))) {
                 fileBrowser = true;
                 title = reinterpret_cast<const char *>(u8"图片选择");
                 typeFilters = {".png", ".jpg"};
                 PathOnConfirm = [this]() {
                     LogInfo(BrowserPath.c_str());
-                    TextureCache["avatar"] = LoadTexture(BrowserPath.c_str());
+                    TextureCache["avatar"] = LoadTexture(BrowserPath);
                     UFile::UCopyFile(Resources + "avatar.png", Resources + "avatar.png.bak");
                     std::remove((Resources + "avatar.png").c_str());
+                    std::remove((Resources + "avatar.png.meta").c_str());
                     UFile::UCopyFile(BrowserPath, Resources + "avatar.png");
                 };
             }
+            ImGui::PopID();
 
 
             ImGui::SameLine();
@@ -327,10 +284,31 @@ void Application::RenderChatBox() {
             ImGui::InputTextMultiline(("##" + to_string(botAnswer.timestamp)).c_str(),
                                       const_cast<char *>(botAnswer.content.c_str()), botAnswer.content.size() + 1,
                                       input_size,
-                                      ImGuiInputTextFlags_ReadOnly);
+                                      ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_AutoSelectAll);
 
+            // 加载纹理的线程
 
-            // Display the timestamp below the chat record
+            if (!botAnswer.image.empty()) {
+                static bool wait = false;
+                if (!SDCache.contains(botAnswer.image)) {
+                    // 如果没有加载过该纹理
+                    if (!wait) {
+                        wait = true;
+                        LogInfo("开始加载图片: {0}", Resources + "Images/" + botAnswer.image);
+                        auto t = LoadTexture(Resources + "Images/" + botAnswer.image);
+                        SDCache[botAnswer.image] = t;
+                        wait = false;
+                    }
+                } else {
+                    // 如果纹理已加载,显示
+                    if (ImGui::ImageButton(reinterpret_cast<void *>(SDCache[botAnswer.image]),
+                                           ImVec2(256, 256))) {
+                        Utils::OpenFileManager(Utils::GetAbsolutePath(Resources + "Images/" + botAnswer.image));
+                    }
+                }
+
+            }
+
             ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(botAnswer.timestamp).c_str());
 
             // Restore the style
@@ -364,7 +342,7 @@ void Application::RenderChatBox() {
                 chat_history.clear();
                 bot->Reset();
                 if (configure.claude.enable) {
-                    FirstTime = Utils::getCurrentTimestamp();
+                    FirstTime = Utils::GetCurrentTimestamp();
                 }
                 save(convid);
             }
@@ -415,7 +393,6 @@ void Application::RenderChatBox() {
     ImGui::End();
 }
 
-//Optimized code
 void Application::RenderInputBox() {
     static std::vector<std::shared_future<std::string>> submit_futures;
     if (listener && listener->IsRecorded()) {
@@ -441,7 +418,7 @@ void Application::RenderInputBox() {
                 auto callback = [&](std::future<std::string> &future) {
                     std::string text = future.get();
 
-                    if (is_valid_text(text)) {
+                    if (!is_valid_text(text)) {
                         // 显示错误消息
                         LogWarn("Bot Warning: Your question is empty");
                         if (whisperData.enable)
@@ -450,7 +427,7 @@ void Application::RenderInputBox() {
                         text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
                         last_input = text;
                         Chat user;
-                        user.timestamp = Utils::getCurrentTimestamp();
+                        user.timestamp = Utils::GetCurrentTimestamp();
                         user.content = last_input;
                         AddChatRecord(user);
 
@@ -486,7 +463,8 @@ void Application::RenderInputBox() {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0);
         ImGui::PushStyleVar(ImGuiStyleVar_GrabRounding, 0);
         ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0);
-
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
         ImGui::Begin("Input filed", NULL,
                      ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
                      ImGuiWindowFlags_NoTitleBar);
@@ -526,7 +504,21 @@ void Application::RenderInputBox() {
 // 结束子窗口
         ImGui::EndChild();
         ImGui::EndGroup();*/
+        if (ImGui::BeginMenuBar()) {
+            if (ImGui::BeginMenu(reinterpret_cast<const char *>(u8"指令"))) {
 
+                if (ImGui::Button(reinterpret_cast<const char *>(u8"绘图"))) {
+                    input_text += "/draw [ ]";
+                }
+
+                if (ImGui::Button(reinterpret_cast<const char *>(u8"帮助"))) {
+                    input_text += "/help";
+                }
+
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenuBar();
+        }
         ImVec2 size(50, 0);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
@@ -538,8 +530,8 @@ void Application::RenderInputBox() {
         ImGui::PopStyleColor(3);
     }
 
-    strcpy_s(input_buffer, input_text.c_str());
 
+    strcpy_s(input_buffer, input_text.c_str());
     if (ImGui::InputTextMultiline("##Input Text", input_buffer, sizeof(input_buffer), ImVec2(-1, -1),
                                   ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CtrlEnterForNewLine)) {
         last_input = input_text = input_buffer;
@@ -548,17 +540,31 @@ void Application::RenderInputBox() {
 
     if ((strlen(last_input.c_str()) > 0 && ImGui::IsKeyPressed(ImGuiKey_Enter) && (!ImGui::GetIO().KeyCtrl))) {
         Chat user;
-        user.timestamp = Utils::getCurrentTimestamp();
+        std::string cmd, args;
+        user.timestamp = Utils::GetCurrentTimestamp();
+
         user.content = last_input;
-        AddChatRecord(user); // 使用last_input作为键
-        if (whisperData.enable)
-            listener->ResetRecorded();
-        std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]() {
-            LogInfo(last_input);
-            return bot->Submit(last_input, role);
-        }).share();
-        submit_futures.push_back(std::move(submit_future));
+        if (ContainsCommand(last_input, cmd, args)) {
+            InlineCommand(cmd, args, user.timestamp);
+        }
+        if (is_valid_text(user.content)) {
+            AddChatRecord(user);
+        }
+        if (is_valid_text(last_input)) {
+            // 使用last_input作为键
+            if (whisperData.enable)
+                listener->ResetRecorded();
+            std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]() {
+                LogInfo(last_input);
+                return bot->Submit(last_input, role);
+            }).share();
+
+
+            submit_futures.push_back(std::move(submit_future));
+        }
         input_text.clear();
+        save(convid);
+        bot->Save(convid);
     } else if ((ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyCtrl) ||
                (ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyShift)) {
         input_text += "\n";
@@ -574,12 +580,14 @@ void Application::RenderInputBox() {
                 Chat botR;
                 botR.flag = 1;
 
-                botR.timestamp = Utils::getCurrentTimestamp();
+                botR.timestamp = Utils::GetCurrentTimestamp();
                 botR.content = response;
                 AddChatRecord(botR);
 
                 it = submit_futures.erase(it);
                 auto tmp_code = Utils::GetAllCodesFromText(response);
+                save(convid);
+                bot->Save(convid);
                 for (auto &i: tmp_code) {
                     std::size_t pos = i.find('\n'); // 查找第一个换行符的位置
                     std::string codetype;
@@ -587,7 +595,7 @@ void Application::RenderInputBox() {
                         codetype = i.substr(0, pos);
                         i = i.substr(pos + 1); // 删除第一行
                     }
-                    if (is_valid_text(codetype))
+                    if (!is_valid_text(codetype))
                         codetype = "Unknown";
                     if (codes.contains(codetype)) {
                         codes[codetype].emplace_back(i);
@@ -610,16 +618,15 @@ void Application::RenderInputBox() {
             ++it;
         }
     }
-    ImGui::PopStyleVar(9);
+    ImGui::PopStyleVar(11);
 }
 
 void Application::RenderConversationBox() {
 
     UniversalStyle();
-    ImGui::Begin("Conversation", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
-    if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["add"]), ImVec2(16, 16),
-                           ImVec2(0, 0),
-                           ImVec2(1, -1))) {
+    ImGui::Begin(reinterpret_cast<const char *>(u8"会话"), NULL,
+                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
+    if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["add"]), ImVec2(16, 16))) {
         // 显示输入框
         show_input_box = true;
     }
@@ -630,7 +637,7 @@ void Application::RenderConversationBox() {
         // 消息框
         ImGui::Image(reinterpret_cast<void *>(TextureCache["message"]), ImVec2(32, 32),
                      ImVec2(0, 0),
-                     ImVec2(1, -1));
+                     ImVec2(1, 1));
 
         // 消息文本
         ImGui::SameLine();
@@ -642,9 +649,7 @@ void Application::RenderConversationBox() {
 
         // 删除按钮
         ImGui::SameLine();
-        if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["del"]), ImVec2(16, 16),
-                               ImVec2(0, 0),
-                               ImVec2(1, -1)) &&
+        if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["del"]), ImVec2(16, 16)) &&
             conversations.size() > 1) {
             bot->Del(convid);
             del(convid);
@@ -713,7 +718,7 @@ void Application::RenderConfigBox() {
             if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["eye"]),
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
-                                   ImVec2(1, -1),
+                                   ImVec2(1, 1),
                                    -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1))) {
@@ -774,7 +779,7 @@ void Application::RenderConfigBox() {
             if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["eye"]),
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
-                                   ImVec2(1, -1),
+                                   ImVec2(1, 1),
                                    -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1))) {
@@ -822,7 +827,7 @@ void Application::RenderConfigBox() {
         if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["eye"]),
                                ImVec2(16, 16),
                                ImVec2(0, 0),
-                               ImVec2(1, -1),
+                               ImVec2(1, 1),
                                1,
                                ImVec4(0, 0, 0, 0),
                                ImVec4(1, 1, 1, 1))) {
@@ -1148,7 +1153,7 @@ int Application::Renderer() {
     TextureCache["add"] = LoadTexture("Resources/add.png");*/
 #pragma omp parallel for
     for (auto &it: TextureCache) {
-        it.second = LoadTexture(std::string(Resources + it.first + ".png").c_str());
+        it.second = LoadTexture(Resources + it.first + ".png");
     }
     // 渲染循环
     while (!glfwWindowShouldClose(window)) {
@@ -1291,6 +1296,7 @@ vector <Application::Chat> Application::load(std::string name) {
                 } else {
                     timestamp = record_node["bot"]["timestamp"].as<long long>();
                     content = record_node["bot"]["content"].as<std::string>();
+                    record.image = record_node["bot"]["image"].as<std::string>();
                 }
 
                 record.flag = flag;
@@ -1331,6 +1337,7 @@ void Application::save(std::string name, bool out) {
             } else {
                 record_node["bot"]["timestamp"] = record.timestamp;
                 record_node["bot"]["content"] = record.content;
+                record_node["bot"]["image"] = record.image;
             }
 
             // 将 YAML 映射节点添加到主节点中
@@ -1569,9 +1576,9 @@ void Application::RuntimeDetector() {
     }
 }
 
-void Application::claudeHistory() {
+void Application::GetClaudeHistory() {
     thread([&]() {
-        FirstTime = Utils::getCurrentTimestamp();
+        FirstTime = Utils::GetCurrentTimestamp();
         while (AppRunning) {
             Chat botR;
             botR.flag = 1;

@@ -1,4 +1,4 @@
-﻿#include "VoiceToText.h"
+﻿ #include "VoiceToText.h"
 
 VoiceToText::VoiceToText(const OpenAIData &voiceData) : _voiceData(voiceData) {
 

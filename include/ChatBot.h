@@ -178,7 +178,7 @@ public:
     }
 
     virtual Billing GetBilling() override {
-        return {999, 999, 0, Utils::getCurrentTimestamp()};
+        return {999, 999, 0, Utils::GetCurrentTimestamp()};
     };
 
     virtual map<long long, string> GetHistory() override {

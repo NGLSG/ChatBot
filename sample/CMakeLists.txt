@@ -48,6 +48,14 @@ set(HEADERS
         Application.h
         ../include/pch.h
         ../include/imfilebrowser.h
+        ../include/base64.h
+        ../src/base64.cpp
+        ../src/StableDiffusion.cpp
+        ../include/StableDiffusion.h
+        ../include/stb_image_resize.h
+        ../src/stb_image_resize.cpp
+        ../include/stb_image_write.h
+        ../src/stb_image_wirte.cpp
 )
 
 # 添加可执行文件

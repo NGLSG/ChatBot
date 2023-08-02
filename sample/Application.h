@@ -9,7 +9,6 @@
 #include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 #include <regex>
-#include <SDL_image.h>
 #include "stb_image_write.h"
 #include "stb_image.h"
 #include "ChatBot.h"
@@ -18,12 +17,14 @@
 #include "Recorder.h"
 #include "Configure.h"
 #include "utils.h"
+#include "StableDiffusion.h"
 #include "imfilebrowser.h"
 
 
 #define TEXT_BUFFER 4096
 const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.2.1");
-
+extern std::vector<std::string> scommands;
+extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
 typedef std::function<void()> ConfirmDelegate;
 
@@ -56,12 +57,14 @@ private:
         int flag = 0;//0=user;1=bot
         long long timestamp;
         std::string content;
+        std::string image;
     };
 
     Ref<Translate> translator;
     Ref<ChatBot> bot;
     Ref<VoiceToText> voiceToText;
     Ref<Listener> listener;
+    Ref<StableDiffusion> stableDiffusion;
     WhisperData whisperData;
     VITSData vitsData;
     Live2D live2D;
@@ -79,6 +82,8 @@ private:
 
     std::mutex submit_futures_mutex;
     std::mutex chat_history_mutex;
+    std::mutex chat_mutex;
+
 
     State state = State::OK;
     Configure configure;
@@ -98,6 +103,7 @@ private:
     const std::string ChatGLMPath = "ChatGLM/";
     const std::string Live2DPath = "Live2D/";
     const std::string Conversation = "Conversations/ChatHistory/";
+    const std::string special_chars = R"(~!@#$%^&*()_+`-={}|[]\:";'<>?,./)";
 
     const int sampleRate = 16000;
     const int framesPerBuffer = 512;
@@ -110,8 +116,15 @@ private:
     const std::vector<std::string> tmpWhisperModel = {"model/Whisper/ggml-tiny.bin", "model/Whisper/ggml-base.bin",
                                                       "model/Whisper/ggml-small.bin", "model/Whisper/ggml-medium.bin",
                                                       "model/Whisper/ggml-large.bin"};
+    const std::vector<std::string> sampleIndices = {"Euler a", "Euler", "LMS", "Heun", "DPM2", "DPM2 a", "DPM++ 2S a",
+                                                    "DPM++ 2M", "DPM++ SDE", "DPM fast", "DPM adaptive", "LMS Karras",
+                                                    "DPM2 Karras", "DPM2 a Karras", "DPM++ 2S a Karras",
+                                                    "DPM++ 2M Karras", "DPM++ SDE Karras", "DDIM", "PLMS", "UniPC"
+    };
     const std::vector<std::string> roles = {"user", "system", "assistant"};
     const std::vector<std::string> proxies = {"Cloudflare", "Tencent Cloud"};
+    const std::vector<std::string> commands = {"/draw", reinterpret_cast<const char *>(u8"/绘图"),
+                                               "/help", reinterpret_cast<const char *>(u8"/帮助")};
 
     std::vector<std::string> live2dModel;
     std::vector<std::string> speakers = {reinterpret_cast<const char *>(u8"空空如也")};
@@ -128,6 +141,8 @@ private:
                                   {"vits",         0},
                                   {"conversation", 0},
                                   {"role",         0}};
+    map <string, GLuint> SDCache;
+
     bool vits = true;
     bool vitsModel = true;
     bool show_input_box = false;
@@ -137,9 +152,9 @@ private:
     bool AppRunning = true;
     long long FirstTime = 0;
 
-    void save(std::string name = "default", bool out = true);
-
     std::vector<Chat> load(std::string name = "default");
+
+    void save(std::string name = "default", bool out = true);
 
     void del(std::string name = "default");
 
@@ -158,6 +173,80 @@ private:
     }
 
     void VitsListener();
+
+    void _Draw(Ref<std::string> prompt, long long ts, bool callFromBot) {
+        std::string uid = stableDiffusion->Text2Img(*prompt);
+
+        if (callFromBot) {
+            // 使用互斥锁保护共享资源 chat_history
+            std::lock_guard<std::mutex> lock(chat_mutex);
+            for (auto &it: chat_history) {
+                if (it.flag == 1) {
+                    if (it.timestamp >= ts) {
+                        it.image = uid;
+                        break;
+                    }
+                } else {
+                    continue;
+                }
+            }
+        } else {
+            Chat img;
+            img.flag = 1;
+            img.timestamp = Utils::GetCurrentTimestamp();
+            img.content = "Finished!";
+            img.image = uid;
+
+            // 使用互斥锁保护共享资源 chat_history
+            std::lock_guard<std::mutex> lock(chat_mutex);
+            chat_history.emplace_back(img);
+        }
+    }
+
+    void Draw(const std::string &prompt, long long ts, bool callFromBot = false) {
+        auto prompt_ref = CreateRef<std::string>(prompt);
+        std::thread t([=] { _Draw(prompt_ref, ts, callFromBot); });
+        t.detach();
+    }
+
+
+    bool ContainsCommand(std::string &str, std::string &cmd, std::string &args) {
+        for (const auto &it: commands) {
+            std::regex cmd_regex(R"(/(\w+))"); // 定义匹配命令的正则表达式
+            std::regex args_regex(R"((\[[^\]]*\]))"); // 定义匹配参数的正则表达式
+            std::smatch cmd_match, args_match;
+
+            // 匹配命令
+            if (std::regex_search(str, cmd_match, cmd_regex)) {
+                cmd = cmd_match[1]; // 第一个括号内的内容即为命令
+                str = cmd_match.prefix().str() + cmd_match.suffix().str(); // 删除匹配到的命令部分
+
+                // 匹配参数
+                if (std::regex_search(str, args_match, args_regex)) {
+                    args = args_match[1]; // 第一个括号内的内容即为参数
+                    args = args.substr(1, args.length() - 2); // 去除参数中的方括号
+                    str = args_match.prefix().str() + args_match.suffix().str(); // 删除匹配到的参数部分
+                    return true;
+                }
+                return true;
+            }
+
+        }
+        return false;
+    }
+
+
+    void InlineCommand(const std::string &cmd, const std::string &args, long long ts) {
+        if (cmd == "draw" || cmd == reinterpret_cast<const char *>(u8"绘图")) {
+            Draw(args, ts);
+        } else if (cmd == "help" || reinterpret_cast<const char *>(u8"帮助")) {
+            Chat help;
+            help.flag = 1;
+            help.timestamp = Utils::GetCurrentTimestamp() + 10;
+            help.content = reinterpret_cast<const char *>(u8"内置命令:\n/draw或者/绘图 [prompt] 绘制一张图片\n/help或者/帮助 唤起帮助");
+            chat_history.emplace_back(help);
+        }
+    }
 
     inline void UniversalStyle() {
         // 定义通用样式
@@ -217,6 +306,7 @@ private:
     void RenderConfigBox();
 
     // 渲染输入框
+
     void RenderInputBox();
 
     //渲染弹窗
@@ -274,23 +364,34 @@ private:
         }
     }
 
-
     // 加载纹理,并保存元数据
-    GLuint LoadTexture(const char *path);
+    GLuint LoadTexture(const std::string &path);
 
     void Vits(std::string text);
 
     bool Initialize();
 
-    static bool is_valid_text(const std::string &text) {
-        return text.empty() || text == "";
+    bool is_valid_text(const std::string &text) {
+
+        if (text.empty()) return false;
+
+        bool is_space = text.find_first_not_of(" \t\r\n") == std::string::npos;
+        bool is_special = text.find_first_not_of(special_chars) == std::string::npos;
+
+        if (is_space || is_special) return false;
+
+        if (is_space && is_special) return false;
+
+        // 排除其他非法组合
+
+        return true;
     }
 
     void RuntimeDetector();
 
     int countTokens(const std::string &str);
 
-    void claudeHistory();
+    void GetClaudeHistory();
 
     static void EmptyFunction() {
         // Do nothing
