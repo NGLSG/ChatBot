@@ -4,54 +4,58 @@ std::vector<std::string> scommands;
 bool cpshow = false;
 
 Application::Application(const Configure &configure, bool setting) {
-    scommands = commands;
-    this->configure = configure;
-    OnlySetting = setting;
-    if (!configure.claude.enable && (configure.openAi.api_key.empty() ||
-                                     configure.openAi.api_key == "")) {
-        OnlySetting = true;
-        state = State::NO_OPENAI_KEY;
-    } else if (configure.claude.enable &&
-               (configure.claude.slackToken.empty() ||
-                configure.claude.slackToken == "")) {
-        OnlySetting = true;
-        state = State::NO_OPENAI_KEY;
-    }
-    translator = CreateRef<Translate>(configure.baiDuTranslator);
-    if (configure.claude.enable) {
-        bot = CreateRef<Claude>(configure.claude);
-        convid = "Claude";
-        GetClaudeHistory();
-    } else {
-        bot = CreateRef<ChatGPT>(configure.openAi);
-    }
-    //billing = bot->GetBilling();
-    voiceToText = CreateRef<VoiceToText>(configure.openAi);
-    listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
-    stableDiffusion = CreateRef<StableDiffusion>(configure.stableDiffusion);
-    vitsData = configure.vits;
-    whisperData = configure.whisper;
-    live2D = configure.live2D;
-    if (!Initialize()) {
-        LogWarn("Warning: Initialization failed!Maybe some function can not working");
-    }
-    if (live2D.enable) {
-        Utils::OpenProgram(live2D.bin.c_str());
-        lConfigure = Utils::LoadYaml<LConfigure>("Lconfig.yml");
-    }
-    if (whisperData.enable && whisper && mwhisper) {
-        listener->listen();
-    }
-    if (vitsData.enable && vits && vitsModel) {
-        Vits(" ");
+    try {
+        scommands = commands;
+        this->configure = configure;
+        OnlySetting = setting;
+        if (!configure.claude.enable && (configure.openAi.api_key.empty() ||
+                                         configure.openAi.api_key == "")) {
+            OnlySetting = true;
+            state = State::NO_OPENAI_KEY;
+        } else if (configure.claude.enable &&
+                   (configure.claude.slackToken.empty() ||
+                    configure.claude.slackToken == "")) {
+            OnlySetting = true;
+            state = State::NO_OPENAI_KEY;
+        }
+        translator = CreateRef<Translate>(configure.baiDuTranslator);
+        if (configure.claude.enable) {
+            bot = CreateRef<Claude>(configure.claude);
+            convid = "Claude";
+            GetClaudeHistory();
+        } else {
+            bot = CreateRef<ChatGPT>(configure.openAi);
+        }
+        //billing = bot->GetBilling();
+        voiceToText = CreateRef<VoiceToText>(configure.openAi);
+        listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
+        stableDiffusion = CreateRef<StableDiffusion>(configure.stableDiffusion);
+        vitsData = configure.vits;
+        whisperData = configure.whisper;
+        live2D = configure.live2D;
+        if (!Initialize()) {
+            LogWarn("Warning: Initialization failed!Maybe some function can not working");
+        }
+        if (live2D.enable) {
+            Utils::OpenProgram(live2D.bin.c_str());
+            lConfigure = Utils::LoadYaml<LConfigure>("Lconfig.yml");
+        }
+        if (whisperData.enable && whisper && mwhisper) {
+            listener->listen();
+        }
+        if (vitsData.enable && vits && vitsModel) {
+            Vits(" ");
 #ifdef WIN32
-        Utils::OpenProgram("bin/VitsConvertor/VitsConvertor.exe");
+            Utils::OpenProgram("bin/VitsConvertor/VitsConvertor.exe");
 #else
-        std::thread([&]() {
-            Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
-        }).detach();
+            std::thread([&]() {
+                Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
+            }).detach();
 #endif
-        VitsListener();
+            VitsListener();
+        }
+    } catch (exception &e) {
+        LogError(e.what());
     }
 }
 
@@ -649,15 +653,18 @@ void Application::RenderConversationBox() {
 
         // 删除按钮
         ImGui::SameLine();
+        ImGui::PushID(conversation.c_str());
         if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["del"]), ImVec2(16, 16)) &&
             conversations.size() > 1) {
             bot->Del(convid);
             del(convid);
             bot->Load(convid);
             load(convid);
+            ImGui::PopID();
             ImGui::EndGroup();
             break;
         }
+        ImGui::PopID();
         ImGui::EndGroup();
     }
     ImGui::End();
@@ -1326,7 +1333,7 @@ void Application::del(std::string name) {
     LogInfo("Bot : 删除 {0} 成功", name);
 }
 
-vector <Application::Chat> Application::load(std::string name) {
+vector<Application::Chat> Application::load(std::string name) {
     if (UFile::Exists(Conversation + name + ".yaml")) {
         std::ifstream session_file(Conversation + name + ".yaml");
         session_file.imbue(std::locale("en_US.UTF-8"));

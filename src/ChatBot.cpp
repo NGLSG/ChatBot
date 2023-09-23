@@ -12,86 +12,91 @@ ChatGPT::ChatGPT(const OpenAIData &chat_data) : chat_data_(chat_data) {
 }
 
 string ChatGPT::sendRequest(std::string data) {
-    json parsed_response;
-    std::string response_role = "";
-    std::string full_response = "";
-    int retry_count = 0;
-    while (retry_count < 3) {
-        try {
-            LogInfo("ChatGPT: Post request to openai...");
-            std::string url = "";
-            if (!chat_data_.useWebProxy) {
-                url = "https://api.openai.com/";
-            } else {
-                url = WebProxies[chat_data_.webproxy];
+    try {
+        json parsed_response;
+        std::string response_role = "";
+        std::string full_response = "";
+        int retry_count = 0;
+        while (retry_count < 3) {
+            try {
+                LogInfo("ChatGPT: Post request to openai...");
+                std::string url = "";
+                if (!chat_data_.useWebProxy) {
+                    url = "https://api.openai.com/";
+                } else {
+                    url = WebProxies[chat_data_.webproxy];
+                }
+
+                CURL *curl;
+                CURLcode res;
+                struct curl_slist *headers = NULL;
+                headers = curl_slist_append(headers, "Content-Type: application/json");
+                headers = curl_slist_append(headers, ("Authorization: Bearer " + chat_data_.api_key).c_str());
+                headers = curl_slist_append(headers, "Transfer-Encoding: chunked");
+
+                curl = curl_easy_init();
+                if (curl) {
+                    std::string response = "";
+                    curl_easy_setopt(curl, CURLOPT_URL, (url + "v1/chat/completions").c_str());
+                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
+                    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+                    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+                    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+                    if (!chat_data_.useWebProxy && !chat_data_.proxy.empty()) {
+                        curl_easy_setopt(curl, CURLOPT_PROXY, chat_data_.proxy.c_str());
+                    }
+                    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); // disable SSL verification
+                    res = curl_easy_perform(curl);
+                    if (res != CURLE_OK) {
+                        LogError("OpenAI Error: Request failed with error code " + std::to_string(res));
+                        parsed_response = {};
+                        return "";
+                    }
+                    curl_easy_cleanup(curl);
+                    curl_slist_free_all(headers);
+                    std::stringstream stream(response);
+                    std::string line;
+                    while (std::getline(stream, line)) {
+                        if (line.empty()) {
+                            continue;
+                        }
+                        // Remove "data: "
+                        line = line.substr(6);
+                        if (line == "[DONE]") {
+                            break;
+                        }
+                        json resp = json::parse(line);
+                        json choices = resp.value("choices", json::array());
+                        if (choices.empty()) {
+                            continue;
+                        }
+                        json delta = choices[0].value("delta", json::object());
+                        if (delta.empty()) {
+                            continue;
+                        }
+                        if (delta.count("role")) {
+                            response_role = delta["role"].get<std::string>();
+                        }
+                        if (delta.count("content")) {
+                            std::string content = delta["content"].get<std::string>();
+                            full_response += content;
+                        }
+                    }
+                    return full_response;
+                }
             }
-
-            CURL *curl;
-            CURLcode res;
-            struct curl_slist *headers = NULL;
-            headers = curl_slist_append(headers, "Content-Type: application/json");
-            headers = curl_slist_append(headers, ("Authorization: Bearer " + chat_data_.api_key).c_str());
-            headers = curl_slist_append(headers, "Transfer-Encoding: chunked");
-
-            curl = curl_easy_init();
-            if (curl) {
-                std::string response = "";
-                curl_easy_setopt(curl, CURLOPT_URL, (url + "v1/chat/completions").c_str());
-                curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
-                curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-                curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-                curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-                if (!chat_data_.useWebProxy && !chat_data_.proxy.empty()) {
-                    curl_easy_setopt(curl, CURLOPT_PROXY, chat_data_.proxy.c_str());
-                }
-                curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); // disable SSL verification
-                res = curl_easy_perform(curl);
-                if (res != CURLE_OK) {
-                    LogError("OpenAI Error: Request failed with error code " + std::to_string(res));
-                    parsed_response = {};
-                    return "";
-                }
-                curl_easy_cleanup(curl);
-                curl_slist_free_all(headers);
-                std::stringstream stream(response);
-                std::string line;
-                while (std::getline(stream, line)) {
-                    if (line.empty()) {
-                        continue;
-                    }
-                    // Remove "data: "
-                    line = line.substr(6);
-                    if (line == "[DONE]") {
-                        break;
-                    }
-                    json resp = json::parse(line);
-                    json choices = resp.value("choices", json::array());
-                    if (choices.empty()) {
-                        continue;
-                    }
-                    json delta = choices[0].value("delta", json::object());
-                    if (delta.empty()) {
-                        continue;
-                    }
-                    if (delta.count("role")) {
-                        response_role = delta["role"].get<std::string>();
-                    }
-                    if (delta.count("content")) {
-                        std::string content = delta["content"].get<std::string>();
-                        full_response += content;
-                    }
-                }
-                return full_response;
+            catch (json::exception &e) {
+                LogError("OpenAI Error: " + std::string(e.what()));
+                parsed_response = {};
+                retry_count++;
             }
         }
-        catch (json::exception &e) {
-            LogError("OpenAI Error: " + std::string(e.what()));
-            parsed_response = {};
-            retry_count++;
-        }
+        LogError("OpenAI Error: Request failed after three retries.");
+        return "";
     }
-    LogError("OpenAI Error: Request failed after three retries.");
-    return "";
+    catch (exception &e) {
+        LogError(e.what());
+    }
 }
 
 size_t ChatGPT::WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -104,31 +109,36 @@ std::future<std::string> ChatGPT::SubmitAsync(std::string prompt, std::string ro
 }
 
 std::string ChatGPT::Submit(std::string prompt, std::string role, std::string convid) {
-    convid_ = convid;
-    json ask;
-    ask["content"] = prompt;
-    ask["role"] = role;
-    LogInfo("User asked: {0}", prompt);
-    if (Conversation.find(convid) == Conversation.end()) {
-        history.push_back(defaultJson);
-        Conversation.insert({convid, history});
-    }
-    history.emplace_back(ask);
-    Conversation[convid] = history;
-    std::string data = "{\n"
-                       "  \"model\": \"" + chat_data_.model + "\",\n"
-                                                              "  \"stream\": true,\n"
-                                                              "  \"messages\": " +
-                       Conversation[convid].dump()
-                       + "}\n";
-    string text = sendRequest(data);
+    try {
+        convid_ = convid;
+        json ask;
+        ask["content"] = prompt;
+        ask["role"] = role;
+        LogInfo("User asked: {0}", prompt);
+        if (Conversation.find(convid) == Conversation.end()) {
+            history.push_back(defaultJson);
+            Conversation.insert({convid, history});
+        }
+        history.emplace_back(ask);
+        Conversation[convid] = history;
+        std::string data = "{\n"
+                           "  \"model\": \"" + chat_data_.model + "\",\n"
+                                                                  "  \"stream\": true,\n"
+                                                                  "  \"messages\": " +
+                           Conversation[convid].dump()
+                           + "}\n";
+        string text = sendRequest(data);
 
-    std::string str;
-    for (char c: text) {
-        str += c;
-        std::cout << "\rBot: " << str << flush;
+        std::string str;
+        for (char c: text) {
+            str += c;
+            std::cout << "\rBot: " << str << flush;
+        }
+        return text;
     }
-    return text;
+    catch (exception &e) {
+        LogError(e.what());
+    }
 }
 
 void ChatGPT::Reset() {

@@ -9,7 +9,6 @@ add_definitions(-w)
 find_package(sndfile REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(cpr CONFIG REQUIRED)
-find_package(spdlog CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(PortAudio CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
@@ -63,7 +62,7 @@ set(HEADERS
 add_executable(CyberGirl ${SOURCES} ${HEADERS})
 target_precompile_headers(CyberGirl PRIVATE ../include/pch.h)
 # 添加头文件目录
-target_include_directories(CyberGirl PRIVATE ../include)
+target_include_directories(CyberGirl PRIVATE ../include Vendor/spdlog/include)
 # 链接依赖库
 target_link_libraries(CyberGirl
         PRIVATE portaudio
@@ -74,7 +73,6 @@ target_link_libraries(CyberGirl
         PRIVATE nlohmann_json::nlohmann_json
         PRIVATE imgui::imgui
         PRIVATE cpr::cpr
-        PRIVATE spdlog::spdlog spdlog::spdlog_header_only
         PRIVATE OpenSSL::SSL OpenSSL::Crypto
         PRIVATE ${Stb_INCLUDE_DIR}
         PRIVATE

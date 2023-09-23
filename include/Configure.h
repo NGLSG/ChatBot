@@ -36,6 +36,7 @@ struct StableDiffusionData {
     std::string sampler_index = "Euler a";
     std::string negative_prompt = "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, bad feet";
     int steps = 50;
+    int denoising_strength = 0;
     int width = 5112;
     int height = 512;
     float cfg_scale = 7;
@@ -304,6 +305,7 @@ namespace YAML {
             node["sampler_index"] = data.sampler_index;
             node["negative_prompt"] = data.negative_prompt;
             node["steps"] = data.steps;
+            node["denoising_strength"] = data.denoising_strength;
             node["width"] = data.width;
             node["height"] = data.height;
             node["cfg_scale"] = data.cfg_scale;
@@ -317,6 +319,7 @@ namespace YAML {
             data.steps = node["steps"].as<int>();
             data.width = node["width"].as<int>();
             data.height = node["height"].as<int>();
+            data.denoising_strength = node["denoising_strength"].as<int>();
             data.cfg_scale = node["cfg_scale"].as<float>();
             return true;
         }

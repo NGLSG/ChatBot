@@ -14,6 +14,7 @@ public :
 private:
     StableDiffusionData _data;
     const int _maxSize = 256;
+    std::string t2iurl;
 };
 
 

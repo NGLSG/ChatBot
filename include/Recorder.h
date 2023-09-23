@@ -8,7 +8,7 @@ public:
     const std::string filepath = "recorded.wav";
 
     long long silentTimer;
-    const int SILENT_TIMEOUT = 1000;
+    const int SILENT_TIMEOUT = 2000;
 
     Recorder(int sampleRate, int framesPerBuffer);
 

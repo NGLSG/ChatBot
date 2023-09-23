@@ -1,50 +1,60 @@
-﻿ #include "VoiceToText.h"
+﻿#include "VoiceToText.h"
+#include "vcruntime_exception.h"
 
 VoiceToText::VoiceToText(const OpenAIData &voiceData) : _voiceData(voiceData) {
 
 }
 
 json VoiceToText::sendRequest(std::string data) {
-    json parsed_response;
-    std::string url = "";
-    if (!_voiceData.useWebProxy) {
-        url = "https://api.openai.com/";
-        if (!_voiceData.proxy.empty()) {
-            session.SetProxies(cpr::Proxies{
-                    {"http",  _voiceData.proxy},
-                    {"https", _voiceData.proxy}
-            });
+    try {
+        json parsed_response;
+        std::string url = "";
+        if (!_voiceData.useWebProxy) {
+            url = "https://api.openai.com/";
+            if (!_voiceData.proxy.empty()) {
+                session.SetProxies(cpr::Proxies{
+                        {"http",  _voiceData.proxy},
+                        {"https", _voiceData.proxy}
+                });
+            }
+        } else {
+            url = WebProxies[_voiceData.webproxy];
         }
-    } else {
-        url = WebProxies[_voiceData.webproxy];
+        session.SetUrl(cpr::Url{url + "v1/audio/transcriptions"});
+        session.SetHeader(cpr::Header{{"Authorization", "Bearer " + _voiceData.api_key},
+                                      {"Content-Type",  "multipart/form-data"}});
+        session.SetMultipart(cpr::Multipart{{"file",  cpr::File{data}},
+                                            {"model", "whisper-1"}});
+        session.SetVerifySsl(cpr::VerifySsl{false});
+        cpr::Response response = session.Post();
+        session.SetProxies(cpr::Proxies());
+        if (response.status_code != 200) {
+            LogError("Whisper Error: Request failed with status code " + std::to_string(response.status_code) +
+                     ". Because " + response.reason);
+            return {};
+        }
+        parsed_response = json::parse(response.text);
+        return parsed_response;
     }
-    session.SetUrl(cpr::Url{url + "v1/audio/transcriptions"});
-    session.SetHeader(cpr::Header{{"Authorization", "Bearer " + _voiceData.api_key},
-                                  {"Content-Type",  "multipart/form-data"}});
-    session.SetMultipart(cpr::Multipart{{"file",  cpr::File{data}},
-                                        {"model", "whisper-1"}});
-    session.SetVerifySsl(cpr::VerifySsl{false});
-    cpr::Response response = session.Post();
-    session.SetProxies(cpr::Proxies());
-    if (response.status_code != 200) {
-        LogError("Whisper Error: Request failed with status code " + std::to_string(response.status_code) +
-                 ". Because " + response.reason);
-        return {};
+    catch (std::exception &e) {
+        LogError(e.what());
     }
-    parsed_response = json::parse(response.text);
-    return parsed_response;
 }
 
 std::string VoiceToText::Convert(std::string voicePath) {
-    json response = sendRequest(voicePath);
+    try {
+        json response = sendRequest(voicePath);
 
-    if (response.is_null()) {
-        LogError("Whisper Error: Response is null.");
-        return "";
+        if (response.is_null()) {
+            LogError("Whisper Error: Response is null.");
+            return "";
+        }
+
+        std::string res = response["text"];
+        return res;
+    } catch (std::exception &e) {
+        LogError(e.what());
     }
-
-    std::string res = response["text"];
-    return res;
 }
 
 std::future<std::string> VoiceToText::ConvertAsync(std::string voicePath) {

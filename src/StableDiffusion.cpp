@@ -7,9 +7,11 @@ StableDiffusion::StableDiffusion(StableDiffusionData data) : _data(data) {
 }
 
 std::string StableDiffusion::Text2Img(std::string prompt) {
+    std::string url = _data.apiPath + "/sdapi/v1/txt2img";
     cpr::Session session;
-    session.SetUrl(cpr::Url{_data.apiPath+"/sdapi/v1/txt2img"});
+    session.SetUrl(cpr::Url{url});
     json body = {
+            {"denoising_strength", _data.denoising_strength},
             {"prompt",             prompt},
             {"sampler_index",      _data.sampler_index},
             {"negative_prompt",    _data.negative_prompt},

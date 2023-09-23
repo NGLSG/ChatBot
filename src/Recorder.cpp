@@ -97,7 +97,7 @@ int Recorder::recordCallback(const void *inputBuffer, void *outputBuffer, unsign
     // Check for silence
 
     for (int i = 0; i < framesPerBuffer; i++) {
-        if (std::abs(input[i]) > 0.001) {
+        if (std::abs(input[i]) > 0.0015) {
             silence = false;
             break;
         } else {
