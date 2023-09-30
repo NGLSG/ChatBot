@@ -858,7 +858,10 @@ void Application::RenderConfigBox() {
                 config = Utils::ReadFile(configure.vits.config);
                 if (!config.empty()) {
                     json _config = json::parse(config);
-                    speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
+                    if (_config["speakers"] != nullptr)
+                        speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
+                    else if (_config["data"]["spk2id"] != nullptr )
+                        speakers = Utils::JsonDictToStringVector(_config["data"]["spk2id"]);
                 }
             }
 
@@ -914,8 +917,11 @@ void Application::RenderConfigBox() {
 
                     if (!config.empty()) {
                         // 解析配置,获取speakers
-                        json j = json::parse(config);
-                        speakers = Utils::JsonArrayToStringVector(j["speakers"]);
+                        json _config = json::parse(config);
+                        if (_config["speakers"] != nullptr)
+                            speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
+                        else if (_config["data"]["spk2id"] != nullptr )
+                            speakers = Utils::JsonDictToStringVector(_config["data"]["spk2id"]);
                     }
                     configure.vits.speaker_id = 0;
                 }
@@ -1333,7 +1339,7 @@ void Application::del(std::string name) {
     LogInfo("Bot : 删除 {0} 成功", name);
 }
 
-vector<Application::Chat> Application::load(std::string name) {
+vector <Application::Chat> Application::load(std::string name) {
     if (UFile::Exists(Conversation + name + ".yaml")) {
         std::ifstream session_file(Conversation + name + ".yaml");
         session_file.imbue(std::locale("en_US.UTF-8"));

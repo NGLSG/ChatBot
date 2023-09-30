@@ -212,6 +212,22 @@ public:
             }
         }
         return result;
+    }    
+    
+    static std::vector<std::string> JsonDictToStringVector(const json &array) {
+        std::vector<std::string> keys;
+        try {
+
+            // 遍历JSON对象，将所有键的名字存储在vector中
+            for (auto it = array.begin(); it != array.end(); ++it) {
+                keys.push_back(it.key());
+            }
+        } catch (const std::exception& e) {
+            // 解析异常处理
+            std::cerr << "Error: " << e.what() << std::endl;
+        }
+
+        return keys;
     }
 
     // 获取文件夹下所有指定后缀的文件
