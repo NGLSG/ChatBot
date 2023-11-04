@@ -860,7 +860,7 @@ void Application::RenderConfigBox() {
                     json _config = json::parse(config);
                     if (_config["speakers"] != nullptr)
                         speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
-                    else if (_config["data"]["spk2id"] != nullptr )
+                    else if (_config["data"]["spk2id"] != nullptr)
                         speakers = Utils::JsonDictToStringVector(_config["data"]["spk2id"]);
                 }
             }
@@ -920,7 +920,7 @@ void Application::RenderConfigBox() {
                         json _config = json::parse(config);
                         if (_config["speakers"] != nullptr)
                             speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
-                        else if (_config["data"]["spk2id"] != nullptr )
+                        else if (_config["data"]["spk2id"] != nullptr)
                             speakers = Utils::JsonDictToStringVector(_config["data"]["spk2id"]);
                     }
                     configure.vits.speaker_id = 0;
@@ -1179,6 +1179,7 @@ int Application::Renderer() {
     io.DisplayFramebufferScale = ImVec2(0.8f, 0.8f);
     (void) io;
     ImGui::StyleColorsDark();
+
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
@@ -1208,10 +1209,36 @@ int Application::Renderer() {
     TextureCache["message"] = LoadTexture("Resources/message.png");
     TextureCache["del"] = LoadTexture("Resources/del.png");
     TextureCache["add"] = LoadTexture("Resources/add.png");*/
+
+    //初始化插件
+    // 初始化Lua
+    lua_State *L = luaL_newstate();
+    luaL_openlibs(L);
+    initImGuiBindings(L);
+    // 加载Lua脚本
+    auto dirs = UDirectory::GetSubDirectories(PluginPath);
+    for (auto &dir: dirs) {
+        std::string path = PluginPath + dir + "/Plugin.lua";
+        if (!UFile::Exists(path)) {
+            LogWarn("Found plugin directory but Plugin.lua can not found");
+            continue;
+        }
+        std::string luaScript = Utils::ReadFile(path);
+        if (luaL_dostring(L, luaScript.c_str())) {
+            lua_error(L);
+            return -1;
+        }
+        lua_getglobal(L, "Initialize");
+        if (lua_isfunction(L, -1)) {
+            lua_call(L, 0, 0);
+        }
+        PluginsScript.push_back(luaScript);
+    }
 #pragma omp parallel for
     for (auto &it: TextureCache) {
         it.second = LoadTexture(Resources + it.first + ".png");
     }
+
     // 渲染循环
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -1220,11 +1247,22 @@ int Application::Renderer() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
+
         RenderUI();
+        // 在Lua中调用ImGui函数
+        for (auto &script: PluginsScript) {
+            if (luaL_dostring(L, script.c_str())) {
+                lua_error(L);
+                return -1;
+            }
+            lua_getglobal(L, "UIRenderer");
+            if (lua_isfunction(L, -1)) {
+                lua_call(L, 0, 0);
+            }
+        }
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
         glfwSwapBuffers(window);
     }
 
@@ -1234,7 +1272,8 @@ int Application::Renderer() {
     voiceToText.reset();
     bot.reset();
     translator.reset();
-
+    // 关闭Lua
+    lua_close(L);
     stbi_image_free(images[0].pixels);
     for (auto &it: TextureCache) {
         glDeleteTextures(1, &it.second);

@@ -74,6 +74,20 @@ public:
     static bool Create(const std::string &dirname);
 
     static bool Exists(const std::string &dirname);
+
+    static std::vector<std::string> GetSubDirectories(const std::string &dirPath) {
+        fs::path path(dirPath);
+        std::vector<std::string> directories;
+        for (const auto &entry: fs::directory_iterator(path)) {
+            if (fs::is_directory(entry)) {
+                directories.push_back(entry.path().filename().string());
+                // 递归获取子文件夹下的子文件夹
+                // auto subdirectories = ListDirectories(entry);
+                // directories.insert(directories.end(), subdirectories.begin(), subdirectories.end());
+            }
+        }
+        return directories;
+    }
 };
 
 class UEncrypt {
@@ -212,8 +226,8 @@ public:
             }
         }
         return result;
-    }    
-    
+    }
+
     static std::vector<std::string> JsonDictToStringVector(const json &array) {
         std::vector<std::string> keys;
         try {
@@ -222,7 +236,7 @@ public:
             for (auto it = array.begin(); it != array.end(); ++it) {
                 keys.push_back(it.key());
             }
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
             // 解析异常处理
             std::cerr << "Error: " << e.what() << std::endl;
         }

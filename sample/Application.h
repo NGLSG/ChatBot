@@ -1,5 +1,6 @@
 ﻿#ifndef APP_H
 #define APP_H
+#define SOL_ALL_SAFETIES_ON 1
 
 #include <iostream>
 #include <string>
@@ -19,10 +20,10 @@
 #include "utils.h"
 #include "StableDiffusion.h"
 #include "imfilebrowser.h"
-
+#include "sol/sol.hpp"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.3");
+const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.4");
 extern std::vector<std::string> scommands;
 extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
@@ -102,13 +103,14 @@ private:
     const std::string WhisperPath = "Whisper/";
     const std::string ChatGLMPath = "ChatGLM/";
     const std::string Live2DPath = "Live2D/";
+    const std::string PluginPath = "Plugins/";
     const std::string Conversation = "Conversations/ChatHistory/";
     const std::string special_chars = R"(~!@#$%^&*()_+`-={}|[]\:";'<>?,./)";
 
     const int sampleRate = 16000;
     const int framesPerBuffer = 512;
 
-    const std::vector<std::string> dirs = {Conversation, bin, bin + VitsConvertor, bin + WhisperPath,
+    const std::vector<std::string> dirs = {PluginPath, Conversation, bin, bin + VitsConvertor, bin + WhisperPath,
                                            bin + ChatGLMPath, bin + Live2DPath, model, model + VitsPath,
                                            model + WhisperPath, model + Live2DPath,
                                            Resources};
@@ -154,6 +156,8 @@ private:
     long long FirstTime = 0;
 
     std::vector<Chat> load(std::string name = "default");
+
+    std::vector<std::string> PluginsScript;
 
     void save(std::string name = "default", bool out = true);
 
@@ -220,7 +224,6 @@ private:
         t.detach();
     }
 
-
     bool ContainsCommand(std::string &str, std::string &cmd, std::string &args) {
         for (const auto &it: commands) {
             std::regex cmd_regex(R"(/(\w+))"); // 定义匹配命令的正则表达式
@@ -245,7 +248,6 @@ private:
         }
         return false;
     }
-
 
     void InlineCommand(const std::string &cmd, const std::string &args, long long ts) {
         if (cmd == "draw" || cmd == reinterpret_cast<const char *>(u8"绘图")) {
@@ -330,6 +332,78 @@ private:
     // 渲染UI
     void RenderUI();
 
+    void initImGuiBindings(sol::state_view lua) {
+        lua.set_function("UIBegin", sol::overload(
+                [](const char *name) { return ImGui::Begin(name); },
+                [](const char *name, bool *p_open) { return ImGui::Begin(name, p_open); },
+                [](const char *name, bool *p_open, ImGuiWindowFlags flags) { return ImGui::Begin(name, p_open, flags); }
+        ));
+        lua.set_function("UIEnd", ImGui::End);
+
+        // ImGui Text 函数的绑定
+        lua.set_function("UIText", &ImGui::Text);
+
+        // 绑定 Button 函数
+        lua.set_function("UIButton", sol::overload(
+                [](const char *label) { return ImGui::Button(label); },
+                [](const char *label, const ImVec2 &size) { return ImGui::Button(label, size); }
+        ));
+
+        // 绑定 Checkbox 函数
+        lua.set_function("UICheckbox", &ImGui::Checkbox);
+
+        // 绑定 RadioButton 函数
+        lua.set_function("UIRadioButton", sol::overload(
+                [](const char *label, bool active) { return ImGui::RadioButton(label, active); },
+                [](const char *label, int *v, int v_button) { return ImGui::RadioButton(label, v, v_button); }
+        ));
+
+        // 绑定 ProgressBar 函数
+        lua.set_function("UIProgressBar", &ImGui::ProgressBar);
+
+        // 绑定 Bullet 函数
+        lua.set_function("UIBullet", &ImGui::Bullet);
+
+        // 绑定 Image 函数
+        lua.set_function("UIImage", &ImGui::Image);
+
+        // 绑定 Combo 函数
+        lua.set_function("UICombo", sol::overload(
+                [](const char *label, int *current_item, const char *const items[], int items_count,
+                   int popup_max_height_in_items) {
+                    return ImGui::Combo(label, current_item, items, items_count, popup_max_height_in_items);
+                },
+                [](const char *label, int *current_item, const char *items_separated_by_zeros,
+                   int popup_max_height_in_items) {
+                    return ImGui::Combo(label, current_item, items_separated_by_zeros, popup_max_height_in_items);
+                }
+        ));
+
+        // 绑定 ListBox 函数
+        lua.set_function("UIListBox", sol::overload(
+                [](const char *label, int *current_item, const char *const items[], int items_count,
+                   int height_in_items = -1) {
+                    return ImGui::ListBox(label, current_item, items, items_count, height_in_items);
+                }));
+        lua.set_function("LoadImage", &Application::LoadTexture);
+
+        lua.new_usertype<ImVec2>("ImVec2",
+                                 sol::constructors<ImVec2(float, float), ImVec2()>(),
+                                 "x", &ImVec2::x,
+                                 "y", &ImVec2::y
+        );
+
+        lua.new_usertype<ImVec4>("ImVec4",
+                                 sol::constructors<ImVec4(float, float, float, float), ImVec4()>(),
+                                 "x", &ImVec4::x,
+                                 "y", &ImVec4::y,
+                                 "z", &ImVec4::z,
+                                 "w", &ImVec4::w
+        );
+
+    }
+
+
     std::string title = reinterpret_cast<const char *>(u8"文件选择");
     std::vector<std::string> typeFilters;
     bool fileBrowser = false;
@@ -392,8 +466,6 @@ private:
         if (is_space || is_special) return false;
 
         if (is_space && is_special) return false;
-
-        // 排除其他非法组合
 
         return true;
     }
