@@ -34,8 +34,8 @@ _✨基于nlohmann,cpr,spdlog的ChatBot✨_
     ```
 
 * **会话**
-    *
-        * 提交对话
+* 
+    * 提交对话
     ```c++
     bot.Submit("Hello","user");//对话内容,及对话模式 默认为user
     bot.SubmitAsync("Hello","user");//异步提交对话内容,及对话模式 默认为user
