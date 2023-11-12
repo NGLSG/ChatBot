@@ -1259,6 +1259,7 @@ int Application::Renderer() {
             if (lua_isfunction(L, -1)) {
                 lua_call(L, 0, 0);
             }
+            
         }
 
         ImGui::Render();
