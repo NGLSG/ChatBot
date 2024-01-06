@@ -204,7 +204,8 @@ void Application::RenderChatBox() {
             // Calculate the size of the input field
             ImVec2 input_size = ImVec2(0, 0);
             ImVec2 text_size = ImGui::CalcTextSize(userAsk.content.c_str());
-            float max_width = ImGui::GetWindowContentRegionWidth() * 0.9f;
+            float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
+            
             input_size.x = min(text_size.x, max_width) + 10;
             input_size.y = text_size.y + ImGui::GetStyle().ItemSpacing.y * 2;
             // Set the style of the input field
@@ -243,7 +244,7 @@ void Application::RenderChatBox() {
             ImGui::SetCursorPosY(text_pos.y + ImGui::GetStyle().ItemSpacing.y);
 
             // Set the maximum height and width of the multi-line input field
-            float max_width = ImGui::GetWindowContentRegionWidth() * 0.9f;
+            float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
 
             // Calculate the size of the multi-line input field
             ImVec2 input_size = ImVec2(0, 0);
@@ -1145,20 +1146,35 @@ void Application::RenderUI() {
 
 int Application::Renderer() {
     // 初始化GLFW
-    glfwInit();
+    if (!glfwInit()) {
+        // 处理初始化失败
+        fprintf(stderr, "Failed to initialize GLFW\n");
+        return -1;
+    }
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // 创建窗口
     GLFWwindow *window = glfwCreateWindow(800, 600, VERSION.c_str(), NULL, NULL);
-    glfwMakeContextCurrent(window);
+    if (!window) {
+        // 处理窗口创建失败
+        fprintf(stderr, "Failed to create GLFW window\n");
+        glfwTerminate();
+        return -1;
+    }
 
+    glfwMakeContextCurrent(window);
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        // 处理初始化失败
+        glfwTerminate();
+        return -1;
+    }
     // 初始化OpenGL
     glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
+    
     // 初始化ImGui
     GLFWimage images[1];
     images[0].pixels = stbi_load("Resources/icon.png", &images[0].width, &images[0].height, 0, 4); //rgba channels
@@ -1204,11 +1220,6 @@ int Application::Renderer() {
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
     style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
     style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-
-/*    TextureCache["eye"] = LoadTexture("Resources/eye.png");
-    TextureCache["message"] = LoadTexture("Resources/message.png");
-    TextureCache["del"] = LoadTexture("Resources/del.png");
-    TextureCache["add"] = LoadTexture("Resources/add.png");*/
 
     //初始化插件
     // 初始化Lua

@@ -20,18 +20,18 @@ find_package(Lua REQUIRED)
 find_package(Stb REQUIRED)
 find_package(SDL2 CONFIG REQUIRED)
 find_package(SDL2_image CONFIG REQUIRED)
+find_package(glad REQUIRED)
+# 添加源文件
 file(GLOB SOURCES
         ../src/*.c*
         *.c*
 )
-# 添加源文件
 
+# 添加头文件
 file(GLOB HEADERS
         *.h*
         ../include/*.h*
 )
-# 添加头文件
-
 
 # 添加可执行文件
 
@@ -48,10 +48,11 @@ target_link_libraries(CyberGirl
         PRIVATE yaml-cpp
         PRIVATE nlohmann_json::nlohmann_json
         PRIVATE imgui::imgui
+        PRIVATE glad::glad
         PRIVATE cpr::cpr
         PRIVATE OpenSSL::SSL OpenSSL::Crypto
         PRIVATE ${Stb_INCLUDE_DIR}
-        PRIVATE ${LUA_LIBRARIES} sol2 
+        PRIVATE ${LUA_LIBRARIES} sol2
         PRIVATE
         $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
         $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>
@@ -62,6 +63,10 @@ target_sources(CyberGirl PRIVATE
         Resources/Info.rc
         Resources/Info.plist
         Resources/icon.png)
+
+if (MSVC)
+    target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE "/bigobj")
+endif ()
 
 # 指定资源文件输出目录
 set_target_properties(CyberGirl PROPERTIES

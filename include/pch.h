@@ -2,6 +2,7 @@
 #ifndef PCH_H
 #define PCH_H
 
+#include <glad/glad.h>
 #include <fstream>
 #include <string>
 #include <filesystem>
@@ -15,7 +16,6 @@
 #include <archive.h>
 #include <archive_entry.h>
 #include <cpr/cpr.h>
-#include <gl/GL.h>
 #include <stb_image_write.h>
 #include <base64.h>
 
@@ -25,7 +25,7 @@ const int kBlockSize = 1024 * 1024; // 每个块的大小
 const int kRetryTimes = 3; // 下载失败的重试次数
 
 typedef struct {
-    float *buffer;
+    float* buffer;
     int bufferSize;
     int readIndex;
 } paUserData;
@@ -45,7 +45,7 @@ template<typename T>
 using Scope = std::unique_ptr<T>;
 
 template<typename T, typename... Args>
-constexpr Scope<T> CreateScope(Args &&... args) {
+constexpr Scope<T> CreateScope(Args&&... args) {
     return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
@@ -53,7 +53,7 @@ template<typename T>
 using Ref = std::shared_ptr<T>;
 
 template<typename T, typename... Args>
-constexpr Ref<T> CreateRef(Args &&... args) {
+constexpr Ref<T> CreateRef(Args&&... args) {
     return std::make_shared<T>(std::forward<Args>(args)...);
 }
 
