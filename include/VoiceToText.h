@@ -8,7 +8,7 @@ using json = nlohmann::json;
 
 class VoiceToText {
 public:
-    VoiceToText(const OpenAIData &voiceData);
+    VoiceToText(const OpenAIBotCreateInfo &voiceData);
 
     std::string Convert(std::string voicePath);
 
@@ -20,7 +20,7 @@ private:
     const std::vector<std::string> WebProxies{"https://nglsg.ml/",
                                               "https://service-hbv9ql2m-1306800451.sg.apigw.tencentcs.com/"};
     cpr::Session session;
-    OpenAIData _voiceData;
+    OpenAIBotCreateInfo _voiceData;
 };
 
 #endif

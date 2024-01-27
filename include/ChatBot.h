@@ -6,6 +6,7 @@
 
 using json = nlohmann::json;
 using namespace std;
+
 namespace Role {
     static std::string User = "user";
     static std::string System = "system";
@@ -21,7 +22,6 @@ struct Billing {
 
 class ChatBot {
 public:
-
     virtual std::string Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") = 0;
 
     virtual void Reset() = 0;
@@ -42,32 +42,30 @@ public:
 };
 
 class ChatGPT : public ChatBot {
-
 public:
+    ChatGPT(const OpenAIBotCreateInfo&chat_data);
 
-    ChatGPT(const OpenAIData &chat_data);
-
-    virtual std::string
+    std::string
     Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") override;
 
     std::future<std::string> SubmitAsync(std::string prompt, std::string role, std::string convid);
 
-    virtual void Reset() override;
+    void Reset() override;
 
-    virtual void Load(std::string name = "default") override;
+    void Load(std::string name = "default") override;
 
-    virtual void Save(std::string name = "default") override;
+    void Save(std::string name = "default") override;
 
-    virtual void Del(std::string name) override;
+    void Del(std::string name) override;
 
-    virtual void Add(std::string name) override;
+    void Add(std::string name) override;
 
-    virtual Billing GetBilling() override;
+    Billing GetBilling() override;
 
-    virtual map<long long, string> GetHistory() override { return map<long long, string>(); }
+    map<long long, string> GetHistory() override { return map<long long, string>(); }
 
     std::string Stamp2Time(long long timestamp) {
-        time_t tick = (time_t) (timestamp / 1000);//转换时间
+        time_t tick = (time_t)(timestamp / 1000); //转换时间
         struct tm tm;
         char s[40];
         tm = *localtime(&tick);
@@ -77,10 +75,10 @@ public:
     }
 
     json history;
-private:
 
+private:
     cpr::Session session;
-    OpenAIData chat_data_;
+    OpenAIBotCreateInfo chat_data_;
     std::string mode_name_ = "default";
     std::string convid_ = "default";
     std::map<std::string, json> Conversation;
@@ -88,8 +86,10 @@ private:
     const std::string ConversationPath = "Conversations/";
     const std::string sys = "You are ChatGPT, a large language model trained by OpenAI. Respond conversationally.";
     const std::string suffix = ".dat";
-    const std::vector<std::string> WebProxies{"https://nglsg.ml/",
-                                              "https://service-hbv9ql2m-1306800451.sg.apigw.tencentcs.com/"};
+    const std::vector<std::string> WebProxies{
+        "https://nglsg.ml/",
+        "https://service-hbv9ql2m-1306800451.sg.apigw.tencentcs.com/"
+    };
     json LastHistory;
     json defaultJson;
 
@@ -111,109 +111,69 @@ private:
 
     string sendRequest(std::string data);
 
-    static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp);
-
+    static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp);
 };
 
 
 class Claude : public ChatBot {
 public:
-    Claude(const ClaudeData &data) : claudeData(data) {
+    Claude(const ClaudeBotCreateInfo&data) : claudeData(data) {
     }
 
-    virtual std::string
-    Submit(std::string text, std::string role = Role::User, std::string convid = "defult") override {
-        cpr::Payload payload{
-                {"token",   claudeData.slackToken},
-                {"channel", claudeData.channelID},
-                {"text",    text}};
+    std::string
+    Submit(std::string text, std::string role = Role::User, std::string convid = "defult") override;
 
-        cpr::Response r = cpr::Post(cpr::Url{"https://slack.com/api/chat.postMessage"},
-                                    payload);
-        if (r.status_code == 200) {
-            // 发送成功
-        } else {
-            // 发送失败,打印错误信息
-            LogError(r.error.message);
-        }
-        json response = json::parse(r.text);
+    void Reset() override;;
 
-        return "";
-    }
+    void Load(std::string name = "default") override;
 
-    virtual void Reset() override {
-/*        cpr::Payload payload{
-                {"token",   claudeData.slackToken},
-                {"channel", claudeData.channelID},
-                {"command", "/reset"}};
-        cpr::Header header{{"Cookie", claudeData.cookies}};
-        std::string url = "https://" + claudeData.userName + ".slack.com/api/chat.command";
-        cpr::Response r = cpr::Post(cpr::Url{url},
-                                    payload, header);
-        if (r.status_code == 200) {
-            // 发送成功
-        } else {
-            // 发送失败,打印错误信息
-            LogError(r.error.message);
-        }*/
-        Submit("请忘记上面的会话内容");
-        LogInfo("Claude : 重置成功");
-    };
+    void Save(std::string name = "default") override;
 
-    virtual void Load(std::string name = "default") override {
-        LogInfo("Claude : 不支持的操作");
-    }
+    void Del(std::string id) override;
 
-    virtual void Save(std::string name = "default") override {
-        LogInfo("Claude : 不支持的操作");
-    }
+    void Add(std::string name = "default") override;
 
-    virtual void Del(std::string id) override {
+    Billing GetBilling() override;;
 
-        LogInfo("Claude : 不支持的操作");
-    }
+    map<long long, string> GetHistory() override;;
 
-    virtual void Add(std::string name = "default") override {
-        LogInfo("Claude : 不支持的操作");
-    }
-
-    virtual Billing GetBilling() override {
-        return {999, 999, 0, Utils::GetCurrentTimestamp()};
-    };
-
-    virtual map<long long, string> GetHistory() override {
-        try {
-            History.clear();
-            auto _ts = to_string(Logger::getCurrentTimestamp());
-            cpr::Payload payload = {
-                    {"channel", claudeData.channelID},
-                    {"latest",  _ts},
-                    {"token",   claudeData.slackToken}
-            };
-            cpr::Response r2 = cpr::Post(cpr::Url{"https://slack.com/api/conversations.history"},
-                                         payload);
-            json j = json::parse(r2.text);
-            if (j["ok"].get<bool>()) {
-                for (auto &message: j["messages"]) {
-                    if (message["bot_profile"]["name"] == "Claude") {
-
-                        long long ts = (long long) (atof(message["ts"].get<string>().c_str()) * 1000);
-                        std::string text = message["blocks"][0]["elements"][0]["elements"][0]["text"].get<string>();
-
-                        History[ts] = text;
-                    }
-                }
-            }
-        } catch (const std::exception &e) {
-            // 捕获并处理异常
-            LogError("获取历史记录失败:" + string(e.what()));
-        }
-        return History;
-    };
 private:
-    map <string, string> ChannelListName;
-    map <string, string> ChannelListID;
-    ClaudeData claudeData;
+    map<string, string> ChannelListName;
+    map<string, string> ChannelListID;
+    ClaudeBotCreateInfo claudeData;
+};
+
+class Gemini : public ChatBot {
+public:
+    Gemini(const GeminiBotCreateInfo&data) : geminiData(data) {
+    }
+
+    std::string
+    Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") override;
+
+    std::future<std::string> SubmitAsync(std::string prompt, std::string role, std::string convid){};
+
+    void Reset() override;
+
+    void Load(std::string name = "default") override;
+
+    void Save(std::string name = "default") override;
+
+    void Del(std::string name) override;
+
+    void Add(std::string name) override;
+
+    Billing GetBilling() override{return Billing();};
+
+    map<long long, string> GetHistory() override{return map<long long, string>();};
+
+private:
+    GeminiBotCreateInfo geminiData;
+    const std::string ConversationPath = "Conversations/Gemini/";
+    const std::string suffix = ".dat";
+    std::string convid_ = "default";
+    std::map<std::string, json> Conversation;
+    json history;
 };
 
 /*

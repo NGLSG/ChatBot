@@ -3,7 +3,7 @@
 std::vector<std::string> scommands;
 bool cpshow = false;
 
-Application::Application(const Configure &configure, bool setting) {
+Application::Application(const Configure&configure, bool setting) {
     try {
         scommands = commands;
         this->configure = configure;
@@ -11,20 +11,30 @@ Application::Application(const Configure &configure, bool setting) {
         if (!configure.claude.enable && (configure.openAi.api_key.empty() ||
                                          configure.openAi.api_key == "")) {
             OnlySetting = true;
-            state = State::NO_OPENAI_KEY;
-        } else if (configure.claude.enable &&
-                   (configure.claude.slackToken.empty() ||
-                    configure.claude.slackToken == "")) {
+            state = State::NO_BOT_KEY;
+        }
+        else if (configure.claude.enable &&
+                 (configure.claude.slackToken.empty() ||
+                  configure.claude.slackToken == "")) {
             OnlySetting = true;
-            state = State::NO_OPENAI_KEY;
+            state = State::NO_BOT_KEY;
+        }
+        else if (configure.gemini.enable && configure.gemini._apiKey.empty()) {
+            OnlySetting = true;
+            state = State::NO_BOT_KEY;
         }
         translator = CreateRef<Translate>(configure.baiDuTranslator);
         if (configure.claude.enable) {
             bot = CreateRef<Claude>(configure.claude);
             convid = "Claude";
             GetClaudeHistory();
-        } else {
+        }
+        if (configure.openAi.enable) {
             bot = CreateRef<ChatGPT>(configure.openAi);
+        }
+        if (configure.gemini.enable) {
+            bot = CreateRef<Gemini>(configure.gemini);
+            ConversationPath = std::filesystem::path(ConversationPath.string() + "Gemini/");
         }
         //billing = bot->GetBilling();
         voiceToText = CreateRef<VoiceToText>(configure.openAi);
@@ -54,25 +64,26 @@ Application::Application(const Configure &configure, bool setting) {
 #endif
             VitsListener();
         }
-    } catch (exception &e) {
+    }
+    catch (exception&e) {
         LogError(e.what());
     }
 }
 
-GLuint Application::LoadTexture(const std::string &path) {
-/*    std::string metaPath = std::string(path) + ".meta";
-    if (UFile::Exists(metaPath)) {
-        return UImage::Base64ToTextureFromPath(metaPath);
-    } else {
-        std::string pathCopy = path;
-        std::string metaPathCopy = metaPath;
-
-        std::thread([=] {
-            UImage::Base64ToImage(UImage::Img2Base64(pathCopy), metaPathCopy);
-        }).detach();
-
-
-    }*/
+GLuint Application::LoadTexture(const std::string&path) {
+    /*    std::string metaPath = std::string(path) + ".meta";
+        if (UFile::Exists(metaPath)) {
+            return UImage::Base64ToTextureFromPath(metaPath);
+        } else {
+            std::string pathCopy = path;
+            std::string metaPathCopy = metaPath;
+    
+            std::thread([=] {
+                UImage::Base64ToImage(UImage::Img2Base64(pathCopy), metaPathCopy);
+            }).detach();
+    
+    
+        }*/
     return UImage::Img2Texture(path);
 }
 
@@ -88,7 +99,6 @@ void Application::Vits(std::string text) {
 void Application::VitsListener() {
     static bool is_playing = false;
     std::thread([&]() {
-
         VitsTask task;
         while (AppRunning) {
             //std::string result = Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
@@ -110,6 +120,71 @@ void Application::VitsListener() {
     }).detach();
 }
 
+void Application::Draw(Ref<std::string> prompt, long long ts, bool callFromBot) {
+    if (is_valid_text(configure.stableDiffusion.apiPath)) {
+        std::string uid = stableDiffusion->Text2Img(*prompt);
+
+        if (callFromBot) {
+            // 使用互斥锁保护共享资源 chat_history
+            std::lock_guard<std::mutex> lock(chat_mutex);
+            for (auto&it: chat_history) {
+                if (it.flag == 1) {
+                    if (it.timestamp >= ts) {
+                        it.image = uid;
+                        break;
+                    }
+                }
+                else {
+                    continue;
+                }
+            }
+        }
+        else {
+            Chat img;
+            img.flag = 1;
+            img.timestamp = Utils::GetCurrentTimestamp();
+            img.content = "Finished!";
+            img.image = uid;
+
+            // 使用互斥锁保护共享资源 chat_history
+            std::lock_guard<std::mutex> lock(chat_mutex);
+            chat_history.emplace_back(img);
+        }
+    }
+    else {
+        Chat img;
+        img.flag = 1;
+        img.timestamp = Utils::GetCurrentTimestamp() + 10;
+        img.content = reinterpret_cast<const char *>(u8"抱歉,我不能为您生成图片,因为您的api地址为空");
+        std::lock_guard<std::mutex> lock(chat_mutex);
+        chat_history.emplace_back(img);
+    }
+}
+
+bool Application::ContainsCommand(std::string&str, std::string&cmd, std::string&args) const {
+    for (const auto&it: commands) {
+        std::regex cmd_regex(R"(/(\w+))"); // 定义匹配命令的正则表达式
+        std::regex args_regex(R"((\[[^\]]*\]))"); // 定义匹配参数的正则表达式
+        std::smatch cmd_match, args_match;
+
+        // 匹配命令
+        if (std::regex_search(str, cmd_match, cmd_regex)) {
+            cmd = cmd_match[1]; // 第一个括号内的内容即为命令
+            str = cmd_match.prefix().str() + cmd_match.suffix().str(); // 删除匹配到的命令部分
+
+            // 匹配参数
+            if (std::regex_search(str, args_match, args_regex)) {
+                args = args_match[1]; // 第一个括号内的内容即为参数
+                args = args.substr(1, args.length() - 2); // 去除参数中的方括号
+                str = args_match.prefix().str() + args_match.suffix().str(); // 删除匹配到的参数部分
+                return true;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 void Application::RenderCodeBox() {
     UniversalStyle();
 
@@ -118,11 +193,10 @@ void Application::RenderCodeBox() {
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
 
     static bool show_codes = false;
-    for (auto &it: codes) {
-
+    for (auto&it: codes) {
         show_codes = ImGui::CollapsingHeader(it.first.c_str());
         if (show_codes) {
-            for (const auto &code: it.second) {
+            for (const auto&code: it.second) {
                 if (is_valid_text(code)) {
                     if (ImGui::Button(code.c_str(), ImVec2(-1, 0))) {
                         glfwSetClipboardString(nullptr, code.c_str());
@@ -191,7 +265,7 @@ void Application::RenderChatBox() {
                       ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoSavedSettings);
     std::sort(chat_history.begin(), chat_history.end(), compareByTimestamp);
     // 显示聊天记录
-    for (auto &chat: chat_history) {
+    for (auto&chat: chat_history) {
         Chat userAsk;
         Chat botAnswer;
         if (chat.flag == 0)
@@ -205,7 +279,7 @@ void Application::RenderChatBox() {
             ImVec2 input_size = ImVec2(0, 0);
             ImVec2 text_size = ImGui::CalcTextSize(userAsk.content.c_str());
             float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
-            
+
             input_size.x = min(text_size.x, max_width) + 10;
             input_size.y = text_size.y + ImGui::GetStyle().ItemSpacing.y * 2;
             // Set the style of the input field
@@ -304,14 +378,14 @@ void Application::RenderChatBox() {
                         SDCache[botAnswer.image] = t;
                         wait = false;
                     }
-                } else {
+                }
+                else {
                     // 如果纹理已加载,显示
                     if (ImGui::ImageButton(reinterpret_cast<void *>(SDCache[botAnswer.image]),
                                            ImVec2(256, 256))) {
                         Utils::OpenFileManager(Utils::GetAbsolutePath(Resources + "Images/" + botAnswer.image));
                     }
                 }
-
             }
 
             ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(botAnswer.timestamp).c_str());
@@ -361,7 +435,7 @@ void Application::RenderChatBox() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu(reinterpret_cast<const char *>(u8"会话"))) {
-            ImGuiStyle &item_style = ImGui::GetStyle();
+            ImGuiStyle&item_style = ImGui::GetStyle();
             item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
             if (!configure.claude.enable) {
                 for (int i = 0; i < conversations.size(); i++) {
@@ -380,7 +454,7 @@ void Application::RenderChatBox() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu(reinterpret_cast<const char *>(u8"模式"))) {
-            ImGuiStyle &item_style = ImGui::GetStyle();
+            ImGuiStyle&item_style = ImGui::GetStyle();
             item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
             for (int i = 0; i < roles.size(); i++) {
                 const bool is_selected = (SelectIndices["role"] == i);
@@ -402,7 +476,6 @@ void Application::RenderInputBox() {
     static std::vector<std::shared_future<std::string>> submit_futures;
     if (listener && listener->IsRecorded()) {
         std::thread([&]() {
-
             listener->EndListen();
             listener->ResetRecorded();
             std::string path = "recorded" + std::to_string(Rnum) + ".wav";
@@ -414,13 +487,14 @@ void Application::RenderInputBox() {
                     conversion_future = std::async(std::launch::async, [&]() {
                         return voiceToText->ConvertAsync(path).get();
                     });
-                } else {
+                }
+                else {
                     conversion_future = std::async(std::launch::async, [&]() {
                         return WhisperConvertor(path);
                     });
                 }
                 // 在异步任务完成后执行回调函数
-                auto callback = [&](std::future<std::string> &future) {
+                auto callback = [&](std::future<std::string>&future) {
                     std::string text = future.get();
 
                     if (!is_valid_text(text)) {
@@ -428,7 +502,8 @@ void Application::RenderInputBox() {
                         LogWarn("Bot Warning: Your question is empty");
                         if (whisperData.enable)
                             listener->listen();
-                    } else {
+                    }
+                    else {
                         text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
                         last_input = text;
                         Chat user;
@@ -442,8 +517,7 @@ void Application::RenderInputBox() {
                         LogInfo("whisper: 删除录音{0}", "recorded" + std::to_string(Rnum) + ".wav");
                         std::shared_future<std::string> submit_future = std::async(std::launch::async, [&](void) {
                             return bot->Submit(last_input, role);
-                        }).share();
-                        {
+                        }).share(); {
                             std::lock_guard<std::mutex> lock(submit_futures_mutex);
                             submit_futures.push_back(std::move(submit_future));
                         }
@@ -456,8 +530,7 @@ void Application::RenderInputBox() {
 
             listener->changeFile("recorded" + std::to_string(Rnum) + ".wav");
         }).detach();
-    }
-    {
+    } {
         UniversalStyle();
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 5));
@@ -473,45 +546,44 @@ void Application::RenderInputBox() {
         ImGui::Begin("Input filed", NULL,
                      ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
                      ImGuiWindowFlags_NoTitleBar);
-/*        ImGui::BeginGroup();
-        // 设置子窗口的背景颜色为浅灰色
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-// 设置子窗口的圆角半径为10像素
-        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
-// 创建一个子窗口，注意要设置大小和标志
-// 大小要和你的控件一致，标志要去掉边框和滚动条
-        ImGui::BeginChild("background", ImVec2(500, 20), false,
-                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                          ImGuiWindowFlags_NoDecoration);
-// 恢复默认的样式
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
-// 显示你的控件
-        ImGui::SameLine();
-        ImGui::Text(reinterpret_cast<const char *>(u8"总额: %.2f"), billing.total);
-        ImGui::SameLine();
-        ImGui::Text(reinterpret_cast<const char *>(u8"可用: %.2f"), billing.available);
-        ImGui::SameLine();
-        ImGui::Text(reinterpret_cast<const char *>(u8"剩余: %d 天"),
-                    Utils::Stamp2Day(billing.date * 1000 - Utils::getCurrentTimestamp()));
-        ImGui::SameLine();
-// 设置进度条的背景颜色为透明
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogramHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-// 设置进度条的前景颜色为白色
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(1.00f, 1.0f, 1.0f, 1.0f));
-// 设置进度条的圆角半径为10像素
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
-// 显示进度条，注意要设置frame_padding为-1，否则会有边框
-        ImGui::ProgressBar(billing.used / billing.total, ImVec2(100, 20), NULL);
-// 恢复默认的样式
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor(2);
-// 结束子窗口
-        ImGui::EndChild();
-        ImGui::EndGroup();*/
+        /*        ImGui::BeginGroup();
+                // 设置子窗口的背景颜色为浅灰色
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+        // 设置子窗口的圆角半径为10像素
+                ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
+        // 创建一个子窗口，注意要设置大小和标志
+        // 大小要和你的控件一致，标志要去掉边框和滚动条
+                ImGui::BeginChild("background", ImVec2(500, 20), false,
+                                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                                  ImGuiWindowFlags_NoDecoration);
+        // 恢复默认的样式
+                ImGui::PopStyleColor();
+                ImGui::PopStyleVar();
+        // 显示你的控件
+                ImGui::SameLine();
+                ImGui::Text(reinterpret_cast<const char *>(u8"总额: %.2f"), billing.total);
+                ImGui::SameLine();
+                ImGui::Text(reinterpret_cast<const char *>(u8"可用: %.2f"), billing.available);
+                ImGui::SameLine();
+                ImGui::Text(reinterpret_cast<const char *>(u8"剩余: %d 天"),
+                            Utils::Stamp2Day(billing.date * 1000 - Utils::getCurrentTimestamp()));
+                ImGui::SameLine();
+        // 设置进度条的背景颜色为透明
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogramHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        // 设置进度条的前景颜色为白色
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(1.00f, 1.0f, 1.0f, 1.0f));
+        // 设置进度条的圆角半径为10像素
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
+        // 显示进度条，注意要设置frame_padding为-1，否则会有边框
+                ImGui::ProgressBar(billing.used / billing.total, ImVec2(100, 20), NULL);
+        // 恢复默认的样式
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(2);
+        // 结束子窗口
+                ImGui::EndChild();
+                ImGui::EndGroup();*/
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu(reinterpret_cast<const char *>(u8"指令"))) {
-
                 if (ImGui::Button(reinterpret_cast<const char *>(u8"绘图"))) {
                     input_text += "/draw [ ]";
                 }
@@ -570,8 +642,9 @@ void Application::RenderInputBox() {
         input_text.clear();
         save(convid);
         bot->Save(convid);
-    } else if ((ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyCtrl) ||
-               (ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyShift)) {
+    }
+    else if ((ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyCtrl) ||
+             (ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyShift)) {
         input_text += "\n";
     }
     ImGui::End();
@@ -593,10 +666,11 @@ void Application::RenderInputBox() {
                 auto tmp_code = Utils::GetAllCodesFromText(response);
                 save(convid);
                 bot->Save(convid);
-                for (auto &i: tmp_code) {
+                for (auto&i: tmp_code) {
                     std::size_t pos = i.find('\n'); // 查找第一个换行符的位置
                     std::string codetype;
-                    if (pos != std::string::npos) { // 如果找到了换行符
+                    if (pos != std::string::npos) {
+                        // 如果找到了换行符
                         codetype = i.substr(0, pos);
                         i = i.substr(pos + 1); // 删除第一行
                     }
@@ -604,7 +678,8 @@ void Application::RenderInputBox() {
                         codetype = "Unknown";
                     if (codes.contains(codetype)) {
                         codes[codetype].emplace_back(i);
-                    } else {
+                    }
+                    else {
                         codes.insert({codetype, {i}});
                     }
                     ImGui::SetClipboardText(i.c_str());
@@ -613,13 +688,16 @@ void Application::RenderInputBox() {
                     std::string VitsText = translator->translate(Utils::ExtractNormalText(response),
                                                                  vitsData.lanType);
                     Vits(VitsText);
-                } else if (whisperData.enable) {
+                }
+                else if (whisperData.enable) {
                     listener->listen();
                 }
-            } else {
+            }
+            else {
                 it = submit_futures.erase(it);
             }
-        } else {
+        }
+        else {
             ++it;
         }
     }
@@ -627,7 +705,6 @@ void Application::RenderInputBox() {
 }
 
 void Application::RenderConversationBox() {
-
     UniversalStyle();
     ImGui::Begin(reinterpret_cast<const char *>(u8"会话"), NULL,
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
@@ -637,7 +714,7 @@ void Application::RenderConversationBox() {
     }
     ImGui::SameLine();
     ImGui::Text(reinterpret_cast<const char *>(u8"新建会话"));
-    for (const auto &conversation: conversations) {
+    for (const auto&conversation: conversations) {
         ImGui::BeginGroup();
         // 消息框
         ImGui::Image(reinterpret_cast<void *>(TextureCache["message"]), ImVec2(32, 32),
@@ -657,6 +734,7 @@ void Application::RenderConversationBox() {
         ImGui::PushID(conversation.c_str());
         if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["del"]), ImVec2(16, 16)) &&
             conversations.size() > 1) {
+            convid = conversation;
             bot->Del(convid);
             del(convid);
             bot->Load(convid);
@@ -676,7 +754,7 @@ void Application::RenderConfigBox() {
     static bool no_key = false;
     static bool first = false;
     switch (state) {
-        case State::NO_OPENAI_KEY:
+        case State::NO_BOT_KEY:
             no_key = true;
             state = State::OK;
             break;
@@ -696,8 +774,23 @@ void Application::RenderConfigBox() {
     // 显示 ChatBot 配置
     if (ImGui::CollapsingHeader("ChatBot")) {
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用Claude (实验性功能)"), &configure.claude.enable);
+        if (configure.claude.enable) {
+            configure.gemini.enable = false;
+            configure.openAi.enable = false;
+        }
+        ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用Gemini"), &configure.gemini.enable);
+        if (configure.gemini.enable) {
+            configure.claude.enable = false;
+            configure.openAi.enable = false;
+        }
+        ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用OpenAI"), &configure.openAi.enable);
+        if (configure.openAi.enable) {
+            configure.claude.enable = false;
+            configure.gemini.enable = false;
+        }
 
-        if (!configure.claude.enable) {
+
+        if (configure.openAi.enable) {
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
             double currentTime = ImGui::GetTime();
@@ -711,8 +804,8 @@ void Application::RenderConfigBox() {
                                      sizeof(input_buffer))) {
                     configure.openAi.api_key = api_buffer;
                 }
-
-            } else {
+            }
+            else {
                 if (ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI API Key"),
                                      api_buffer,
                                      sizeof(input_buffer),
@@ -755,10 +848,11 @@ void Application::RenderConfigBox() {
                     ImGui::EndCombo(); // 结束下拉列表
                 }
             }
-        } else {
-/*            ImGui::InputText(reinterpret_cast<const char *>(u8"ChatGLM的位置"),
-                             configure.openAi.modelPath.data(),
-                             TEXT_BUFFER);*/
+        }
+        else if (configure.claude.enable) {
+            /*            ImGui::InputText(reinterpret_cast<const char *>(u8"ChatGLM的位置"),
+                                         configure.openAi.modelPath.data(),
+                                         TEXT_BUFFER);*/
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
             double currentTime = ImGui::GetTime();
@@ -772,8 +866,8 @@ void Application::RenderConfigBox() {
                                      sizeof(input_buffer))) {
                     configure.claude.slackToken = api_buffer;
                 }
-
-            } else {
+            }
+            else {
                 if (ImGui::InputText(reinterpret_cast<const char *>(u8"Claude Token"),
                                      api_buffer,
                                      sizeof(input_buffer),
@@ -793,16 +887,52 @@ void Application::RenderConfigBox() {
                                    ImVec4(1, 1, 1, 1))) {
                 clicked = !clicked;
             }
-/*            ImGui::InputText(reinterpret_cast<const char *>(u8"用户名"), configure.claude.userName.data(),
-                             TEXT_BUFFER);
-
-
-            ImGui::InputText("Claude Cookie",
-                             configure.claude.cookies.data(),
-                             TEXT_BUFFER);*/
+            /*            ImGui::InputText(reinterpret_cast<const char *>(u8"用户名"), configure.claude.userName.data(),
+                                         TEXT_BUFFER);
+            
+            
+                        ImGui::InputText("Claude Cookie",
+                                         configure.claude.cookies.data(),
+                                         TEXT_BUFFER);*/
 
             ImGui::InputText(reinterpret_cast<const char *>(u8"Claude ID"), configure.claude.channelID.data(),
                              TEXT_BUFFER);
+        }
+        else if (configure.gemini.enable) {
+            static bool showPassword = false, clicked = false;
+            static double lastInputTime = 0.0;
+            double currentTime = ImGui::GetTime();
+            strcpy_s(api_buffer, configure.gemini._apiKey.c_str());
+            if (currentTime - lastInputTime > 0.5) {
+                showPassword = false;
+            }
+            if (showPassword || clicked) {
+                if (ImGui::InputText(reinterpret_cast<const char *>(u8"ApiKey"),
+                                     api_buffer,
+                                     sizeof(input_buffer))) {
+                    configure.gemini._apiKey = api_buffer;
+                }
+            }
+            else {
+                if (ImGui::InputText(reinterpret_cast<const char *>(u8"ApiKey"),
+                                     api_buffer,
+                                     sizeof(input_buffer),
+                                     ImGuiInputTextFlags_Password)) {
+                    configure.gemini._apiKey = api_buffer;
+                    showPassword = true;
+                    lastInputTime = ImGui::GetTime();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["eye"]),
+                                   ImVec2(16, 16),
+                                   ImVec2(0, 0),
+                                   ImVec2(1, 1),
+                                   -1,
+                                   ImVec4(0, 0, 0, 0),
+                                   ImVec4(1, 1, 1, 1))) {
+                clicked = !clicked;
+            }
         }
     }
 
@@ -823,7 +953,8 @@ void Application::RenderConfigBox() {
                                  sizeof(Bapi_buffer))) {
                 configure.baiDuTranslator.APIKey = Bapi_buffer;
             }
-        } else {
+        }
+        else {
             if (ImGui::InputText("BaiDu API Key", Bapi_buffer,
                                  sizeof(Bapi_buffer), ImGuiInputTextFlags_Password)) {
                 configure.baiDuTranslator.APIKey = Bapi_buffer;
@@ -865,16 +996,16 @@ void Application::RenderConfigBox() {
                         speakers = Utils::JsonDictToStringVector(_config["data"]["spk2id"]);
                 }
             }
-
-        } else {
+        }
+        else {
             // 没找到,设置为0
             SelectIndices["vits"] = 0;
         }
 
         static char search_text[256] = "";
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Vits"), &configure.vits.enable);
-/*        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(),
-                         TEXT_BUFFER);*/
+        /*        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(),
+                                 TEXT_BUFFER);*/
         // 开始下拉列表
         if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"模型"),
                               Utils::GetFileName(vitsModels[SelectIndices["vits"]]).c_str())) {
@@ -899,7 +1030,6 @@ void Application::RenderConfigBox() {
             configure.vits.modelName = vitsModels[SelectIndices["vits"]].c_str();
             // 检查vitsModels数组不为空并且当前项不为"empty"
             if (vitsModels.size() > 0 && vitsModels[SelectIndices["vits"]] != "empty") {
-
                 // 获取.pth和.json文件
                 std::vector<std::string> pth_files = Utils::GetFilesWithExt(vitsModels[SelectIndices["vits"]] + "/",
                                                                             ".pth");
@@ -912,7 +1042,6 @@ void Application::RenderConfigBox() {
 
                 // 检查配置文件是否存在
                 if (UFile::Exists(configure.vits.config)) {
-
                     // 读取配置文件
                     std::string config = Utils::ReadFile(configure.vits.config);
 
@@ -926,7 +1055,6 @@ void Application::RenderConfigBox() {
                     }
                     configure.vits.speaker_id = 0;
                 }
-
             }
             ImGui::EndCombo();
         }
@@ -981,7 +1109,8 @@ void Application::RenderConfigBox() {
                     SelectIndices["Live2D"] = i;
                     if (SelectIndices["conversation"] = 0) {
                         configure.live2D.enable = false;
-                    } else {
+                    }
+                    else {
                         configure.live2D.enable = true;
                     }
                 }
@@ -992,12 +1121,10 @@ void Application::RenderConfigBox() {
             configure.live2D.model = live2dModel[SelectIndices["Live2D"]].c_str();
             ImGui::EndCombo(); // 结束下拉列表
         }
-
     }
 #endif
     // 显示 Whisper 配置
     if (ImGui::CollapsingHeader("Whisper")) {
-
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Whisper"), &configure.whisper.enable);
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用本地模型"), &configure.whisper.useLocalModel);
         auto it = std::find(tmpWhisperModel.begin(), tmpWhisperModel.end(), configure.whisper.model);
@@ -1037,7 +1164,6 @@ void Application::RenderConfigBox() {
         if (it != sampleIndices.end()) {
             // 找到了,计算索引
             SelectIndices["stableDiffusion"] = std::distance(sampleIndices.begin(), it);
-
         }
         if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"采样方法"),
                               sampleIndices[SelectIndices["stableDiffusion"]].c_str())) {
@@ -1069,8 +1195,7 @@ void Application::RenderConfigBox() {
         should_restart = true;
     }
 
-    ImGui::End();
-    {
+    ImGui::End(); {
         if (should_restart) {
             ImGui::OpenPopup(reinterpret_cast<const char *>(u8"需要重启应用"));
             should_restart = false;
@@ -1082,7 +1207,7 @@ void Application::RenderConfigBox() {
             if (ImGui::Button(reinterpret_cast<const char *>(u8"确定"), ImVec2(80, 0))) {
                 ImGui::CloseCurrentPopup();
                 std::string executable = "CyberGirl" + exeSuffix;
-                const char *argv[] = {executable.c_str(), NULL};
+                const char* argv[] = {executable.c_str(), NULL};
                 execvp(executable.c_str(), const_cast<char *const *>(argv));
                 //std::exit(0);
             }
@@ -1139,9 +1264,458 @@ void Application::RenderUI() {
         RenderCodeBox();
         RenderConversationBox();
         FileChooser();
-    } else {
+    }
+    else {
         RenderConfigBox();
     }
+}
+
+void Application::initImGuiBindings(sol::state_view lua) {
+    lua.set_function("ImVec4", sol::overload(
+                         []() { return ImVec4(0, 0, 0, 0); },
+                         [](float x) { return ImVec4(x, 0, 0, 0); },
+                         [](float x, float y) { return ImVec4(x, y, 0, 0); },
+                         [](float x, float y, float z) { return ImVec4(x, y, z, 0); },
+                         [](float x, float y, float z, float w) { return ImVec4(x, y, z, w); }
+                     ));
+
+
+    lua.set_function("ImVec2", sol::overload(
+                         []() { return ImVec2(0, 0); },
+                         [](float x) { return ImVec2(x, 0); },
+                         [](float x, float y) { return ImVec2(x, y); }
+                     ));
+
+    lua.set_function("UIBegin", sol::overload(
+                         [](const char* name) { return ImGui::Begin(name); },
+                         [](const char* name, bool* p_open) { return ImGui::Begin(name, p_open); },
+                         [](const char* name, bool* p_open, ImGuiWindowFlags flags) {
+                             return ImGui::Begin(name, p_open, flags);
+                         }
+                     ));
+    lua.set_function("UIEnd", ImGui::End);
+
+    // ImGui Text 函数的绑定
+    lua.set_function("UIText", &ImGui::Text);
+
+    lua.set_function("UItextUnformatted", sol::overload(
+                         [](const char* text) { ImGui::TextUnformatted(text); },
+                         [](const char* text, const char* text_end) { ImGui::TextUnformatted(text, text_end); }
+                     ));
+
+    lua.set_function("UItextColored", &ImGui::TextColored);
+
+    lua.set_function("UItextColoredV", &ImGui::TextColored);
+
+    lua.set_function("UItextDisabled", &ImGui::TextDisabled);
+
+    lua.set_function("UItextWrapped", &ImGui::TextWrapped);
+
+    lua.set_function("UIlabelText", &ImGui::LabelText);
+
+    lua.set_function("UIbulletText", &ImGui::BulletText);
+
+    lua.set_function("UIseparatorText", &ImGui::SeparatorText);
+
+    lua.set_function("UIDragFloat", sol::overload(
+                         [](const char* label, float* v, float v_speed, float v_min, float v_max,
+                            const char* format, ImGuiSliderFlags flags) {
+                             return ImGui::DragFloat(label, v, v_speed, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, float v[2], float v_speed, float v_min, float v_max,
+                            const char* format, ImGuiSliderFlags flags) {
+                             return ImGui::DragFloat2(label, v, v_speed, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, float v[3], float v_speed, float v_min, float v_max,
+                            const char* format, ImGuiSliderFlags flags) {
+                             return ImGui::DragFloat3(label, v, v_speed, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, float v[4], float v_speed, float v_min, float v_max,
+                            const char* format, ImGuiSliderFlags flags) {
+                             return ImGui::DragFloat4(label, v, v_speed, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, float* v_current_min, float* v_current_max, float v_speed,
+                            float v_min, float v_max, const char* format, const char* format_max,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::DragFloatRange2(label, v_current_min, v_current_max, v_speed, v_min,
+                                                           v_max, format, format_max, flags);
+                         }
+                     ));
+
+    lua.set_function("UIDragInt", sol::overload(
+                         [](const char* label, int* v, float v_speed, int v_min, int v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::DragInt(label, v, v_speed, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, int v[2], float v_speed, int v_min, int v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::DragInt2(label, v, v_speed, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, int v[3], float v_speed, int v_min, int v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::DragInt3(label, v, v_speed, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, int v[4], float v_speed, int v_min, int v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::DragInt4(label, v, v_speed, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, int* v_current_min, int* v_current_max, float v_speed, int v_min,
+                            int v_max, const char* format, const char* format_max, ImGuiSliderFlags flags) {
+                             return ImGui::DragIntRange2(label, v_current_min, v_current_max, v_speed, v_min, v_max,
+                                                         format, format_max, flags);
+                         }
+                     ));
+
+    lua.set_function("UIDragScalar", sol::overload(
+                         [](const char* label, ImGuiDataType data_type, void* p_data, float v_speed,
+                            const void* p_min, const void* p_max, const char* format, ImGuiSliderFlags flags) {
+                             return ImGui::DragScalar(label, data_type, p_data, v_speed, p_min, p_max, format,
+                                                      flags);
+                         },
+                         [](const char* label, ImGuiDataType data_type, void* p_data, int components, float v_speed,
+                            const void* p_min, const void* p_max, const char* format, ImGuiSliderFlags flags) {
+                             return ImGui::DragScalarN(label, data_type, p_data, components, v_speed, p_min, p_max,
+                                                       format, flags);
+                         }
+                     ));
+
+    lua.set_function("UISliderFloat", sol::overload(
+                         [](const char* label, float* v, float v_min, float v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::SliderFloat(label, v, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, float v[2], float v_min, float v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::SliderFloat2(label, v, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, float v[3], float v_min, float v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::SliderFloat3(label, v, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, float v[4], float v_min, float v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::SliderFloat4(label, v, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, float* v, float v_min, float v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::SliderAngle(label, v, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, int* v, int v_min, int v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::SliderInt(label, v, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, int v[2], int v_min, int v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::SliderInt2(label, v, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, int v[3], int v_min, int v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::SliderInt3(label, v, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, int v[4], int v_min, int v_max, const char* format,
+                            ImGuiSliderFlags flags) {
+                             return ImGui::SliderInt4(label, v, v_min, v_max, format, flags);
+                         },
+                         [](const char* label, ImGuiDataType data_type, void* p_data, const void* p_min,
+                            const void* p_max, const char* format, ImGuiSliderFlags flags) {
+                             return ImGui::SliderScalar(label, data_type, p_data, p_min, p_max, format, flags);
+                         },
+                         [](const char* label, ImGuiDataType data_type, void* p_data, int components,
+                            const void* p_min, const void* p_max, const char* format, ImGuiSliderFlags flags) {
+                             return ImGui::SliderScalarN(label, data_type, p_data, components, p_min, p_max, format,
+                                                         flags);
+                         }
+                     ));
+
+    // 绑定 Button 函数
+    lua.set_function("UIButton", sol::overload(
+                         [](const char* label) { return ImGui::Button(label); },
+                         [](const char* label, const ImVec2&size) { return ImGui::Button(label, size); }
+                     ));
+
+    // 绑定 Checkbox 函数
+    lua.set_function("UICheckbox", &ImGui::Checkbox);
+
+    // 绑定 RadioButton 函数
+    lua.set_function("UIRadioButton", sol::overload(
+                         [](const char* label, bool active) { return ImGui::RadioButton(label, active); },
+                         [](const char* label, int* v, int v_button) {
+                             return ImGui::RadioButton(label, v, v_button);
+                         }
+                     ));
+
+    // 绑定 ProgressBar 函数
+    lua.set_function("ProgressBar", sol::overload(
+                         [](float fraction, const ImVec2&size_arg, const char* overlay) {
+                             ImGui::ProgressBar(fraction, size_arg, overlay);
+                         },
+                         [](float fraction, const ImVec2&size_arg) {
+                             ImGui::ProgressBar(fraction, size_arg);
+                         },
+                         [](float fraction) {
+                             ImGui::ProgressBar(fraction);
+                         }
+                     ));
+
+    // 绑定 Bullet 函数
+    lua.set_function("UIBullet", &ImGui::Bullet);
+
+    // 绑定 Image 函数
+    lua.set_function("UIImage", sol::overload(
+                         [](ImTextureID user_texture_id, const ImVec2&size, const ImVec2&uv0, const ImVec2&uv1,
+                            const ImVec4&tint_col, const ImVec4&border_col) {
+                             ImGui::Image(user_texture_id, size, uv0, uv1, tint_col, border_col);
+                         },
+                         [](ImTextureID user_texture_id, const ImVec2&size, const ImVec2&uv0, const ImVec2&uv1,
+                            const ImVec4&tint_col) {
+                             ImGui::Image(user_texture_id, size, uv0, uv1, tint_col);
+                         },
+                         [](ImTextureID user_texture_id, const ImVec2&size, const ImVec2&uv0, const ImVec2&uv1) {
+                             ImGui::Image(user_texture_id, size, uv0, uv1);
+                         },
+                         [](ImTextureID user_texture_id, const ImVec2&size) {
+                             ImGui::Image(user_texture_id, size);
+                         }
+                     ));
+    lua.set_function("UIImageButton", sol::overload(
+                         [](const char* str_id, ImTextureID user_texture_id, const ImVec2&size, const ImVec2&uv0,
+                            const ImVec2&uv1, const ImVec4&bg_col, const ImVec4&tint_col) {
+                             return ImGui::ImageButton(str_id, user_texture_id, size, uv0, uv1, bg_col, tint_col);
+                         },
+                         [](const char* str_id, ImTextureID user_texture_id, const ImVec2&size, const ImVec2&uv0,
+                            const ImVec2&uv1, const ImVec4&bg_col) {
+                             return ImGui::ImageButton(str_id, user_texture_id, size, uv0, uv1, bg_col);
+                         },
+                         [](const char* str_id, ImTextureID user_texture_id, const ImVec2&size, const ImVec2&uv0,
+                            const ImVec2&uv1) {
+                             return ImGui::ImageButton(str_id, user_texture_id, size, uv0, uv1);
+                         },
+                         [](const char* str_id, ImTextureID user_texture_id, const ImVec2&size) {
+                             return ImGui::ImageButton(str_id, user_texture_id, size);
+                         }
+                     ));
+
+    // 绑定 Combo 函数
+    lua.set_function("UICombo", sol::overload(
+                         [](const char* label, int* current_item, const char* const items[], int items_count,
+                            int popup_max_height_in_items) {
+                             return ImGui::Combo(label, current_item, items, items_count,
+                                                 popup_max_height_in_items);
+                         },
+                         [](const char* label, int* current_item, const char* items_separated_by_zeros,
+                            int popup_max_height_in_items) {
+                             return ImGui::Combo(label, current_item, items_separated_by_zeros,
+                                                 popup_max_height_in_items);
+                         }
+                     ));
+
+    lua.set_function("UIBeginCombo", sol::overload(
+                         [](const char* label, const char* preview_value, ImGuiComboFlags flags) {
+                             return ImGui::BeginCombo(label, preview_value, flags);
+                         },
+                         [](const char* label, const char* preview_value) {
+                             return ImGui::BeginCombo(label, preview_value);
+                         }
+                     ));
+
+    lua.set_function("UIEndCombo", &ImGui::EndCombo);
+
+    lua.set_function("UISameLine", sol::overload(
+                         [](float offset_from_start_x, float spacing) {
+                             ImGui::SameLine(offset_from_start_x, spacing);
+                         },
+                         [](float offset_from_start_x) {
+                             ImGui::SameLine(offset_from_start_x);
+                         },
+                         []() {
+                             ImGui::SameLine();
+                         }
+                     ));
+
+    lua.set_function("UINewLine", &ImGui::NewLine);
+
+    lua.set_function("UISeparator", &ImGui::Separator);
+
+    lua.set_function("UISpacing", &ImGui::Spacing);
+
+    lua.set_function("UIDummy", &ImGui::Dummy);
+
+    lua.set_function("UIIndent", sol::overload(
+                         [](float indent_w) { ImGui::Indent(indent_w); },
+                         []() { ImGui::Indent(); }
+                     ));
+
+    lua.set_function("UIUnindent", sol::overload(
+                         [](float indent_w) { ImGui::Unindent(indent_w); },
+                         []() { ImGui::Unindent(); }
+                     ));
+
+    lua.set_function("UIBeginGroup", &ImGui::BeginGroup);
+
+    lua.set_function("UIEndGroup", &ImGui::EndGroup);
+
+    lua.set_function("UIGetCursorPos", &ImGui::GetCursorPos);
+
+    lua.set_function("UIGetCursorPosX", &ImGui::GetCursorPosX);
+
+    lua.set_function("UIGetCursorPosY", &ImGui::GetCursorPosY);
+
+    lua.set_function("UISetCursorPos", &ImGui::SetCursorPos);
+
+    lua.set_function("UISetCursorPosX", &ImGui::SetCursorPosX);
+
+    lua.set_function("UISetCursorPosY", &ImGui::SetCursorPosY);
+
+    lua.set_function("UIGetCursorStartPos", &ImGui::GetCursorStartPos);
+
+    lua.set_function("UIGetCursorScreenPos", &ImGui::GetCursorScreenPos);
+
+    lua.set_function("UISetCursorScreenPos", &ImGui::SetCursorScreenPos);
+
+    lua.set_function("UIAlignTextToFramePadding", &ImGui::AlignTextToFramePadding);
+
+    lua.set_function("UIGetTextLineHeight", &ImGui::GetTextLineHeight);
+
+    lua.set_function("UIGetTextLineHeightWithSpacing", &ImGui::GetTextLineHeightWithSpacing);
+
+    lua.set_function("UIGetFrameHeight", &ImGui::GetFrameHeight);
+
+    lua.set_function("UIGetFrameHeightWithSpacing", &ImGui::GetFrameHeightWithSpacing);
+
+    lua.set_function("UISliderAngle",
+                     [](const char* label, float* v_rad, float v_degrees_min, float v_degrees_max,
+                        const char* format, ImGuiSliderFlags flags) {
+                         return ImGui::SliderAngle(label, v_rad, v_degrees_min, v_degrees_max, format, flags);
+                     });
+
+    lua.set_function("UIVSliderFloat",
+                     [](const char* label, const ImVec2&size, float* v, float v_min, float v_max,
+                        const char* format, ImGuiSliderFlags flags) {
+                         return ImGui::VSliderFloat(label, size, v, v_min, v_max, format, flags);
+                     });
+
+    lua.set_function("UIVSliderInt",
+                     [](const char* label, const ImVec2&size, int* v, int v_min, int v_max, const char* format,
+                        ImGuiSliderFlags flags) {
+                         return ImGui::VSliderInt(label, size, v, v_min, v_max, format, flags);
+                     });
+
+    lua.set_function("UIVSliderScalar",
+                     [](const char* label, const ImVec2&size, ImGuiDataType data_type, void* p_data,
+                        const void* p_min, const void* p_max, const char* format, ImGuiSliderFlags flags) {
+                         return ImGui::VSliderScalar(label, size, data_type, p_data, p_min, p_max, format, flags);
+                     });
+
+    lua.set_function("UIInputText", [](const char* label, char* buf, size_t buf_size, ImGuiInputTextFlags flags) {
+        return ImGui::InputText(label, buf, buf_size, flags);
+    });
+
+    lua.set_function("UIInputTextMultiline",
+                     [](const char* label, char* buf, size_t buf_size, const ImVec2&size,
+                        ImGuiInputTextFlags flags) {
+                         return ImGui::InputTextMultiline(label, buf, buf_size, size, flags);
+                     });
+
+    lua.set_function("UIInputTextWithHint",
+                     [](const char* label, const char* hint, char* buf, size_t buf_size,
+                        ImGuiInputTextFlags flags) {
+                         return ImGui::InputTextWithHint(label, hint, buf, buf_size, flags);
+                     });
+
+    lua.set_function("UIInputFloat",
+                     [](const char* label, float* v, float step, float step_fast, const char* format,
+                        ImGuiInputTextFlags flags) {
+                         return ImGui::InputFloat(label, v, step, step_fast, format, flags);
+                     });
+
+    lua.set_function("UIInputFloat2",
+                     [](const char* label, float v[2], const char* format, ImGuiInputTextFlags flags) {
+                         return ImGui::InputFloat2(label, v, format, flags);
+                     });
+
+    lua.set_function("UIInputFloat3",
+                     [](const char* label, float v[3], const char* format, ImGuiInputTextFlags flags) {
+                         return ImGui::InputFloat3(label, v, format, flags);
+                     });
+
+    lua.set_function("UIInputFloat4",
+                     [](const char* label, float v[4], const char* format, ImGuiInputTextFlags flags) {
+                         return ImGui::InputFloat4(label, v, format, flags);
+                     });
+
+    lua.set_function("UIInputInt",
+                     [](const char* label, int* v, int step, int step_fast, ImGuiInputTextFlags flags) {
+                         return ImGui::InputInt(label, v, step, step_fast, flags);
+                     });
+
+    lua.set_function("UIInputInt2", [](const char* label, int v[2], ImGuiInputTextFlags flags) {
+        return ImGui::InputInt2(label, v, flags);
+    });
+
+    lua.set_function("UIInputInt3", [](const char* label, int v[3], ImGuiInputTextFlags flags) {
+        return ImGui::InputInt3(label, v, flags);
+    });
+
+    lua.set_function("UIInputInt4", [](const char* label, int v[4], ImGuiInputTextFlags flags) {
+        return ImGui::InputInt4(label, v, flags);
+    });
+
+    lua.set_function("UIInputDouble",
+                     [](const char* label, double* v, double step, double step_fast, const char* format,
+                        ImGuiInputTextFlags flags) {
+                         return ImGui::InputDouble(label, v, step, step_fast, format, flags);
+                     });
+
+    lua.set_function("UIInputScalar",
+                     [](const char* label, ImGuiDataType data_type, void* p_data, const void* p_step,
+                        const void* p_step_fast, const char* format, ImGuiInputTextFlags flags) {
+                         return ImGui::InputScalar(label, data_type, p_data, p_step, p_step_fast, format, flags);
+                     });
+
+    lua.set_function("UIInputScalarN",
+                     [](const char* label, ImGuiDataType data_type, void* p_data, int components,
+                        const void* p_step, const void* p_step_fast, const char* format,
+                        ImGuiInputTextFlags flags) {
+                         return ImGui::InputScalarN(label, data_type, p_data, components, p_step, p_step_fast,
+                                                    format, flags);
+                     });
+
+    lua.set_function("UIColorEdit3", [](const char* label, float col[3], ImGuiColorEditFlags flags) {
+        return ImGui::ColorEdit3(label, col, flags);
+    });
+
+    lua.set_function("UIColorEdit4", [](const char* label, float col[4], ImGuiColorEditFlags flags) {
+        return ImGui::ColorEdit4(label, col, flags);
+    });
+
+    lua.set_function("UIColorPicker3", [](const char* label, float col[3], ImGuiColorEditFlags flags) {
+        return ImGui::ColorPicker3(label, col, flags);
+    });
+
+    lua.set_function("UIColorPicker4",
+                     [](const char* label, float col[4], ImGuiColorEditFlags flags, const float* ref_col) {
+                         return ImGui::ColorPicker4(label, col, flags, ref_col);
+                     });
+
+    lua.set_function("UIBeginListBox", [](const char* label, const ImVec2&size) {
+        return ImGui::BeginListBox(label, size);
+    });
+
+    lua.set_function("UIEndListBox", []() {
+        ImGui::EndListBox();
+    });
+
+    lua.set_function("UIListBox",
+                     [](const char* label, int* current_item, const sol::table&items, int height_in_items) {
+                         std::vector<const char *> item_array;
+                         for (auto&item: items) {
+                             item_array.push_back(item.second.as<const char *>());
+                         }
+                         return ImGui::ListBox(label, current_item, item_array.data(),
+                                               static_cast<int>(item_array.size()), height_in_items);
+                     });
+
+    lua.set_function("LoadImage", &Application::LoadTexture);
 }
 
 int Application::Renderer() {
@@ -1156,7 +1730,7 @@ int Application::Renderer() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // 创建窗口
-    GLFWwindow *window = glfwCreateWindow(800, 600, VERSION.c_str(), NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(800, 600, VERSION.c_str(), NULL, NULL);
     if (!window) {
         // 处理窗口创建失败
         fprintf(stderr, "Failed to create GLFW window\n");
@@ -1174,7 +1748,7 @@ int Application::Renderer() {
     glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
+
     // 初始化ImGui
     GLFWimage images[1];
     images[0].pixels = stbi_load("Resources/icon.png", &images[0].width, &images[0].height, 0, 4); //rgba channels
@@ -1182,18 +1756,18 @@ int Application::Renderer() {
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
+    ImGuiIO&io = ImGui::GetIO();
 
     ImFontConfig config;
     config.OversampleH = 1;
     config.OversampleV = 1;
     config.PixelSnapH = true;
     config.GlyphExtraSpacing = ImVec2(0.0f, 1.0f);
-    ImFont *font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", 16.0f, &config,
+    ImFont* font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", 16.0f, &config,
                                                 io.Fonts->GetGlyphRangesChineseFull());
     IM_ASSERT(font != NULL);
     io.DisplayFramebufferScale = ImVec2(0.8f, 0.8f);
-    (void) io;
+    (void)io;
     ImGui::StyleColorsDark();
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -1203,7 +1777,7 @@ int Application::Renderer() {
     ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     // 设置 ImGui 全局样式属性
 
-    ImGuiStyle &style = ImGui::GetStyle();
+    ImGuiStyle&style = ImGui::GetStyle();
     style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
     style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
     style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
@@ -1223,12 +1797,12 @@ int Application::Renderer() {
 
     //初始化插件
     // 初始化Lua
-    lua_State *L = luaL_newstate();
+    lua_State* L = luaL_newstate();
     luaL_openlibs(L);
     initImGuiBindings(L);
     // 加载Lua脚本
     auto dirs = UDirectory::GetSubDirectories(PluginPath);
-    for (auto &dir: dirs) {
+    for (auto&dir: dirs) {
         std::string path = PluginPath + dir + "/Plugin.lua";
         if (!UFile::Exists(path)) {
             LogWarn("Found plugin directory but Plugin.lua can not found");
@@ -1246,7 +1820,7 @@ int Application::Renderer() {
         PluginsScript.push_back(luaScript);
     }
 #pragma omp parallel for
-    for (auto &it: TextureCache) {
+    for (auto&it: TextureCache) {
         it.second = LoadTexture(Resources + it.first + ".png");
     }
 
@@ -1261,7 +1835,7 @@ int Application::Renderer() {
 
         RenderUI();
         // 在Lua中调用ImGui函数
-        for (auto &script: PluginsScript) {
+        for (auto&script: PluginsScript) {
             if (luaL_dostring(L, script.c_str())) {
                 lua_error(L);
                 return -1;
@@ -1270,7 +1844,6 @@ int Application::Renderer() {
             if (lua_isfunction(L, -1)) {
                 lua_call(L, 0, 0);
             }
-            
         }
 
         ImGui::Render();
@@ -1287,7 +1860,7 @@ int Application::Renderer() {
     // 关闭Lua
     lua_close(L);
     stbi_image_free(images[0].pixels);
-    for (auto &it: TextureCache) {
+    for (auto&it: TextureCache) {
         glDeleteTextures(1, &it.second);
     }
     ImGui_ImplOpenGL3_Shutdown();
@@ -1297,8 +1870,8 @@ int Application::Renderer() {
     return 0;
 }
 
-bool Application::CheckFileExistence(const std::string &filePath, const std::string &fileType,
-                                     const std::string &executableFile, bool isExecutable) {
+bool Application::CheckFileExistence(const std::string&filePath, const std::string&fileType,
+                                     const std::string&executableFile, bool isExecutable) {
     if (isExecutable) {
         if (!UFile::Exists(filePath + executableFile + exeSuffix)) {
             LogWarn("Warning: {0} won't work because you don't have an executable \"{1}\" for {0} !",
@@ -1307,7 +1880,8 @@ bool Application::CheckFileExistence(const std::string &filePath, const std::str
                     filePath);
             return false;
         }
-    } else {
+    }
+    else {
         if (!UFile::Exists(filePath)) {
             LogWarn("Warning: {0} won't work because you don't have an file \"{1}\" for {0} !",
                     fileType, filePath);
@@ -1319,7 +1893,7 @@ bool Application::CheckFileExistence(const std::string &filePath, const std::str
 }
 
 
-std::string Application::WhisperConvertor(const std::string &file) {
+std::string Application::WhisperConvertor(const std::string&file) {
     if (!CheckFileExistence(whisperData.model, "Whisper Model")) {
         LogError("Whisper Error: Whisper doesn't work because you don't have a model file: {0}",
                  this->model + WhisperPath + whisperData.model);
@@ -1328,16 +1902,18 @@ std::string Application::WhisperConvertor(const std::string &file) {
     std::string res;
 
     res = Utils::exec(
-            Utils::GetAbsolutePath(bin + WhisperPath) + "main -nt -l auto -t 8 -m " + whisperData.model +
-            " -f ./recorded" + std::to_string(Rnum - 1) + ".wav");
+        Utils::GetAbsolutePath(bin + WhisperPath) + "main -nt -l auto -t 8 -m " + whisperData.model +
+        " -f ./recorded" + std::to_string(Rnum - 1) + ".wav");
 
     return res;
 }
 
-void Application::WhisperModelDownload(const std::string &model) {
+void Application::WhisperModelDownload(const std::string&model) {
     std::map<std::string, std::string> tasks = {
-            {"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + model,
-             this->model + WhisperPath + model}
+        {
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + model,
+            this->model + WhisperPath + model
+        }
     };
     whisper = Installer(tasks);
     //return whisper;
@@ -1346,9 +1922,10 @@ void Application::WhisperModelDownload(const std::string &model) {
 void Application::WhisperExeInstaller() {
     if (UFile::Exists(bin + WhisperPath + "Whisper.zip")) {
         whisper = Utils::Decompress(bin + WhisperPath + "Whisper.zip");
-    } else {
+    }
+    else {
         std::map<std::string, std::string> tasks = {
-                {whisperUrl, bin + WhisperPath + "Whisper.zip"}
+            {whisperUrl, bin + WhisperPath + "Whisper.zip"}
         };
         whisper = Installer(tasks) && Utils::Decompress(bin + WhisperPath + "Whisper.zip");
     }
@@ -1358,9 +1935,10 @@ void Application::WhisperExeInstaller() {
 void Application::VitsExeInstaller() {
     if (UFile::Exists(bin + VitsConvertor + vitsFile)) {
         vits = Utils::Decompress(bin + VitsConvertor + vitsFile);
-    } else {
+    }
+    else {
         std::map<std::string, std::string> tasks = {
-                {VitsConvertUrl, bin + VitsConvertor + vitsFile}
+            {VitsConvertUrl, bin + VitsConvertor + vitsFile}
         };
         vits = Installer(tasks) && Utils::Decompress(bin + VitsConvertor + vitsFile);
     }
@@ -1373,26 +1951,30 @@ bool Application::Installer(std::map<std::string, std::string> tasks) {
     if (success) {
         LogInfo("Application: Download completed successfully.");
         return true;
-    } else {
+    }
+    else {
         LogError("Application Error: Download failed.");
         return false;
     }
 }
 
-void Application::del(std::string name) {
-    if (remove((Conversation + name + ".yaml").c_str()) != 0) {
-        LogError("OpenAI Error: Unable to delete session {0},{1}", name, ".");
-    }
-    conversations.erase(conversations.begin() + SelectIndices["conversation"]);
-    SelectIndices["conversation"] = conversations.size() - 1;
-    convid = conversations[SelectIndices["conversation"]];
 
-    LogInfo("Bot : 删除 {0} 成功", name);
+void Application::AddChatRecord(const Chat&data) {
+    chat_history.push_back(data);
 }
 
-vector <Application::Chat> Application::load(std::string name) {
-    if (UFile::Exists(Conversation + name + ".yaml")) {
-        std::ifstream session_file(Conversation + name + ".yaml");
+void Application::DeleteAllBotChat() {
+    chat_history.erase(
+        std::remove_if(chat_history.begin(), chat_history.end(),
+                       [](const Chat&c) {
+                           return c.flag == 1;
+                       }),
+        chat_history.end());
+}
+
+vector<Application::Chat> Application::load(std::string name) {
+    if (UFile::Exists(ConversationPath.string() + name + ".yaml")) {
+        std::ifstream session_file(ConversationPath.string() + name + ".yaml");
         session_file.imbue(std::locale("en_US.UTF-8"));
         chat_history.clear();
         if (session_file.is_open()) {
@@ -1400,7 +1982,7 @@ vector <Application::Chat> Application::load(std::string name) {
             YAML::Node node = YAML::Load(session_file);
 
             // 将 YAML 节点映射到 chat_history
-            for (const auto &record_node: node) {
+            for (const auto&record_node: node) {
                 // 从 YAML 映射节点中读取 ChatRecord 对象的成员变量
                 int flag = record_node["flag"].as<int>();
                 long long timestamp;
@@ -1409,7 +1991,8 @@ vector <Application::Chat> Application::load(std::string name) {
                 if (flag == 0) {
                     timestamp = record_node["user"]["timestamp"].as<long long>();
                     content = record_node["user"]["content"].as<std::string>();
-                } else {
+                }
+                else {
                     timestamp = record_node["bot"]["timestamp"].as<long long>();
                     content = record_node["bot"]["content"].as<std::string>();
                     record.image = record_node["bot"]["image"].as<std::string>();
@@ -1425,7 +2008,8 @@ vector <Application::Chat> Application::load(std::string name) {
 
             session_file.close();
             LogInfo("Application : Load {0} successfully", name);
-        } else {
+        }
+        else {
             LogError("Application Error: Unable to load session {0},{1}", name, ".");
         }
     }
@@ -1433,15 +2017,26 @@ vector <Application::Chat> Application::load(std::string name) {
     return chat_history;
 }
 
+void Application::del(std::string name) {
+    if (remove((ConversationPath.string() + name + ".yaml").c_str()) != 0) {
+        LogError("Bot Error: Unable to delete session {0},{1}", name, ".");
+    }
+    conversations.erase(ranges::find(conversations, name));
+    SelectIndices["conversation"] = 0;
+    convid = conversations[SelectIndices["conversation"]];
+
+    LogInfo("Bot : 删除 {0} 成功", name);
+}
+
 void Application::save(std::string name, bool out) {
-    std::ofstream session_file(Conversation + name + ".yaml");
+    std::ofstream session_file(ConversationPath.string() + name + ".yaml");
     session_file.imbue(std::locale("en_US.UTF-8"));
     if (session_file.is_open()) {
         // 创建 YAML 节点
         YAML::Node node;
 
         // 将 chat_history 映射到 YAML 节点
-        for (const auto &record: chat_history) {
+        for (const auto&record: chat_history) {
             // 创建一个新的 YAML 映射节点
             YAML::Node record_node(YAML::NodeType::Map);
 
@@ -1450,7 +2045,8 @@ void Application::save(std::string name, bool out) {
             if (record.flag == 0) {
                 record_node["user"]["timestamp"] = record.timestamp;
                 record_node["user"]["content"] = record.content;
-            } else {
+            }
+            else {
                 record_node["bot"]["timestamp"] = record.timestamp;
                 record_node["bot"]["content"] = record.content;
                 record_node["bot"]["image"] = record.image;
@@ -1466,7 +2062,8 @@ void Application::save(std::string name, bool out) {
         session_file.close();
         if (out)
             LogInfo("Application : Save {0} successfully", name);
-    } else {
+    }
+    else {
         if (out)
             LogError("Application Error: Unable to save session {0},{1}", name, ".");
     }
@@ -1474,12 +2071,14 @@ void Application::save(std::string name, bool out) {
 
 bool Application::Initialize() {
     bool success = true;
-    std::filesystem::path path_to_directory = "Conversations/";
-    for (const auto &entry: std::filesystem::directory_iterator(path_to_directory)) {
+    if (!UDirectory::Exists(ConversationPath.string())) {
+        UDirectory::Create(ConversationPath.string());
+    }
+    for (const auto&entry: std::filesystem::directory_iterator(ConversationPath)) {
         if (entry.is_regular_file()) {
-            const auto &file_path = entry.path();
+            const auto&file_path = entry.path();
             std::string file_name = file_path.stem().string();
-            if (!file_name.empty()) {
+            if (!file_name.empty() && UFile::EndsWith(file_path.string(), ".dat")) {
                 conversations.emplace_back(file_name);
             }
             if (!conversations.size() > 0) {
@@ -1488,16 +2087,21 @@ bool Application::Initialize() {
             }
         }
     }
-    if (!configure.claude.enable)
+    if (!configure.claude.enable) {
+        if (conversations.empty()) {
+            bot->Add(convid);
+            save(convid, true);
+            conversations.emplace_back(convid);
+        }
         convid = conversations[0];
-
+    }
     bot->Load(convid);
     load(convid);
     whisper = true;
     mwhisper = true;
 
     // 遍历文件夹数组
-    for (const auto &dir: dirs) {
+    for (const auto&dir: dirs) {
         // 检查文件夹是否存在
         if (!UDirectory::Exists(dir)) {
             // 如果文件夹不存在，则输出警告信息
@@ -1510,13 +2114,15 @@ bool Application::Initialize() {
             if (!CheckFileExistence(bin + WhisperPath, "Whisper", "main", true)) {
                 state = State::NO_WHISPER;
                 whisper = false;
-                LogInfo("Initialize: It is detected that you do not have the \"Whisper Executable file\" and the \"useLocalModel\" option is enabled.");
+                LogInfo(
+                    "Initialize: It is detected that you do not have the \"Whisper Executable file\" and the \"useLocalModel\" option is enabled.");
                 success = false;
             }
             if (!CheckFileExistence(whisperData.model, "Whisper Model")) {
                 mwhisper = false;
                 state = State::NO_WHISPER;
-                LogInfo("Initialize: It is detected that you do not have the \"Whisper model\" and the \"useLocalModel\" option is enabled.");
+                LogInfo(
+                    "Initialize: It is detected that you do not have the \"Whisper model\" and the \"useLocalModel\" option is enabled.");
                 success = false;
             }
         }
@@ -1526,7 +2132,8 @@ bool Application::Initialize() {
         if (!CheckFileExistence(bin + VitsConvertor, "VITS", "VitsConvertor", true)) {
             state = State::NO_VITS;
             vits = false;
-            LogInfo("Initialize: It is detected that you do not have the \"VITS Executable file\" and the \"vits.enable\" option is enabled.");
+            LogInfo(
+                "Initialize: It is detected that you do not have the \"VITS Executable file\" and the \"vits.enable\" option is enabled.");
             success = false;
         }
 
@@ -1540,7 +2147,8 @@ bool Application::Initialize() {
 
     if (live2D.enable) {
         if (!CheckFileExistence(live2D.bin, "Live2D executable file")) {
-            LogWarn("Initialize Warning: Since you don't have a \"Live2D Executable file\", the Live2D function isn't working properly!");
+            LogWarn(
+                "Initialize Warning: Since you don't have a \"Live2D Executable file\", the Live2D function isn't working properly!");
             live2D.enable = false;
             success = false;
         }
@@ -1549,14 +2157,26 @@ bool Application::Initialize() {
             live2D.enable = false;
             success = false;
         }
-
     }
 
     LogInfo("Successful initialization!");
     return success;
 }
 
-int Application::countTokens(const string &str) {
+bool Application::is_valid_text(const std::string&text) const {
+    if (text.empty()) return false;
+
+    bool is_space = text.find_first_not_of(" \t\r\n") == std::string::npos;
+    bool is_special = text.find_first_not_of(special_chars) == std::string::npos;
+
+    if (is_space || is_special) return false;
+
+    if (is_space && is_special) return false;
+
+    return true;
+}
+
+int Application::countTokens(const string&str) {
     // 单一字符的token数量，包括回车
     const int singleCharTokenCount = 1;
 
@@ -1575,10 +2195,12 @@ int Application::countTokens(const string &str) {
             // 加入当前字符所对应的token数量，根据字节数判断是否是中文字符
             if ((c >= 0 && c <= 127) || c == '\n') {
                 tokens.push_back(std::string(singleCharTokenCount, c));
-            } else {
+            }
+            else {
                 tokens.push_back(std::string(2, c));
             }
-        } else if (c >= -128 && c <= -65) {
+        }
+        else if (c >= -128 && c <= -65) {
             // 中文字符第二个部分，加入前一个token
             if (!token.empty()) {
                 tokens.push_back(token);
@@ -1589,19 +2211,23 @@ int Application::countTokens(const string &str) {
             token = std::string(2, c);
             tokens.push_back(token);
             token.clear();
-        } else if ((c >= '0' && c <= '9')
-                   || (c >= 'a' && c <= 'z')
-                   || (c >= 'A' && c <= 'Z')) {
+        }
+        else if ((c >= '0' && c <= '9')
+                 || (c >= 'a' && c <= 'z')
+                 || (c >= 'A' && c <= 'Z')) {
             // 数字或者字母的一段，加入前一个token
             if (token.empty()) {
                 token += c;
-            } else if (isdigit(c) == isdigit(token[0])) {
+            }
+            else if (isdigit(c) == isdigit(token[0])) {
                 token += c;
-            } else {
+            }
+            else {
                 tokens.push_back(token);
                 token = c;
             }
-        } else {
+        }
+        else {
             // 特殊字符或者emoji等，加入前一个token
             if (!token.empty()) {
                 tokens.push_back(token);
@@ -1611,16 +2237,20 @@ int Application::countTokens(const string &str) {
             // 根据不同类型的字符加入当前字符所对应的token数量
             if (c == '\n') {
                 tokens.push_back(std::string(singleCharTokenCount, c));
-            } else if (c == 0xF0) {
+            }
+            else if (c == 0xF0) {
                 tokens.push_back(std::string(6, ' '));
-            } else if (c == '[' || c == ']') {
+            }
+            else if (c == '[' || c == ']') {
                 tokens.push_back(std::string(singleCharTokenCount, c));
-            } else if (c == ' ' || c == '\t' || c == '.' || c == ',' || c == ';' || c == ':' || c == '!' ||
-                       c == '?' || c == '(' || c == ')' || c == '{' || c == '}' || c == '/' || c == '\\' ||
-                       c == '+' || c == '-' || c == '*' || c == '=' || c == '<' || c == '>' || c == '|' ||
-                       c == '&' || c == '^' || c == '%' || c == '$' || c == '#' || c == '@') {
+            }
+            else if (c == ' ' || c == '\t' || c == '.' || c == ',' || c == ';' || c == ':' || c == '!' ||
+                     c == '?' || c == '(' || c == ')' || c == '{' || c == '}' || c == '/' || c == '\\' ||
+                     c == '+' || c == '-' || c == '*' || c == '=' || c == '<' || c == '>' || c == '|' ||
+                     c == '&' || c == '^' || c == '%' || c == '$' || c == '#' || c == '@') {
                 tokens.push_back(std::string(singleCharTokenCount, c));
-            } else {
+            }
+            else {
                 tokens.push_back(std::string(singleCharTokenCount, c));
             }
         }
@@ -1635,12 +2265,12 @@ int Application::countTokens(const string &str) {
 }
 
 void Application::
-ShowConfirmationDialog(const char *title, const char *content, bool &mstate,
+ShowConfirmationDialog(const char* title, const char* content, bool&mstate,
                        ConfirmDelegate on_confirm,
-                       const char *failure,
-                       const char *success,
-                       const char *confirm,
-                       const char *cancel) {
+                       const char* failure,
+                       const char* success,
+                       const char* confirm,
+                       const char* cancel) {
     static bool Start = false;
     static bool reject = false;
     if (!reject) {
@@ -1676,13 +2306,15 @@ void Application::RuntimeDetector() {
                                [this]() { WhisperExeInstaller(); },
                                reinterpret_cast<const char *>(u8"安装Whisper失败"),
                                reinterpret_cast<const char *>(u8"安装Whisper成功"));
-    } else if (!vits) {
+    }
+    else if (!vits) {
         ShowConfirmationDialog(reinterpret_cast<const char *>(u8"下载通知"),
                                reinterpret_cast<const char *>(u8"检测到你并没安装VitsConvertor,是否安装?"), vits,
                                [this]() { VitsExeInstaller(); },
                                reinterpret_cast<const char *>(u8"安装VitsConvertor失败"),
                                reinterpret_cast<const char *>(u8"安装VitsConvertor成功"));
-    } else if (!mwhisper) {
+    }
+    else if (!mwhisper) {
         ShowConfirmationDialog(reinterpret_cast<const char *>(u8"下载通知"),
                                reinterpret_cast<const char *>(u8"检测到你并没安装Whisper Model,是否下载?"),
                                mwhisper,
@@ -1700,7 +2332,7 @@ void Application::GetClaudeHistory() {
             botR.flag = 1;
             auto _history = bot->GetHistory();
             DeleteAllBotChat();
-            for (auto &it: _history) {
+            for (auto&it: _history) {
                 if (it.second != "Please note:") {
                     botR.timestamp = it.first;
                     botR.content = it.second;
@@ -1710,7 +2342,7 @@ void Application::GetClaudeHistory() {
             // 按时间戳排序
             std::sort(chat_history.begin(), chat_history.end(), compareByTimestamp);
 
-            for (const auto &chat: chat_history) {
+            for (const auto&chat: chat_history) {
                 if (chat.flag == 0) {
                     FirstTime = chat.timestamp;
                     break;
@@ -1719,17 +2351,14 @@ void Application::GetClaudeHistory() {
 
             // 删除早于FirstTime的对话
             chat_history.erase(
-                    std::remove_if(chat_history.begin(), chat_history.end(),
-                                   [&](const Chat &c) {
-                                       return c.timestamp < FirstTime;
-                                   }),
-                    chat_history.end());
+                std::remove_if(chat_history.begin(), chat_history.end(),
+                               [&](const Chat&c) {
+                                   return c.timestamp < FirstTime;
+                               }),
+                chat_history.end());
             save(convid, false);
             // 延迟0.002s
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     }).detach();
 }
-
-
-

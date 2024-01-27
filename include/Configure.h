@@ -11,7 +11,8 @@ struct TranslateData {
     std::string proxy = "";
 };
 
-struct OpenAIData {
+struct OpenAIBotCreateInfo {
+    bool enable = false;
     bool useLocalModel = false;
     bool useWebProxy = true;
     std::string modelPath = "model/ChatGLM/";
@@ -34,7 +35,8 @@ struct VitsTask {
 struct StableDiffusionData {
     std::string apiPath = "http://127.0.0.1:7860";
     std::string sampler_index = "Euler a";
-    std::string negative_prompt = "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, bad feet";
+    std::string negative_prompt =
+            "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, bad feet";
     int steps = 50;
     int denoising_strength = 0;
     int width = 5112;
@@ -51,7 +53,7 @@ struct VITSData {
     int speaker_id = 0;
 };
 
-struct WhisperData {
+struct WhisperCreateInfo {
     bool enable = false;
     bool useLocalModel = false;
     std::string model = "model/Whisper/ggml-small.bin";
@@ -63,12 +65,17 @@ struct LConfigure {
     float scaleY = 1.0;
 };
 
-struct ClaudeData {
+struct ClaudeBotCreateInfo {
     bool enable = true;
     std::string channelID;
     std::string slackToken;
     std::string userName;
     std::string cookies;
+};
+
+struct GeminiBotCreateInfo {
+    bool enable = true;
+    std::string _apiKey;
 };
 
 
@@ -79,20 +86,39 @@ struct Live2D {
 };
 
 struct Configure {
-    OpenAIData openAi;
+    OpenAIBotCreateInfo openAi;
     TranslateData baiDuTranslator;
     VITSData vits;
-    WhisperData whisper;
+    WhisperCreateInfo whisper;
     Live2D live2D;
-    ClaudeData claude;
+    ClaudeBotCreateInfo claude;
+    GeminiBotCreateInfo gemini;
     StableDiffusionData stableDiffusion;
 };
 
 namespace YAML {
     template<>
-    struct convert<ClaudeData> {
+    struct convert<GeminiBotCreateInfo> {
+        static Node encode(const GeminiBotCreateInfo&data) {
+            Node node;
+            node["enable"] = data.enable;
+            node["api_Key"] = data._apiKey;
+            return node;
+        }
 
-        static Node encode(const ClaudeData &data) {
+        static bool decode(const Node&node, GeminiBotCreateInfo&data) {
+            if (!node["enable"]) {
+                return false;
+            }
+            data._apiKey = node["api_Key"].as<std::string>();
+            data.enable = node["enable"].as<bool>();
+            return true;
+        }
+    };
+
+    template<>
+    struct convert<ClaudeBotCreateInfo> {
+        static Node encode(const ClaudeBotCreateInfo&data) {
             Node node;
             node["enable"] = data.enable;
             node["channelID"] = data.channelID;
@@ -102,7 +128,7 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, ClaudeData &data) {
+        static bool decode(const Node&node, ClaudeBotCreateInfo&data) {
             if (!node["channelID"]) {
                 return false;
             }
@@ -113,12 +139,11 @@ namespace YAML {
             data.slackToken = node["slackToken"].as<std::string>();
             return true;
         }
-
     };
 
     template<>
     struct convert<TranslateData> {
-        static Node encode(const TranslateData &data) {
+        static Node encode(const TranslateData&data) {
             Node node;
             node["appId"] = data.appId;
             node["APIKey"] = data.APIKey;
@@ -126,7 +151,7 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, TranslateData &data) {
+        static bool decode(const Node&node, TranslateData&data) {
             if (!node["appId"] || !node["APIKey"]) {
                 return false;
             }
@@ -138,9 +163,10 @@ namespace YAML {
     };
 
     template<>
-    struct convert<OpenAIData> {
-        static Node encode(const OpenAIData &data) {
+    struct convert<OpenAIBotCreateInfo> {
+        static Node encode(const OpenAIBotCreateInfo&data) {
             Node node;
+            node["enable"] = data.enable;
             node["useLocalModel"] = data.useLocalModel;
             node["modelPath"] = data.modelPath;
             node["api_key"] = data.api_key;
@@ -152,10 +178,11 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, OpenAIData &data) {
+        static bool decode(const Node&node, OpenAIBotCreateInfo&data) {
             if (!node["api_key"] && !node["useLocalModel"]) {
                 return false;
             }
+            data.enable = node["enable"].as<bool>();
             data.api_key = node["api_key"].as<std::string>();
             data.modelPath = node["modelPath"].as<std::string>();
             data.useLocalModel = node["useLocalModel"].as<bool>();
@@ -171,7 +198,7 @@ namespace YAML {
 
     template<>
     struct convert<VitsTask> {
-        static Node encode(const VitsTask &task) {
+        static Node encode(const VitsTask&task) {
             Node node;
             node["model"] = task.model;
             node["config"] = task.config;
@@ -183,7 +210,7 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, VitsTask &task) {
+        static bool decode(const Node&node, VitsTask&task) {
             if (!node["model"] || !node["config"] || !node["text"]) {
                 return false;
             }
@@ -208,7 +235,7 @@ namespace YAML {
 
     template<>
     struct convert<VITSData> {
-        static Node encode(const VITSData &data) {
+        static Node encode(const VITSData&data) {
             Node node;
             node["modelName"] = data.modelName;
             node["model"] = data.model;
@@ -219,7 +246,7 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, VITSData &data) {
+        static bool decode(const Node&node, VITSData&data) {
             if (!node["model"] || !node["config"]) {
                 return false;
             }
@@ -236,8 +263,8 @@ namespace YAML {
     };
 
     template<>
-    struct convert<WhisperData> {
-        static Node encode(const WhisperData &data) {
+    struct convert<WhisperCreateInfo> {
+        static Node encode(const WhisperCreateInfo&data) {
             Node node;
             node["enable"] = data.enable;
             node["useLocalModel"] = data.useLocalModel;
@@ -245,7 +272,7 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, WhisperData &data) {
+        static bool decode(const Node&node, WhisperCreateInfo&data) {
             data.useLocalModel = node["useLocalModel"].as<bool>();
             data.enable = node["enable"].as<bool>();
             if (node["model"]) {
@@ -257,7 +284,7 @@ namespace YAML {
 
     template<>
     struct convert<Live2D> {
-        static Node encode(const Live2D &data) {
+        static Node encode(const Live2D&data) {
             Node node;
             node["enable"] = data.enable;
             node["model"] = data.model;
@@ -265,7 +292,7 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, Live2D &data) {
+        static bool decode(const Node&node, Live2D&data) {
             data.enable = node["enable"].as<bool>();
             if (node["model"]) {
                 data.model = node["model"].as<std::string>();
@@ -277,7 +304,7 @@ namespace YAML {
 
     template<>
     struct convert<LConfigure> {
-        static Node encode(const LConfigure &data) {
+        static Node encode(const LConfigure&data) {
             Node node;
             node["model"] = data.model;
             node["scaleX"] = data.scaleX;
@@ -285,8 +312,7 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, LConfigure &data) {
-
+        static bool decode(const Node&node, LConfigure&data) {
             if (node["model"]) {
                 data.model = node["model"].as<std::string>();
             }
@@ -298,8 +324,7 @@ namespace YAML {
 
     template<>
     struct convert<StableDiffusionData> {
-
-        static Node encode(const StableDiffusionData &data) {
+        static Node encode(const StableDiffusionData&data) {
             Node node;
             node["apiPath"] = data.apiPath;
             node["sampler_index"] = data.sampler_index;
@@ -312,7 +337,7 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, StableDiffusionData &data) {
+        static bool decode(const Node&node, StableDiffusionData&data) {
             data.apiPath = node["apiPath"].as<std::string>();
             data.sampler_index = node["sampler_index"].as<std::string>();
             data.negative_prompt = node["negative_prompt"].as<std::string>();
@@ -323,15 +348,15 @@ namespace YAML {
             data.cfg_scale = node["cfg_scale"].as<float>();
             return true;
         }
-
     };
 
     template<>
     struct convert<Configure> {
-        static Node encode(const Configure &config) {
+        static Node encode(const Configure&config) {
             Node node;
             node["openAi"] = config.openAi;
             node["claude"] = config.claude;
+            node["gemini"] = config.gemini;
             node["baiDuTranslator"] = config.baiDuTranslator;
             node["vits"] = config.vits;
             node["whisper"] = config.whisper;
@@ -340,15 +365,17 @@ namespace YAML {
             return node;
         }
 
-        static bool decode(const Node &node, Configure &config) {
+        static bool decode(const Node&node, Configure&config) {
             if (!node["openAi"] || !node["baiDuTranslator"] || !node["vits"]) {
                 return false;
             }
-            config.openAi = node["openAi"].as<OpenAIData>();
-            config.claude = node["claude"].as<ClaudeData>();
+
+            config.openAi = node["openAi"].as<OpenAIBotCreateInfo>();
+            config.gemini = node["gemini"].as<GeminiBotCreateInfo>();
+            config.claude = node["claude"].as<ClaudeBotCreateInfo>();
             config.baiDuTranslator = node["baiDuTranslator"].as<TranslateData>();
             config.vits = node["vits"].as<VITSData>();
-            config.whisper = node["whisper"].as<WhisperData>();
+            config.whisper = node["whisper"].as<WhisperCreateInfo>();
             config.live2D = node["live2D"].as<Live2D>();
             config.stableDiffusion = node["stableDiffusion"].as<StableDiffusionData>();
             return true;

@@ -1,6 +1,6 @@
 #include "ChatBot.h"
 
-ChatGPT::ChatGPT(const OpenAIData &chat_data) : chat_data_(chat_data) {
+ChatGPT::ChatGPT(const OpenAIBotCreateInfo&chat_data) : chat_data_(chat_data) {
     Logger::Init();
     defaultJson["content"] = sys;
     defaultJson["role"] = "system";
@@ -23,13 +23,14 @@ string ChatGPT::sendRequest(std::string data) {
                 std::string url = "";
                 if (!chat_data_.useWebProxy) {
                     url = "https://api.openai.com/";
-                } else {
+                }
+                else {
                     url = WebProxies[chat_data_.webproxy];
                 }
 
-                CURL *curl;
+                CURL* curl;
                 CURLcode res;
-                struct curl_slist *headers = NULL;
+                struct curl_slist* headers = NULL;
                 headers = curl_slist_append(headers, "Content-Type: application/json");
                 headers = curl_slist_append(headers, ("Authorization: Bearer " + chat_data_.api_key).c_str());
                 headers = curl_slist_append(headers, "Transfer-Encoding: chunked");
@@ -50,7 +51,7 @@ string ChatGPT::sendRequest(std::string data) {
                     if (res != CURLE_OK) {
                         LogError("OpenAI Error: Request failed with error code " + std::to_string(res));
                         parsed_response = {};
-                        return "";
+                        retry_count++;
                     }
                     curl_easy_cleanup(curl);
                     curl_slist_free_all(headers);
@@ -85,7 +86,7 @@ string ChatGPT::sendRequest(std::string data) {
                     return full_response;
                 }
             }
-            catch (json::exception &e) {
+            catch (json::exception&e) {
                 LogError("OpenAI Error: " + std::string(e.what()));
                 parsed_response = {};
                 retry_count++;
@@ -94,14 +95,192 @@ string ChatGPT::sendRequest(std::string data) {
         LogError("OpenAI Error: Request failed after three retries.");
         return "";
     }
-    catch (exception &e) {
+    catch (exception&e) {
         LogError(e.what());
     }
 }
 
-size_t ChatGPT::WriteCallback(void *contents, size_t size, size_t nmemb, void *userp) {
-    ((std::string *) userp)->append((char *) contents, size * nmemb);
+size_t ChatGPT::WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string *)userp)->append((char *)contents, size * nmemb);
     return size * nmemb;
+}
+
+std::string Claude::Submit(std::string text, std::string role, std::string convid) {
+    cpr::Payload payload{
+        {"token", claudeData.slackToken},
+        {"channel", claudeData.channelID},
+        {"text", text}
+    };
+
+    cpr::Response r = cpr::Post(cpr::Url{"https://slack.com/api/chat.postMessage"},
+                                payload);
+    if (r.status_code == 200) {
+        // 发送成功
+    }
+    else {
+        // 发送失败,打印错误信息
+        LogError(r.error.message);
+    }
+    json response = json::parse(r.text);
+
+    return "";
+}
+
+void Claude::Reset() {
+    /*        cpr::Payload payload{
+                {"token",   claudeData.slackToken},
+                {"channel", claudeData.channelID},
+                {"command", "/reset"}};
+        cpr::Header header{{"Cookie", claudeData.cookies}};
+        std::string url = "https://" + claudeData.userName + ".slack.com/api/chat.command";
+        cpr::Response r = cpr::Post(cpr::Url{url},
+                                    payload, header);
+        if (r.status_code == 200) {
+            // 发送成功
+        } else {
+            // 发送失败,打印错误信息
+            LogError(r.error.message);
+        }*/
+    Submit("请忘记上面的会话内容");
+    LogInfo("Claude : 重置成功");
+}
+
+void Claude::Load(std::string name) {
+    LogInfo("Claude : 不支持的操作");
+}
+
+void Claude::Save(std::string name) {
+    LogInfo("Claude : 不支持的操作");
+}
+
+void Claude::Del(std::string id) {
+    LogInfo("Claude : 不支持的操作");
+}
+
+void Claude::Add(std::string name) {
+    LogInfo("Claude : 不支持的操作");
+}
+
+Billing Claude::GetBilling() {
+    return {999, 999, 0, Utils::GetCurrentTimestamp()};
+}
+
+map<long long, string> Claude::GetHistory() {
+    try {
+        History.clear();
+        auto _ts = to_string(Logger::getCurrentTimestamp());
+        cpr::Payload payload = {
+            {"channel", claudeData.channelID},
+            {"latest", _ts},
+            {"token", claudeData.slackToken}
+        };
+        cpr::Response r2 = cpr::Post(cpr::Url{"https://slack.com/api/conversations.history"},
+                                     payload);
+        json j = json::parse(r2.text);
+        if (j["ok"].get<bool>()) {
+            for (auto&message: j["messages"]) {
+                if (message["bot_profile"]["name"] == "Claude") {
+                    long long ts = (long long)(atof(message["ts"].get<string>().c_str()) * 1000);
+                    std::string text = message["blocks"][0]["elements"][0]["elements"][0]["text"].get<string>();
+
+                    History[ts] = text;
+                }
+            }
+        }
+    }
+    catch (const std::exception&e) {
+        // 捕获并处理异常
+        LogError("获取历史记录失败:" + string(e.what()));
+    }
+    return History;
+}
+
+std::string Gemini::Submit(std::string prompt, std::string role, std::string convid) {
+    try {
+        convid_ = convid;
+        json ask;
+        /*构造[
+        {"role":"user",
+          "parts":[{
+            "text": "Write the first line of a story about a magic backpack."}]}, json*/
+        ask["role"] = role;
+        ask["parts"] = json::array();
+        ask["parts"].push_back(json::object());
+        ask["parts"][0]["text"] = prompt;
+        if (!Conversation.contains(convid)) {
+            Conversation.insert({convid, history});
+        }
+        history.emplace_back(ask);
+        Conversation[convid] = history;
+        std::string data = "{\"contents\":" + Conversation[convid].dump() + "}";
+
+        std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" +
+                          geminiData._apiKey;
+        int retry_count = 0;
+        while (retry_count < 3) {
+            auto r = cpr::Post(cpr::Url{url}, cpr::Header{{"Content-Type", "application/json"}}, cpr::Body{data});
+            if (r.status_code != 200) {
+                retry_count++;
+                LogError("Gemini: {0}", r.text);
+            }
+            json response = json::parse(r.text);
+            std::optional<std::string> res = response["candidates"][0]["content"]["parts"][0]["text"];
+            json ans;
+            ans["role"] = "model";
+            ans["parts"] = json::array();
+            ans["parts"].push_back(json::object());
+            ans["parts"][0]["text"] = res.value();
+            history.emplace_back(ans);
+            Conversation[convid_] = history;
+            return res.value_or("NA");
+        }
+    }
+    catch (const std::exception&e) {
+        LogError("获取历史记录失败:" + string(e.what()));
+    }
+}
+
+void Gemini::Reset() {
+    history.clear();
+    Conversation[convid_] = history;
+}
+
+void Gemini::Load(std::string name) {
+    std::stringstream buffer;
+    std::ifstream session_file(ConversationPath + name + suffix);
+    if (session_file.is_open()) {
+        buffer << session_file.rdbuf();
+        history = json::parse(buffer.str());
+    }
+    else {
+        LogError("Gemini Error: Unable to load session " + name + ".");
+    }
+    LogInfo("Bot: 加载 {0} 成功", name);
+}
+
+void Gemini::Save(std::string name) {
+    std::ofstream session_file(ConversationPath + name + suffix);
+
+    if (session_file.is_open()) {
+        session_file << history.dump();
+        session_file.close();
+        LogInfo("Bot : Save {0} successfully", name);
+    }
+    else {
+        LogError("Gemini Error: Unable to save session {0},{1}", name, ".");
+    }
+}
+
+void Gemini::Del(std::string name) {
+    if (remove((ConversationPath + name + suffix).c_str()) != 0) {
+        LogError("Gemini Error: Unable to delete session {0},{1}", name, ".");
+    }
+    LogInfo("Bot : 删除 {0} 成功", name);
+}
+
+void Gemini::Add(std::string name) {
+    history.clear();
+    Save(name);
 }
 
 std::future<std::string> ChatGPT::SubmitAsync(std::string prompt, std::string role, std::string convid) {
@@ -123,8 +302,8 @@ std::string ChatGPT::Submit(std::string prompt, std::string role, std::string co
         Conversation[convid] = history;
         std::string data = "{\n"
                            "  \"model\": \"" + chat_data_.model + "\",\n"
-                                                                  "  \"stream\": true,\n"
-                                                                  "  \"messages\": " +
+                           "  \"stream\": true,\n"
+                           "  \"messages\": " +
                            Conversation[convid].dump()
                            + "}\n";
         string text = sendRequest(data);
@@ -136,7 +315,7 @@ std::string ChatGPT::Submit(std::string prompt, std::string role, std::string co
         }
         return text;
     }
-    catch (exception &e) {
+    catch (exception&e) {
         LogError(e.what());
     }
 }
@@ -153,7 +332,8 @@ void ChatGPT::Load(std::string name) {
     if (session_file.is_open()) {
         buffer << session_file.rdbuf();
         history = json::parse(buffer.str());
-    } else {
+    }
+    else {
         LogError("OpenAI Error: Unable to load session " + name + ".");
     }
     LogInfo("Bot: 加载 {0} 成功", name);
@@ -166,7 +346,8 @@ void ChatGPT::Save(std::string name) {
         session_file << history.dump();
         session_file.close();
         LogInfo("Bot : Save {0} successfully", name);
-    } else {
+    }
+    else {
         LogError("OpenAI Error: Unable to save session {0},{1}", name, ".");
     }
 }
@@ -192,19 +373,21 @@ Billing ChatGPT::GetBilling() {
         url = "https://api.openai.com/";
         if (!chat_data_.proxy.empty()) {
             session.SetProxies(cpr::Proxies{
-                    {"http",  chat_data_.proxy},
-                    {"https", chat_data_.proxy}
+                {"http", chat_data_.proxy},
+                {"https", chat_data_.proxy}
             });
         }
-    } else {
+    }
+    else {
         url = WebProxies[chat_data_.webproxy];
     }
 
-    auto t1 = std::async(std::launch::async, [&] { // execute the first API request asynchronously
+    auto t1 = std::async(std::launch::async, [&] {
+        // execute the first API request asynchronously
         cpr::Session session;
         session.SetUrl(cpr::Url{url + "v1/dashboard/billing/subscription"});
         session.SetHeader(cpr::Header{
-                {"Authorization", "Bearer " + chat_data_.api_key},
+            {"Authorization", "Bearer " + chat_data_.api_key},
         });
         session.SetVerifySsl(cpr::VerifySsl{false});
 
@@ -219,14 +402,15 @@ Billing ChatGPT::GetBilling() {
         billing.date = data["access_until"];
     });
 
-    auto t2 = std::async(std::launch::async, [&] { // execute the second API request asynchronously
+    auto t2 = std::async(std::launch::async, [&] {
+        // execute the second API request asynchronously
         cpr::Session session;
         string start = Stamp2Time(getTimestampBefore(100));
         string end = Stamp2Time(getCurrentTimestamp());
         url = url + "v1/dashboard/billing/usage?start_date=" + start + "&end_date=" + end;
         session.SetUrl(cpr::Url{url});
         session.SetHeader(cpr::Header{
-                {"Authorization", "Bearer " + chat_data_.api_key}
+            {"Authorization", "Bearer " + chat_data_.api_key}
         });
         session.SetVerifySsl(cpr::VerifySsl{false});
 
