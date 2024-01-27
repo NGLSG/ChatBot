@@ -1,3 +1,9 @@
+<p align="center">
+    <img src="https://github.com/NGLSG/ChatBot/raw/main/img/self.png" width="200" height="200" alt="ChatBot">
+</p>
+
+<div align="center">
+
 # ChatBot
 
 _✨A chatbot based on various LLMs, supporting multiple languages and functionalities.✨_
