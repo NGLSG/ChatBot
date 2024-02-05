@@ -1,8 +1,7 @@
 ﻿#include "VoiceToText.h"
 #include "vcruntime_exception.h"
 
-VoiceToText::VoiceToText(const OpenAIBotCreateInfo &voiceData) : _voiceData(voiceData) {
-
+VoiceToText::VoiceToText(const OpenAIBotCreateInfo&voiceData) : _voiceData(voiceData) {
 }
 
 json VoiceToText::sendRequest(std::string data) {
@@ -13,30 +12,35 @@ json VoiceToText::sendRequest(std::string data) {
             url = "https://api.openai.com/";
             if (!_voiceData.proxy.empty()) {
                 session.SetProxies(cpr::Proxies{
-                        {"http",  _voiceData.proxy},
-                        {"https", _voiceData.proxy}
+                    {"http", _voiceData.proxy},
+                    {"https", _voiceData.proxy}
                 });
             }
-        } else {
-            url = WebProxies[_voiceData.webproxy];
+        }
+        else {
+            url = _voiceData._endPoint;
         }
         session.SetUrl(cpr::Url{url + "v1/audio/transcriptions"});
-        session.SetHeader(cpr::Header{{"Authorization", "Bearer " + _voiceData.api_key},
-                                      {"Content-Type",  "multipart/form-data"}});
-        session.SetMultipart(cpr::Multipart{{"file",  cpr::File{data}},
-                                            {"model", "whisper-1"}});
+        session.SetHeader(cpr::Header{
+            {"Authorization", "Bearer " + _voiceData.api_key},
+            {"Content-Type", "multipart/form-data"}
+        });
+        session.SetMultipart(cpr::Multipart{
+            {"file", cpr::File{data}},
+            {"model", "whisper-1"}
+        });
         session.SetVerifySsl(cpr::VerifySsl{false});
         cpr::Response response = session.Post();
         session.SetProxies(cpr::Proxies());
         if (response.status_code != 200) {
             LogError("Whisper Error: Request failed with status code " + std::to_string(response.status_code) +
-                     ". Because " + response.reason);
+                ". Because " + response.reason);
             return {};
         }
         parsed_response = json::parse(response.text);
         return parsed_response;
     }
-    catch (std::exception &e) {
+    catch (std::exception&e) {
         LogError(e.what());
     }
 }
@@ -52,7 +56,8 @@ std::string VoiceToText::Convert(std::string voicePath) {
 
         std::string res = response["text"];
         return res;
-    } catch (std::exception &e) {
+    }
+    catch (std::exception&e) {
         LogError(e.what());
     }
 }
@@ -67,7 +72,8 @@ std::future<std::string> VoiceToText::ConvertAsync(std::string voicePath) {
         if (response.is_null()) {
             LogError("Whisper Error: Response is null.");
             promise.set_value("");
-        } else {
+        }
+        else {
             res = response["text"];
             promise.set_value(res);
         }

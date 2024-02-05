@@ -25,7 +25,7 @@ string ChatGPT::sendRequest(std::string data) {
                     url = "https://api.openai.com/";
                 }
                 else {
-                    url = WebProxies[chat_data_.webproxy];
+                    url = chat_data_._endPoint;
                 }
 
                 CURL* curl;
@@ -213,8 +213,13 @@ std::string Gemini::Submit(std::string prompt, std::string role, std::string con
         history.emplace_back(ask);
         Conversation[convid] = history;
         std::string data = "{\"contents\":" + Conversation[convid].dump() + "}";
-
-        std::string url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=" +
+        std::string endPoint = "";
+        if (!geminiData._endPoint.empty())
+            endPoint = geminiData._endPoint;
+        else
+            endPoint = "https://generativelanguage.googleapis.com";
+        std::string url = endPoint + "/v1beta/models/gemini-pro:generateContent?key="
+                          +
                           geminiData._apiKey;
         int retry_count = 0;
         while (retry_count < 3) {
@@ -379,7 +384,7 @@ Billing ChatGPT::GetBilling() {
         }
     }
     else {
-        url = WebProxies[chat_data_.webproxy];
+        url = chat_data_.useWebProxy;
     }
 
     auto t1 = std::async(std::launch::async, [&] {

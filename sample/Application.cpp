@@ -833,20 +833,8 @@ void Application::RenderConfigBox() {
                                  configure.openAi.proxy.data(),
                                  TEXT_BUFFER);
             else {
-                if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"远程代理"),
-                                      Utils::GetFileName(proxies[configure.openAi.webproxy]).c_str())) // 开始下拉列表
-                {
-                    for (int i = 0; i < proxies.size(); i++) {
-                        bool is_selected = (configure.openAi.webproxy == i);
-                        if (ImGui::Selectable(Utils::GetFileName(proxies[i]).c_str(), is_selected)) {
-                            configure.openAi.webproxy = i;
-                        }
-                        if (is_selected) {
-                            ImGui::SetItemDefaultFocus(); // 默认选中项
-                        }
-                    }
-                    ImGui::EndCombo(); // 结束下拉列表
-                }
+                ImGui::InputText(reinterpret_cast<const char *>(u8"远程接入点"), configure.openAi._endPoint.data(),
+                                 TEXT_BUFFER);
             }
         }
         else if (configure.claude.enable) {
@@ -933,6 +921,8 @@ void Application::RenderConfigBox() {
                                    ImVec4(1, 1, 1, 1))) {
                 clicked = !clicked;
             }
+            ImGui::InputText(reinterpret_cast<const char *>(u8"远程接入点"), configure.gemini._endPoint.data(),
+                             TEXT_BUFFER);
         }
     }
 

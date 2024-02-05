@@ -19,7 +19,7 @@ struct OpenAIBotCreateInfo {
     std::string api_key = "";
     std::string model = "gpt-3.5-turbo";
     std::string proxy = "";
-    int webproxy = 0;
+    std::string _endPoint = "";
 };
 
 struct VitsTask {
@@ -76,6 +76,7 @@ struct ClaudeBotCreateInfo {
 struct GeminiBotCreateInfo {
     bool enable = true;
     std::string _apiKey;
+    std::string _endPoint;
 };
 
 
@@ -103,15 +104,14 @@ namespace YAML {
             Node node;
             node["enable"] = data.enable;
             node["api_Key"] = data._apiKey;
+            node["endPoint"] = data._endPoint;
             return node;
         }
 
         static bool decode(const Node&node, GeminiBotCreateInfo&data) {
-            if (!node["enable"]) {
-                return false;
-            }
             data._apiKey = node["api_Key"].as<std::string>();
             data.enable = node["enable"].as<bool>();
+            data._endPoint = node["endPoint"].as<std::string>();
             return true;
         }
     };
@@ -152,9 +152,6 @@ namespace YAML {
         }
 
         static bool decode(const Node&node, TranslateData&data) {
-            if (!node["appId"] || !node["APIKey"]) {
-                return false;
-            }
             data.proxy = node["proxy"].as<std::string>();
             data.appId = node["appId"].as<std::string>();
             data.APIKey = node["APIKey"].as<std::string>();
@@ -173,15 +170,13 @@ namespace YAML {
             node["model"] = data.model;
             node["proxy"] = data.proxy;
             node["useWebProxy"] = data.useWebProxy;
-            node["webproxy"] = data.webproxy;
+            node["endPoint"] = data._endPoint;
 
             return node;
         }
 
         static bool decode(const Node&node, OpenAIBotCreateInfo&data) {
-            if (!node["api_key"] && !node["useLocalModel"]) {
-                return false;
-            }
+
             data.enable = node["enable"].as<bool>();
             data.api_key = node["api_key"].as<std::string>();
             data.modelPath = node["modelPath"].as<std::string>();
@@ -191,7 +186,7 @@ namespace YAML {
                 data.model = node["model"].as<std::string>();
             }
             data.proxy = node["proxy"].as<std::string>();
-            data.webproxy = node["webproxy"].as<int>();
+            data._endPoint = node["endPoint"].as<std::string>();
             return true;
         }
     };
