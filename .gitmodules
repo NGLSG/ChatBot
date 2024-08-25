@@ -1,3 +1,9 @@
 [submodule "sample/Vendor/spdlog"]
 	path = sample/Vendor/spdlog
 	url = https://github.com/gabime/spdlog.git
+[submodule "Vendor/libarchive"]
+	path = sample/Vendor/libarchive
+	url = https://github.com/libarchive/libarchive
+[submodule "sample/Vendor/libarchive"]
+	path = sample/Vendor/libarchive
+	url = https://github.com/libarchive/libarchive

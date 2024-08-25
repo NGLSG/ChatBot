@@ -10,7 +10,6 @@
 #include <map>
 #include <sndfile.h>
 #include <nlohmann/json.hpp>
-#include <openssl/md5.h>
 #include <portaudio.h>
 #include <regex>
 #include <archive.h>
@@ -18,6 +17,7 @@
 #include <cpr/cpr.h>
 #include <stb_image_write.h>
 #include <base64.h>
+#include <openssl/md5.h>
 
 #define FRAMES_PER_BUFFER (1024)
 const int kMaxThreads = 10; // 最大线程数

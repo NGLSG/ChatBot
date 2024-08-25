@@ -145,6 +145,28 @@ public:
 
     static std::string GetDirName(const std::string&dir);
 
+    static std::string UrlEncode(const std::string&value) {
+        std::ostringstream escaped;
+        escaped.fill('0');
+        escaped << std::hex;
+
+        for (auto i = value.begin(), n = value.end(); i != n; ++i) {
+            std::string::value_type c = (*i);
+
+            // 保持字母和数字不变
+            if (isalnum(c) || c == '-') {
+                escaped << c;
+                continue;
+            }
+
+            // 对特殊字符进行编码
+            escaped << '%' << std::setw(2) << int((unsigned char)c);
+        }
+
+        return escaped.str();
+    }
+
+
     static std::string GetFileExt(std::string file);
 
     static void playAudio(const char* filename = "tmp.wav");

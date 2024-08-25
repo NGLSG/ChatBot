@@ -1,5 +1,7 @@
 ﻿#include "Application.h"
 
+#include <codecvt>
+
 std::vector<std::string> scommands;
 bool cpshow = false;
 
@@ -15,7 +17,7 @@ Application::Application(const Configure&configure, bool setting) {
         }
         else if (configure.claude.enable &&
                  (configure.claude.slackToken.empty() ||
-                  configure.claude.slackToken == "")) {
+                  configure.claude.slackToken == "") && configure.gptLike.api_key == "") {
             OnlySetting = true;
             state = State::NO_BOT_KEY;
         }
@@ -36,6 +38,9 @@ Application::Application(const Configure&configure, bool setting) {
             bot = CreateRef<Gemini>(configure.gemini);
             ConversationPath = std::filesystem::path(ConversationPath.string() + "Gemini/");
         }
+        if (configure.gptLike.enable) {
+            bot = CreateRef<GPTLike>(configure.gptLike);
+        }
         //billing = bot->GetBilling();
         voiceToText = CreateRef<VoiceToText>(configure.openAi);
         listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
@@ -54,7 +59,7 @@ Application::Application(const Configure&configure, bool setting) {
             listener->listen();
         }
         if (vitsData.enable && vits && vitsModel) {
-            Vits(" ");
+            Vits("欢迎使用本ChatBot");
 #ifdef WIN32
             Utils::OpenProgram("bin/VitsConvertor/VitsConvertor.exe");
 #else
@@ -64,6 +69,11 @@ Application::Application(const Configure&configure, bool setting) {
 #endif
             VitsListener();
         }
+        text_buffers.emplace_back("model");
+        text_buffers.emplace_back("endPoint");
+        text_buffers.emplace_back("proxy");
+        text_buffers.emplace_back("api");
+        text_buffers.emplace_back("lan");
     }
     catch (exception&e) {
         LogError(e.what());
@@ -71,23 +81,33 @@ Application::Application(const Configure&configure, bool setting) {
 }
 
 GLuint Application::LoadTexture(const std::string&path) {
-    /*    std::string metaPath = std::string(path) + ".meta";
-        if (UFile::Exists(metaPath)) {
-            return UImage::Base64ToTextureFromPath(metaPath);
-        } else {
-            std::string pathCopy = path;
-            std::string metaPathCopy = metaPath;
-    
-            std::thread([=] {
-                UImage::Base64ToImage(UImage::Img2Base64(pathCopy), metaPathCopy);
-            }).detach();
-    
-    
-        }*/
     return UImage::Img2Texture(path);
 }
 
 void Application::Vits(std::string text) {
+    if (configure.vits.UseGptSovite) {
+        std::string endPoint = configure.vits.apiEndPoint;
+        std::thread([endPoint,text] {
+            std::string url = endPoint + "?text=" + Utils::UrlEncode(text) + "&text_language=zh";
+            auto res = Get(cpr::Url{url});
+            if (res.status_code != 200) {
+                LogError("GPT-SoVits Error: " + res.text);
+            }
+            else {
+                std::ofstream wavFile("tmp.wav", std::ios::binary);
+                if (wavFile) {
+                    // 将响应体写入文件
+                    wavFile.write(res.text.c_str(), res.text.size());
+                    wavFile.close();
+                    std::cout << "WAV file downloaded successfully." << std::endl;
+                }
+                else {
+                    std::cerr << "Failed to open file for writing." << std::endl;
+                }
+            }
+        }).detach();
+        return;
+    }
     VitsTask task;
     task.model = Utils::GetAbsolutePath(vitsData.model);
     task.config = Utils::GetAbsolutePath(vitsData.config);
@@ -189,7 +209,7 @@ void Application::RenderCodeBox() {
     UniversalStyle();
 
     ImGui::Begin("Code Box", nullptr,
-                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
+                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
 
     static bool show_codes = false;
@@ -259,7 +279,7 @@ void Application::RenderChatBox() {
     UniversalStyle();
     // 创建一个子窗口
     ImGui::Begin(reinterpret_cast<const char *>(u8"对话"), NULL,
-                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
+                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav);
 
     ImGui::BeginChild("Chat Box Content", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing()), false,
                       ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoSavedSettings);
@@ -284,19 +304,6 @@ void Application::RenderChatBox() {
             input_size.y = text_size.y + ImGui::GetStyle().ItemSpacing.y * 2;
             // Set the style of the input field
             float rounding = 4.0f;
-            ImVec4 bg_color = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-            ImVec4 text_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-            ImVec4 cursor_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-            ImVec4 selection_color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, rounding);
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, bg_color);
-            ImGui::PushStyleColor(ImGuiCol_Text, text_color);
-            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, selection_color);
-            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, selection_color);
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, bg_color);
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, text_color);
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
 
             // Display the input field with the text and automatic line breaks
             ImGui::InputTextMultiline(("##" + std::to_string(userAsk.timestamp)).c_str(),
@@ -309,8 +316,6 @@ void Application::RenderChatBox() {
             ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(userAsk.timestamp).c_str());
 
             // Restore the style of the input field
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor(8);
         }
         if (!botAnswer.content.empty()) {
             // Display the bot's answer
@@ -707,7 +712,7 @@ void Application::RenderInputBox() {
 void Application::RenderConversationBox() {
     UniversalStyle();
     ImGui::Begin(reinterpret_cast<const char *>(u8"会话"), NULL,
-                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoTitleBar);
+                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav);
     if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["add"]), ImVec2(16, 16))) {
         // 显示输入框
         show_input_box = true;
@@ -777,16 +782,25 @@ void Application::RenderConfigBox() {
         if (configure.claude.enable) {
             configure.gemini.enable = false;
             configure.openAi.enable = false;
+            configure.gptLike.enable = false;
         }
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用Gemini"), &configure.gemini.enable);
         if (configure.gemini.enable) {
             configure.claude.enable = false;
             configure.openAi.enable = false;
+            configure.gptLike.enable = false;
         }
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用OpenAI"), &configure.openAi.enable);
         if (configure.openAi.enable) {
             configure.claude.enable = false;
             configure.gemini.enable = false;
+            configure.gptLike.enable = false;
+        }
+        ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用GPT-Like"), &configure.gptLike.enable);
+        if (configure.gptLike.enable) {
+            configure.claude.enable = false;
+            configure.gemini.enable = false;
+            configure.openAi.enable = false;
         }
 
 
@@ -794,23 +808,26 @@ void Application::RenderConfigBox() {
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
             double currentTime = ImGui::GetTime();
-            strcpy_s(api_buffer, configure.openAi.api_key.c_str());
+            strcpy_s(GetBufferByName("api").buffer, configure.openAi.api_key.c_str());
+            strcpy_s(GetBufferByName("endPoint").buffer, configure.openAi._endPoint.c_str());
+            strcpy_s(GetBufferByName("model").buffer, configure.openAi.model.c_str());
+            strcpy_s(GetBufferByName("proxy").buffer, configure.openAi.proxy.c_str());
             if (currentTime - lastInputTime > 0.5) {
                 showPassword = false;
             }
             if (showPassword || clicked) {
                 if (ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI API Key"),
-                                     api_buffer,
+                                     GetBufferByName("api").buffer,
                                      sizeof(input_buffer))) {
-                    configure.openAi.api_key = api_buffer;
+                    configure.openAi.api_key = GetBufferByName("api").buffer;
                 }
             }
             else {
                 if (ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI API Key"),
-                                     api_buffer,
+                                     GetBufferByName("api").buffer,
                                      sizeof(input_buffer),
                                      ImGuiInputTextFlags_Password)) {
-                    configure.openAi.api_key = api_buffer;
+                    configure.openAi.api_key = GetBufferByName("api").buffer;
                     showPassword = true;
                     lastInputTime = ImGui::GetTime();
                 }
@@ -825,17 +842,23 @@ void Application::RenderConfigBox() {
                                    ImVec4(1, 1, 1, 1))) {
                 clicked = !clicked;
             }
-            ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI 模型"), configure.openAi.model.data(),
-                             TEXT_BUFFER);
+            if (ImGui::InputText(reinterpret_cast<const char *>(u8"OpenAI 模型"), GetBufferByName("model").buffer,
+                                 TEXT_BUFFER)) {
+                configure.openAi.model = GetBufferByName("model").buffer;
+            }
             ImGui::Checkbox(reinterpret_cast<const char *>(u8"使用远程代理"), &configure.openAi.useWebProxy);
             if (!configure.openAi.useWebProxy)
-                ImGui::InputText(reinterpret_cast<const char *>(u8"对OpenAI使用的代理"),
-                                 configure.openAi.proxy.data(),
-                                 TEXT_BUFFER);
-            else {
-                ImGui::InputText(reinterpret_cast<const char *>(u8"远程接入点"), configure.openAi._endPoint.data(),
-                                 TEXT_BUFFER);
-            }
+                if (ImGui::InputText(reinterpret_cast<const char *>(u8"对OpenAI使用的代理"),
+                                     GetBufferByName("proxy").buffer,
+                                     TEXT_BUFFER)) {
+                    configure.openAi.proxy = GetBufferByName("proxy").buffer;
+                }
+                else {
+                    if (ImGui::InputText(reinterpret_cast<const char *>(u8"远程接入点"), GetBufferByName("endPoint").buffer,
+                                         TEXT_BUFFER)) {
+                        configure.openAi._endPoint = GetBufferByName("endPoint").buffer;
+                    }
+                }
         }
         else if (configure.claude.enable) {
             /*            ImGui::InputText(reinterpret_cast<const char *>(u8"ChatGLM的位置"),
@@ -844,23 +867,23 @@ void Application::RenderConfigBox() {
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
             double currentTime = ImGui::GetTime();
-            strcpy_s(api_buffer, configure.claude.slackToken.c_str());
+            strcpy_s(GetBufferByName("api").buffer, configure.claude.slackToken.c_str());
             if (currentTime - lastInputTime > 0.5) {
                 showPassword = false;
             }
             if (showPassword || clicked) {
                 if (ImGui::InputText(reinterpret_cast<const char *>(u8"Claude Token"),
-                                     api_buffer,
+                                     GetBufferByName("api").buffer,
                                      sizeof(input_buffer))) {
-                    configure.claude.slackToken = api_buffer;
+                    configure.claude.slackToken = GetBufferByName("api").buffer;
                 }
             }
             else {
                 if (ImGui::InputText(reinterpret_cast<const char *>(u8"Claude Token"),
-                                     api_buffer,
+                                     GetBufferByName("api").buffer,
                                      sizeof(input_buffer),
                                      ImGuiInputTextFlags_Password)) {
-                    configure.claude.slackToken = api_buffer;
+                    configure.claude.slackToken = GetBufferByName("api").buffer;
                     showPassword = true;
                     lastInputTime = ImGui::GetTime();
                 }
@@ -877,36 +900,38 @@ void Application::RenderConfigBox() {
             }
             /*            ImGui::InputText(reinterpret_cast<const char *>(u8"用户名"), configure.claude.userName.data(),
                                          TEXT_BUFFER);
-            
-            
+
+
                         ImGui::InputText("Claude Cookie",
                                          configure.claude.cookies.data(),
                                          TEXT_BUFFER);*/
 
-            ImGui::InputText(reinterpret_cast<const char *>(u8"Claude ID"), configure.claude.channelID.data(),
-                             TEXT_BUFFER);
+            if (ImGui::InputText(reinterpret_cast<const char *>(u8"Claude ID"), configure.claude.channelID.data(),
+                                 TEXT_BUFFER)) {
+            }
         }
         else if (configure.gemini.enable) {
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
             double currentTime = ImGui::GetTime();
-            strcpy_s(api_buffer, configure.gemini._apiKey.c_str());
+            strcpy_s(GetBufferByName("api").buffer, configure.gemini._apiKey.c_str());
+            strcpy_s(GetBufferByName("endPoint").buffer, configure.gemini._endPoint.c_str());
             if (currentTime - lastInputTime > 0.5) {
                 showPassword = false;
             }
             if (showPassword || clicked) {
                 if (ImGui::InputText(reinterpret_cast<const char *>(u8"ApiKey"),
-                                     api_buffer,
+                                     GetBufferByName("api").buffer,
                                      sizeof(input_buffer))) {
-                    configure.gemini._apiKey = api_buffer;
+                    configure.gemini._apiKey = GetBufferByName("api").buffer;
                 }
             }
             else {
                 if (ImGui::InputText(reinterpret_cast<const char *>(u8"ApiKey"),
-                                     api_buffer,
+                                     GetBufferByName("api").buffer,
                                      sizeof(input_buffer),
                                      ImGuiInputTextFlags_Password)) {
-                    configure.gemini._apiKey = api_buffer;
+                    configure.gemini._apiKey = GetBufferByName("api").buffer;
                     showPassword = true;
                     lastInputTime = ImGui::GetTime();
                 }
@@ -921,8 +946,56 @@ void Application::RenderConfigBox() {
                                    ImVec4(1, 1, 1, 1))) {
                 clicked = !clicked;
             }
-            ImGui::InputText(reinterpret_cast<const char *>(u8"远程接入点"), configure.gemini._endPoint.data(),
-                             TEXT_BUFFER);
+            if (ImGui::InputText(reinterpret_cast<const char *>(u8"远程接入点"), GetBufferByName("endPoint").buffer,
+                                 TEXT_BUFFER)) {
+                configure.gemini._endPoint = GetBufferByName("endPoint").buffer;
+            }
+        }
+        else if (configure.gptLike.enable) {
+            static bool showPassword = false, clicked = false;
+            static double lastInputTime = 0.0;
+            double currentTime = ImGui::GetTime();
+            strcpy_s(GetBufferByName("api").buffer, configure.gptLike.api_key.c_str());
+            strcpy_s(GetBufferByName("endPoint").buffer, configure.gptLike.apiEndPoint.c_str());
+            strcpy_s(GetBufferByName("model").buffer, configure.gptLike.model.c_str());
+            if (currentTime - lastInputTime > 0.5) {
+                showPassword = false;
+            }
+            if (showPassword || clicked) {
+                if (ImGui::InputText(reinterpret_cast<const char *>(u8"ApiKey"),
+                                     GetBufferByName("api").buffer,
+                                     sizeof(input_buffer))) {
+                    configure.gptLike.api_key = GetBufferByName("api").buffer;
+                }
+            }
+            else {
+                if (ImGui::InputText(reinterpret_cast<const char *>(u8"ApiKey"),
+                                     GetBufferByName("api").buffer,
+                                     sizeof(input_buffer),
+                                     ImGuiInputTextFlags_Password)) {
+                    configure.gptLike.api_key = GetBufferByName("api").buffer;
+                    showPassword = true;
+                    lastInputTime = ImGui::GetTime();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::ImageButton(reinterpret_cast<void *>(TextureCache["eye"]),
+                                   ImVec2(16, 16),
+                                   ImVec2(0, 0),
+                                   ImVec2(1, 1),
+                                   -1,
+                                   ImVec4(0, 0, 0, 0),
+                                   ImVec4(1, 1, 1, 1))) {
+                clicked = !clicked;
+            }
+            if (ImGui::InputText(reinterpret_cast<const char *>(u8"API地址"), GetBufferByName("endPoint").buffer,
+                                 TEXT_BUFFER)) {
+                configure.gptLike.apiEndPoint = GetBufferByName("endPoint").buffer;
+            }
+            if (ImGui::InputText(reinterpret_cast<const char *>(u8"模型名称"), GetBufferByName("model").buffer,
+                                 TEXT_BUFFER)) {
+                configure.gptLike.model = GetBufferByName("model").buffer;
+            }
         }
     }
 
@@ -934,20 +1007,20 @@ void Application::RenderConfigBox() {
         static double baidulastInputTime = 0.0;
 
         double baiducurrentTime = ImGui::GetTime();
-        strcpy_s(Bapi_buffer, configure.baiDuTranslator.APIKey.c_str());
+        strcpy_s(GetBufferByName("api").buffer, configure.baiDuTranslator.APIKey.c_str());
         if (baiducurrentTime - baidulastInputTime > 0.5) {
             showbaiduPassword = false;
         }
         if (showbaiduPassword || baiduclicked) {
-            if (ImGui::InputText("BaiDu API Key", Bapi_buffer,
-                                 sizeof(Bapi_buffer))) {
-                configure.baiDuTranslator.APIKey = Bapi_buffer;
+            if (ImGui::InputText("BaiDu API Key", GetBufferByName("api").buffer,
+                                 sizeof(GetBufferByName("api").buffer))) {
+                configure.baiDuTranslator.APIKey = GetBufferByName("api").buffer;
             }
         }
         else {
-            if (ImGui::InputText("BaiDu API Key", Bapi_buffer,
-                                 sizeof(Bapi_buffer), ImGuiInputTextFlags_Password)) {
-                configure.baiDuTranslator.APIKey = Bapi_buffer;
+            if (ImGui::InputText("BaiDu API Key", GetBufferByName("api").buffer,
+                                 sizeof(GetBufferByName("api").buffer), ImGuiInputTextFlags_Password)) {
+                configure.baiDuTranslator.APIKey = GetBufferByName("api").buffer;
                 showbaiduPassword = true;
                 baidulastInputTime = ImGui::GetTime();
             }
@@ -963,113 +1036,131 @@ void Application::RenderConfigBox() {
             baiduclicked = !baiduclicked;
         }
 
-        ImGui::InputText(reinterpret_cast<const char *>(u8"对百度使用的代理"),
-                         configure.baiDuTranslator.proxy.data(),
-                         TEXT_BUFFER);
+        if (ImGui::InputText(reinterpret_cast<const char *>(u8"对百度使用的代理"),
+                             GetBufferByName("proxy").buffer,
+                             TEXT_BUFFER)) {
+            configure.baiDuTranslator.proxy = GetBufferByName("proxy").buffer;
+        }
     }
 
     // 显示 VITS 配置
     if (ImGui::CollapsingHeader("VITS")) {
-        vitsModels = Utils::GetDirectories(model + VitsPath);
-        auto it = std::find(vitsModels.begin(), vitsModels.end(), configure.vits.modelName);
-        if (it != vitsModels.end()) {
-            // 找到了,计算索引
-            SelectIndices["vits"] = std::distance(vitsModels.begin(), it);
-            if (UFile::Exists(configure.vits.config)) {
-                std::string config;
-                config = Utils::ReadFile(configure.vits.config);
-                if (!config.empty()) {
-                    json _config = json::parse(config);
-                    if (_config["speakers"] != nullptr)
-                        speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
-                    else if (_config["data"]["spk2id"] != nullptr)
-                        speakers = Utils::JsonDictToStringVector(_config["data"]["spk2id"]);
-                }
-            }
-        }
-        else {
-            // 没找到,设置为0
-            SelectIndices["vits"] = 0;
-        }
-
-        static char search_text[256] = "";
+        strcpy_s(GetBufferByName("lan").buffer, configure.vits.lanType.c_str());
+        strcpy_s(GetBufferByName("endPoint").buffer, configure.vits.apiEndPoint.c_str());
         ImGui::Checkbox(reinterpret_cast<const char *>(u8"启用Vits"), &configure.vits.enable);
-        /*        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(),
-                                 TEXT_BUFFER);*/
-        // 开始下拉列表
-        if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"模型"),
-                              Utils::GetFileName(vitsModels[SelectIndices["vits"]]).c_str())) {
-            // 在下拉框中添加一个文本输入框
-            ImGui::InputTextWithHint("##Search1", reinterpret_cast<const char *>(u8"搜索"), search_text,
-                                     sizeof(search_text));
-
-            // 遍历所有选项
-            for (int i = 0; i < vitsModels.size(); i++) {
-                // 如果搜索关键字为空，或者当前选项匹配搜索关键字
-                if (search_text[0] == '\0' ||
-                    strstr(Utils::GetFileName(vitsModels[i]).c_str(), search_text) != nullptr) {
-                    bool is_selected = (SelectIndices["vits"] == i);
-                    if (ImGui::Selectable(Utils::GetFileName(vitsModels[i]).c_str(), is_selected)) {
-                        SelectIndices["vits"] = i;
-                    }
-                    if (is_selected) {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-            }
-            configure.vits.modelName = vitsModels[SelectIndices["vits"]].c_str();
-            // 检查vitsModels数组不为空并且当前项不为"empty"
-            if (vitsModels.size() > 0 && vitsModels[SelectIndices["vits"]] != "empty") {
-                // 获取.pth和.json文件
-                std::vector<std::string> pth_files = Utils::GetFilesWithExt(vitsModels[SelectIndices["vits"]] + "/",
-                                                                            ".pth");
-                std::vector<std::string> json_files = Utils::GetFilesWithExt(vitsModels[SelectIndices["vits"]] + "/",
-                                                                             ".json");
-
-                // 设置模型和配置文件
-                configure.vits.model = Utils::GetDefaultIfEmpty(pth_files, "model.pth");
-                configure.vits.config = Utils::GetDefaultIfEmpty(json_files, "config.json");
-
-                // 检查配置文件是否存在
+        ImGui::Checkbox(reinterpret_cast<const char *>(u8"GPT-SoVITS"), &configure.vits.UseGptSovite);
+        if (ImGui::InputText(reinterpret_cast<const char *>(u8"语言类型"), GetBufferByName("lan").buffer, TEXT_BUFFER)) {
+            configure.vits.lanType = GetBufferByName("lan").buffer;
+        }
+        if (!configure.vits.UseGptSovite) {
+            vitsModels = Utils::GetDirectories(model + VitsPath);
+            auto it = std::find(vitsModels.begin(), vitsModels.end(), configure.vits.modelName);
+            if (it != vitsModels.end()) {
+                // 找到了,计算索引
+                SelectIndices["vits"] = std::distance(vitsModels.begin(), it);
                 if (UFile::Exists(configure.vits.config)) {
-                    // 读取配置文件
-                    std::string config = Utils::ReadFile(configure.vits.config);
-
+                    std::string config;
+                    config = Utils::ReadFile(configure.vits.config);
                     if (!config.empty()) {
-                        // 解析配置,获取speakers
                         json _config = json::parse(config);
                         if (_config["speakers"] != nullptr)
                             speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
                         else if (_config["data"]["spk2id"] != nullptr)
                             speakers = Utils::JsonDictToStringVector(_config["data"]["spk2id"]);
                     }
-                    configure.vits.speaker_id = 0;
                 }
             }
-            ImGui::EndCombo();
-        }
-        // 开始下拉列表
-        if (vitsModels[SelectIndices["vits"]] != "empty") {
-            if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"角色"),
-                                  speakers[configure.vits.speaker_id].c_str())) {
+            else {
+                // 没找到,设置为0
+                SelectIndices["vits"] = 0;
+            }
+
+            static char search_text[256] = "";
+            /*        ImGui::InputText(reinterpret_cast<const char *>(u8"Vits 模型位置"), configure.vits.model.data(),
+                                     TEXT_BUFFER);*/
+            // 开始下拉列表
+            if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"模型"),
+                                  Utils::GetFileName(vitsModels[SelectIndices["vits"]]).c_str())) {
                 // 在下拉框中添加一个文本输入框
-                ImGui::InputTextWithHint("##Search", reinterpret_cast<const char *>(u8"搜索"), search_text,
+                ImGui::InputTextWithHint("##Search1", reinterpret_cast<const char *>(u8"搜索"), search_text,
                                          sizeof(search_text));
 
                 // 遍历所有选项
-                for (int i = 0; i < speakers.size(); i++) {
+                for (int i = 0; i < vitsModels.size(); i++) {
                     // 如果搜索关键字为空，或者当前选项匹配搜索关键字
-                    if (search_text[0] == '\0' || strstr(speakers[i].c_str(), search_text) != nullptr) {
-                        bool is_selected = (configure.vits.speaker_id == i);
-                        if (ImGui::Selectable(speakers[i].c_str(), is_selected)) {
-                            configure.vits.speaker_id = i;
+                    if (search_text[0] == '\0' ||
+                        strstr(Utils::GetFileName(vitsModels[i]).c_str(), search_text) != nullptr) {
+                        bool is_selected = (SelectIndices["vits"] == i);
+                        if (ImGui::Selectable(Utils::GetFileName(vitsModels[i]).c_str(), is_selected)) {
+                            SelectIndices["vits"] = i;
                         }
                         if (is_selected) {
                             ImGui::SetItemDefaultFocus();
                         }
                     }
                 }
+                configure.vits.modelName = vitsModels[SelectIndices["vits"]].c_str();
+                // 检查vitsModels数组不为空并且当前项不为"empty"
+                if (vitsModels.size() > 0 && vitsModels[SelectIndices["vits"]] != "empty") {
+                    // 获取.pth和.json文件
+                    std::vector<std::string> pth_files = Utils::GetFilesWithExt(vitsModels[SelectIndices["vits"]] + "/",
+                        ".pth");
+                    std::vector<std::string> json_files = Utils::GetFilesWithExt(
+                        vitsModels[SelectIndices["vits"]] + "/",
+                        ".json");
+
+                    // 设置模型和配置文件
+                    configure.vits.model = Utils::GetDefaultIfEmpty(pth_files, "model.pth");
+                    configure.vits.config = Utils::GetDefaultIfEmpty(json_files, "config.json");
+
+                    // 检查配置文件是否存在
+                    if (UFile::Exists(configure.vits.config)) {
+                        // 读取配置文件
+                        std::string config = Utils::ReadFile(configure.vits.config);
+
+                        if (!config.empty()) {
+                            // 解析配置,获取speakers
+                            json _config = json::parse(config);
+                            if (_config["speakers"] != nullptr)
+                                speakers = Utils::JsonArrayToStringVector(_config["speakers"]);
+                            else if (_config["data"]["spk2id"] != nullptr)
+                                speakers = Utils::JsonDictToStringVector(_config["data"]["spk2id"]);
+                        }
+                        configure.vits.speaker_id = 0;
+                    }
+                }
                 ImGui::EndCombo();
+            }
+            // 开始下拉列表
+            if (vitsModels[SelectIndices["vits"]] != "empty") {
+                if (ImGui::BeginCombo(reinterpret_cast<const char *>(u8"角色"),
+                                      speakers[configure.vits.speaker_id].c_str())) {
+                    // 在下拉框中添加一个文本输入框
+                    ImGui::InputTextWithHint("##Search", reinterpret_cast<const char *>(u8"搜索"), search_text,
+                                             sizeof(search_text));
+
+                    // 遍历所有选项
+                    for (int i = 0; i < speakers.size(); i++) {
+                        // 如果搜索关键字为空，或者当前选项匹配搜索关键字
+                        if (search_text[0] == '\0' || strstr(speakers[i].c_str(), search_text) != nullptr) {
+                            bool is_selected = (configure.vits.speaker_id == i);
+                            if (ImGui::Selectable(speakers[i].c_str(), is_selected)) {
+                                configure.vits.speaker_id = i;
+                            }
+                            if (is_selected) {
+                                ImGui::SetItemDefaultFocus();
+                            }
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+        }
+        else {
+            if (ImGui::InputText(reinterpret_cast<const char *>(u8"GPT-SoVITS Web API地址"),
+                                 GetBufferByName("endPoint").buffer,
+                                 TEXT_BUFFER)) {
+                configure.vits.apiEndPoint = GetBufferByName("endPoint").buffer;
             }
         }
     }
@@ -1769,8 +1860,6 @@ int Application::Renderer() {
 
     ImGuiStyle&style = ImGui::GetStyle();
     style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
-    style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
     style.Colors[ImGuiCol_FrameBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
     style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
     style.Colors[ImGuiCol_Header] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
@@ -1784,7 +1873,9 @@ int Application::Renderer() {
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
     style.Colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
     style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-
+    style.Colors[ImGuiCol_TitleBg] = ImVec4(240 / 255.f, 248 / 255.f, 1.f, 1.f);
+    style.Colors[ImGuiCol_TitleBgActive] = ImVec4(240 / 255.f, 248 / 255.f, 1.f, 1.f);
+    style.Colors[ImGuiCol_TitleBgCollapsed] = ImVec4(240 / 255.f, 248 / 255.f, 1.f, 1.f);
     //初始化插件
     // 初始化Lua
     lua_State* L = luaL_newstate();
@@ -2003,7 +2094,9 @@ vector<Application::Chat> Application::load(std::string name) {
             LogError("Application Error: Unable to load session {0},{1}", name, ".");
         }
     }
-
+    else {
+        LogError("Application Error: Unable to load session {0},{1}", name, ".");
+    }
     return chat_history;
 }
 

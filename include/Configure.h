@@ -17,9 +17,16 @@ struct OpenAIBotCreateInfo {
     bool useWebProxy = true;
     std::string modelPath = "model/ChatGLM/";
     std::string api_key = "";
-    std::string model = "gpt-3.5-turbo";
+    std::string model = "gpt-4o";
     std::string proxy = "";
     std::string _endPoint = "";
+};
+
+struct GPTLikeCreateInfo {
+    bool enable = false;
+    std::string api_key;
+    std::string model = ""; //Must be set
+    std::string apiEndPoint = "";
 };
 
 struct VitsTask {
@@ -46,6 +53,8 @@ struct StableDiffusionData {
 
 struct VITSData {
     bool enable = false;
+    bool UseGptSovite = false;
+    std::string apiEndPoint = "";
     std::string modelName = "empty";
     std::string model;
     std::string config;
@@ -94,10 +103,31 @@ struct Configure {
     Live2D live2D;
     ClaudeBotCreateInfo claude;
     GeminiBotCreateInfo gemini;
+    GPTLikeCreateInfo gptLike;
     StableDiffusionData stableDiffusion;
 };
 
 namespace YAML {
+    template<>
+    struct convert<GPTLikeCreateInfo> {
+        static Node encode(const GPTLikeCreateInfo&data) {
+            Node node;
+            node["enable"] = data.enable;
+            node["api_key"] = data.api_key;
+            node["model"] = data.model;
+            node["apiEndPoint"]=data.apiEndPoint;
+            return node;
+        }
+
+        static bool decode(const Node&node, GPTLikeCreateInfo&data) {
+            data.enable = node["enable"].as<bool>();
+            data.api_key = node["api_key"].as<std::string>();
+            data.model = node["model"].as<std::string>();
+            data.apiEndPoint = node["apiEndPoint"].as<std::string>();
+            return true;
+        }
+    };
+
     template<>
     struct convert<GeminiBotCreateInfo> {
         static Node encode(const GeminiBotCreateInfo&data) {
@@ -176,7 +206,6 @@ namespace YAML {
         }
 
         static bool decode(const Node&node, OpenAIBotCreateInfo&data) {
-
             data.enable = node["enable"].as<bool>();
             data.api_key = node["api_key"].as<std::string>();
             data.modelPath = node["modelPath"].as<std::string>();
@@ -238,6 +267,8 @@ namespace YAML {
             node["lanType"] = data.lanType;
             node["enable"] = data.enable;
             node["speaker_id"] = data.speaker_id;
+            node["useGptSoVits"] = data.UseGptSovite;
+            node["apiEndPoint"] = data.apiEndPoint;
             return node;
         }
 
@@ -253,6 +284,10 @@ namespace YAML {
             if (node["lanType"]) {
                 data.lanType = node["lanType"].as<std::string>();
             }
+            if (node["useGptSoVits"])
+                data.UseGptSovite = node["useGptSoVits"].as<bool>();
+            if (node["apiEndPoint"])
+                data.apiEndPoint = node["apiEndPoint"].as<std::string>();
             return true;
         }
     };
@@ -357,6 +392,7 @@ namespace YAML {
             node["whisper"] = config.whisper;
             node["live2D"] = config.live2D;
             node["stableDiffusion"] = config.stableDiffusion;
+            node["gptlike"] = config.gptLike;
             return node;
         }
 
@@ -368,6 +404,8 @@ namespace YAML {
             config.openAi = node["openAi"].as<OpenAIBotCreateInfo>();
             config.gemini = node["gemini"].as<GeminiBotCreateInfo>();
             config.claude = node["claude"].as<ClaudeBotCreateInfo>();
+            if (node["gptlike"])
+                config.gptLike = node["gptlike"].as<GPTLikeCreateInfo>();
             config.baiDuTranslator = node["baiDuTranslator"].as<TranslateData>();
             config.vits = node["vits"].as<VITSData>();
             config.whisper = node["whisper"].as<WhisperCreateInfo>();

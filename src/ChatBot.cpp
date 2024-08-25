@@ -101,28 +101,32 @@ string ChatGPT::sendRequest(std::string data) {
 }
 
 size_t ChatGPT::WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-    ((std::string *)userp)->append((char *)contents, size * nmemb);
+    static_cast<std::string *>(userp)->append((char *)contents, size * nmemb);
     return size * nmemb;
 }
 
 std::string Claude::Submit(std::string text, std::string role, std::string convid) {
-    cpr::Payload payload{
-        {"token", claudeData.slackToken},
-        {"channel", claudeData.channelID},
-        {"text", text}
-    };
+    try {
+        cpr::Payload payload{
+            {"token", claudeData.slackToken},
+            {"channel", claudeData.channelID},
+            {"text", text}
+        };
 
-    cpr::Response r = cpr::Post(cpr::Url{"https://slack.com/api/chat.postMessage"},
-                                payload);
-    if (r.status_code == 200) {
-        // 发送成功
+        cpr::Response r = cpr::Post(cpr::Url{"https://slack.com/api/chat.postMessage"},
+                                    payload);
+        if (r.status_code == 200) {
+            // 发送成功
+        }
+        else {
+            // 发送失败,打印错误信息
+            LogError(r.error.message);
+        }
+        json response = json::parse(r.text);
     }
-    else {
-        // 发送失败,打印错误信息
-        LogError(r.error.message);
+    catch (std::exception&e) {
+        LogError(e.what());
     }
-    json response = json::parse(r.text);
-
     return "";
 }
 
@@ -214,7 +218,7 @@ std::string Gemini::Submit(std::string prompt, std::string role, std::string con
         Conversation[convid] = history;
         std::string data = "{\"contents\":" + Conversation[convid].dump() + "}";
         std::string endPoint = "";
-        if (!geminiData._endPoint.empty())
+        if (!geminiData._endPoint.empty() && geminiData._endPoint != "")
             endPoint = geminiData._endPoint;
         else
             endPoint = "https://generativelanguage.googleapis.com";
@@ -294,22 +298,21 @@ std::future<std::string> ChatGPT::SubmitAsync(std::string prompt, std::string ro
 
 std::string ChatGPT::Submit(std::string prompt, std::string role, std::string convid) {
     try {
-        convid_ = convid;
         json ask;
         ask["content"] = prompt;
         ask["role"] = role;
         LogInfo("User asked: {0}", prompt);
-        if (Conversation.find(convid) == Conversation.end()) {
+        if (!Conversation.contains(convid_)) {
             history.push_back(defaultJson);
-            Conversation.insert({convid, history});
+            Conversation.insert({convid_, history});
         }
         history.emplace_back(ask);
-        Conversation[convid] = history;
+        Conversation[convid_] = history;
         std::string data = "{\n"
                            "  \"model\": \"" + chat_data_.model + "\",\n"
                            "  \"stream\": true,\n"
                            "  \"messages\": " +
-                           Conversation[convid].dump()
+                           Conversation[convid_].dump()
                            + "}\n";
         string text = sendRequest(data);
 
@@ -337,6 +340,8 @@ void ChatGPT::Load(std::string name) {
     if (session_file.is_open()) {
         buffer << session_file.rdbuf();
         history = json::parse(buffer.str());
+        convid_ = name;
+        Conversation[name] = history;
     }
     else {
         LogError("OpenAI Error: Unable to load session " + name + ".");

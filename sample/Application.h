@@ -23,7 +23,7 @@
 #include "sol/sol.hpp"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.3");
+const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.4");
 extern std::vector<std::string> scommands;
 extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
@@ -95,8 +95,17 @@ private:
     int token;
 
     char input_buffer[4096 * 32];
-    char api_buffer[4096];
-    char Bapi_buffer[4096];
+
+    struct TextBuffer {
+        std::string VarName = "";
+        char buffer[4096] = "";
+
+        TextBuffer(std::string varName = "") {
+            VarName = varName;
+        }
+    };
+
+    std::vector<TextBuffer> text_buffers;
     const std::string bin = "bin/";
     const std::string VitsConvertor = "VitsConvertor/";
     const std::string model = "model/";
@@ -137,14 +146,14 @@ private:
         "/help", reinterpret_cast<const char *>(u8"/帮助")
     };
 
-    
+
     std::string title = reinterpret_cast<const char *>(u8"文件选择");
     std::vector<std::string> typeFilters;
     bool fileBrowser = false;
     std::string BrowserPath;
     ConfirmDelegate PathOnConfirm = nullptr;
     std::filesystem::path ConversationPath = "Conversations/";
-    
+
     std::vector<std::string> live2dModel;
     std::vector<std::string> speakers = {reinterpret_cast<const char *>(u8"空空如也")};
     std::vector<std::string> vitsModels = {reinterpret_cast<const char *>(u8"空空如也")};
@@ -177,7 +186,7 @@ private:
     long long FirstTime = 0;
     std::vector<std::string> PluginsScript;
 
-    
+
     std::vector<Chat> load(std::string name = "default");
 
     void save(std::string name = "default", bool out = true);
@@ -341,6 +350,12 @@ private:
 
     static void EmptyFunction() {
         // Do nothing
+    }
+
+    TextBuffer& GetBufferByName(const std::string&name) {
+        return *std::ranges::find_if(text_buffers, [&](const TextBuffer&buffer) {
+            return buffer.VarName == name;
+        });
     }
 
     void ShowConfirmationDialog(const char* title, const char* content, bool&mstate,

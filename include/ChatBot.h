@@ -43,6 +43,17 @@ public:
 
 class ChatGPT : public ChatBot {
 public:
+    ChatGPT() {
+        Logger::Init();
+        defaultJson["content"] = sys;
+        defaultJson["role"] = "system";
+
+        if (!UDirectory::Exists(ConversationPath)) {
+            UDirectory::Create(ConversationPath);
+            Add("default");
+        }
+    }
+
     ChatGPT(const OpenAIBotCreateInfo&chat_data);
 
     std::string
@@ -76,7 +87,7 @@ public:
 
     json history;
 
-private:
+protected:
     cpr::Session session;
     OpenAIBotCreateInfo chat_data_;
     std::string mode_name_ = "default";
@@ -87,7 +98,7 @@ private:
     const std::string sys = "You are ChatGPT, a large language model trained by OpenAI. Respond conversationally.";
     const std::string suffix = ".dat";
     const std::vector<std::string> WebProxies{
-        
+
     };
     json LastHistory;
     json defaultJson;
@@ -113,6 +124,17 @@ private:
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp);
 };
 
+class GPTLike : public ChatGPT {
+public:
+    GPTLike(const GPTLikeCreateInfo&data) {
+        chat_data_.enable = data.enable;
+        chat_data_.api_key = data.api_key;
+        chat_data_.model = data.model;
+        chat_data_.useLocalModel = false;
+        chat_data_.useWebProxy = true;
+        chat_data_._endPoint = data.apiEndPoint;
+    }
+};
 
 class Claude : public ChatBot {
 public:
@@ -150,7 +172,8 @@ public:
     std::string
     Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") override;
 
-    std::future<std::string> SubmitAsync(std::string prompt, std::string role, std::string convid){};
+    std::future<std::string> SubmitAsync(std::string prompt, std::string role, std::string convid) {
+    };
 
     void Reset() override;
 
@@ -162,9 +185,9 @@ public:
 
     void Add(std::string name) override;
 
-    Billing GetBilling() override{return Billing();};
+    Billing GetBilling() override { return Billing(); };
 
-    map<long long, string> GetHistory() override{return map<long long, string>();};
+    map<long long, string> GetHistory() override { return map<long long, string>(); };
 
 private:
     GeminiBotCreateInfo geminiData;
