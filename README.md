@@ -31,7 +31,7 @@ ChatBot项目需要以下依赖项：
 * nlohmann-json
 * cpr
 * spdlog
-* openssl
+* boringssl
 * portaudio
 * opengl
 * imgui
@@ -68,7 +68,7 @@ ChatBot项目需要以下依赖项：
     vcpkg install nlohmann-json
     vcpkg install cpr
     vcpkg install spdlog
-    vcpkg install openssl
+    vcpkg install boringssl
     vcpkg install portaudio
     vcpkg install opengl
     vcpkg install imgui

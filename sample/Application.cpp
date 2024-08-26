@@ -1,7 +1,5 @@
 ﻿#include "Application.h"
 
-#include <codecvt>
-
 std::vector<std::string> scommands;
 bool cpshow = false;
 

@@ -231,6 +231,7 @@ std::string Gemini::Submit(std::string prompt, std::string role, std::string con
             if (r.status_code != 200) {
                 retry_count++;
                 LogError("Gemini: {0}", r.text);
+                return "NA";
             }
             json response = json::parse(r.text);
             std::optional<std::string> res = response["candidates"][0]["content"]["parts"][0]["text"];
