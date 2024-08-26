@@ -71,6 +71,7 @@ private:
     WhisperCreateInfo whisperData;
     VITSData vitsData;
     Live2D live2D;
+    GLFWwindow* window = nullptr;
 
     std::vector<std::string> conversations;
     std::vector<Chat> chat_history;

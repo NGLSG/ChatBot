@@ -478,6 +478,11 @@ void Application::RenderChatBox() {
 void Application::RenderInputBox() {
     static std::vector<std::shared_future<std::string>> submit_futures;
     if (listener && listener->IsRecorded()) {
+        int focused = glfwGetWindowAttrib(window, GLFW_FOCUSED);
+        if(!focused) {
+            glfwShowWindow(window);
+            glfwRestoreWindow(window);
+        }
         std::thread([&]() {
             listener->EndListen();
             listener->ResetRecorded();
@@ -1809,7 +1814,7 @@ int Application::Renderer() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // 创建窗口
-    GLFWwindow* window = glfwCreateWindow(800, 600, VERSION.c_str(), NULL, NULL);
+    window = glfwCreateWindow(800, 600, VERSION.c_str(), NULL, NULL);
     if (!window) {
         // 处理窗口创建失败
         fprintf(stderr, "Failed to create GLFW window\n");
