@@ -21,25 +21,18 @@ find_package(SDL2 CONFIG REQUIRED)
 find_package(SDL2_image CONFIG REQUIRED)
 find_package(glad REQUIRED)
 find_package(OpenSSL REQUIRED)
-# 添加源文件
 file(GLOB SOURCES
         ../src/*.c*
         *.c*
 )
 
-# 添加头文件
 file(GLOB HEADERS
         *.h*
         ../include/*.h*
 )
-# 使用OpenSSL而非Window的SSL
 add_definitions(-DNOCRYPT)
-# 添加可执行文件
 add_executable(CyberGirl ${SOURCES} ${HEADERS})
-target_precompile_headers(CyberGirl PRIVATE ../include/pch.h)
-# 添加头文件目录
 target_include_directories(CyberGirl PRIVATE ../include Vendor/spdlog/include PRIVATE ${LUA_INCLUDE_DIR})
-# 链接依赖库
 target_link_libraries(CyberGirl
         PRIVATE portaudio
         PRIVATE ${SNDFILE_LIBRARIES}

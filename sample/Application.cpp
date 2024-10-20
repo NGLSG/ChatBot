@@ -479,7 +479,7 @@ void Application::RenderInputBox() {
     static std::vector<std::shared_future<std::string>> submit_futures;
     if (listener && listener->IsRecorded()) {
         int focused = glfwGetWindowAttrib(window, GLFW_FOCUSED);
-        if(!focused) {
+        if (!focused) {
             glfwShowWindow(window);
             glfwRestoreWindow(window);
         }
@@ -1910,29 +1910,34 @@ int Application::Renderer() {
 
     // 渲染循环
     while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
-        glClear(GL_COLOR_BUFFER_BIT);
+        try {
+            glfwPollEvents();
+            glClear(GL_COLOR_BUFFER_BIT);
 
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
 
-        RenderUI();
-        // 在Lua中调用ImGui函数
-        for (auto&script: PluginsScript) {
-            if (luaL_dostring(L, script.c_str())) {
-                lua_error(L);
-                return -1;
+            RenderUI();
+            // 在Lua中调用ImGui函数
+            for (auto&script: PluginsScript) {
+                if (luaL_dostring(L, script.c_str())) {
+                    lua_error(L);
+                    return -1;
+                }
+                lua_getglobal(L, "UIRenderer");
+                if (lua_isfunction(L, -1)) {
+                    lua_call(L, 0, 0);
+                }
             }
-            lua_getglobal(L, "UIRenderer");
-            if (lua_isfunction(L, -1)) {
-                lua_call(L, 0, 0);
-            }
+
+            ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            glfwSwapBuffers(window);
         }
-
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        glfwSwapBuffers(window);
+        catch (const std::exception&e) {
+            LogError("Error: {0}", e.what());
+        }
     }
 
     // 清理资源
@@ -2213,7 +2218,7 @@ bool Application::Initialize() {
             }
         }
     }
-    if (vitsData.enable) {
+    if (vitsData.enable && !vitsData.UseGptSovite) {
         // 检查VITS可执行文件是否存在
         if (!CheckFileExistence(bin + VitsConvertor, "VITS", "VitsConvertor", true)) {
             state = State::NO_VITS;

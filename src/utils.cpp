@@ -20,7 +20,7 @@ bool UDirectory::Create(const std::string&dirname) {
         return true;
     }
     catch (std::filesystem::filesystem_error&e) {
-        std::cerr << "LogError creating directory: " << e.what() << std::endl;
+        LogError(std::format("creating directory: {0}" , e.what()));
         return false;
     }
 }

@@ -1,5 +1,4 @@
 ﻿#include "VoiceToText.h"
-#include "vcruntime_exception.h"
 
 VoiceToText::VoiceToText(const OpenAIBotCreateInfo&voiceData) : _voiceData(voiceData) {
 }
