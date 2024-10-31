@@ -43,10 +43,18 @@ public:
 
 class ChatGPT : public ChatBot {
 public:
-    ChatGPT() {
+    ChatGPT(std::string systemrole) {
         Logger::Init();
-        defaultJson["content"] = sys;
+        if (!systemrole.empty())
+            defaultJson["content"] = systemrole;
+        else
+            defaultJson["content"] = sys;
         defaultJson["role"] = "system";
+
+
+        defaultJson2["content"] = defaultJson["content"];
+        defaultJson2["role"] = "user";
+
 
         if (!UDirectory::Exists(ConversationPath)) {
             UDirectory::Create(ConversationPath);
@@ -54,7 +62,7 @@ public:
         }
     }
 
-    ChatGPT(const OpenAIBotCreateInfo&chat_data);
+    ChatGPT(const OpenAIBotCreateInfo&chat_data, std::string systemrole = "");
 
     std::string
     Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") override;
@@ -75,9 +83,9 @@ public:
 
     map<long long, string> GetHistory() override { return map<long long, string>(); }
 
-    std::string Stamp2Time(long long timestamp) {
+    static std::string Stamp2Time(long long timestamp) {
         time_t tick = (time_t)(timestamp / 1000); //转换时间
-        struct tm tm;
+        tm tm;
         char s[40];
         tm = *localtime(&tick);
         strftime(s, sizeof(s), "%Y-%m-%d", &tm);
@@ -102,22 +110,15 @@ protected:
     };
     json LastHistory;
     json defaultJson;
+    json defaultJson2;
 
     bool IsSaved() {
         return LastHistory == history;
     }
 
-    long long getCurrentTimestamp() {
-        auto currentTime = std::chrono::system_clock::now();
-        return std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch()).count();
-    }
+    static long long getCurrentTimestamp();
 
-    long long getTimestampBefore(const int daysBefore) {
-        auto currentTime = std::chrono::system_clock::now();
-        auto days = std::chrono::hours(24 * daysBefore);
-        auto targetTime = currentTime - days;
-        return std::chrono::duration_cast<std::chrono::milliseconds>(targetTime.time_since_epoch()).count();
-    }
+    static long long getTimestampBefore(const int daysBefore);
 
     string sendRequest(std::string data);
 
@@ -126,7 +127,7 @@ protected:
 
 class GPTLike : public ChatGPT {
 public:
-    GPTLike(const GPTLikeCreateInfo&data) {
+    GPTLike(const GPTLikeCreateInfo&data, std::string systemrole = ""): ChatGPT(systemrole) {
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;

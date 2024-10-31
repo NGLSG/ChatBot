@@ -1,5 +1,7 @@
 ﻿#include "utils.h"
 
+#include "../sample/Application.h"
+#include "ChatBot.h"
 bool NoRecord = false;
 std::mutex mtx;
 float DownloadProgress;
@@ -14,9 +16,16 @@ bool UFile::Exists(const std::string&filename) {
     return file.good();
 }
 
+bool UDirectory::CreateDirIfNotExists(const std::string&dir) {
+    if (!Exists(dir)) {
+        return Create(dir);
+    }
+    return true;
+}
+
 bool UDirectory::Create(const std::string&dirname) {
     try {
-        std::filesystem::create_directory(dirname);
+        std::filesystem::create_directories(dirname);
         return true;
     }
     catch (std::filesystem::filesystem_error&e) {
@@ -27,6 +36,37 @@ bool UDirectory::Create(const std::string&dirname) {
 
 bool UDirectory::Exists(const std::string&dirname) {
     return std::filesystem::is_directory(dirname);
+}
+
+bool UDirectory::Remove(const std::string&dir) {
+    try {
+        // 使用 std::filesystem::remove_all 删除目录及其所有内容
+        if (std::filesystem::remove_all(dir)) {
+            return true;
+        }
+        else {
+            LogError("Failed to remove directory '{0}{1}", dir, "'.");
+            return false;
+        }
+    }
+    catch (const std::filesystem::filesystem_error&e) {
+        LogError("Error occurred while removing directory: {0}", e.what());
+        return false;
+    }
+}
+
+std::vector<std::string> UDirectory::GetSubDirectories(const std::string&dirPath) {
+    std::filesystem::path path(dirPath);
+    std::vector<std::string> directories;
+    for (const auto&entry: std::filesystem::directory_iterator(path)) {
+        if (std::filesystem::is_directory(entry)) {
+            directories.push_back(entry.path().filename().string());
+            // 递归获取子文件夹下的子文件夹
+            // auto subdirectories = ListDirectories(entry);
+            // directories.insert(directories.end(), subdirectories.begin(), subdirectories.end());
+        }
+    }
+    return directories;
 }
 
 std::string UEncrypt::ToMD5(const std::string&str) {
@@ -110,16 +150,18 @@ std::string Utils::execAsync(const std::string&command) {
 
 std::string Utils::exec(const std::string&command) {
     std::string output;
-    FILE* pipe = _popen(command.c_str(), "r");
+    FILE* pipe = popen(command.c_str(), "r");
     if (!pipe) {
         throw std::runtime_error("Error: Failed to execute command " + command);
-        return "";
     }
     char buffer[128];
     while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
         output += buffer;
     }
-    _pclose(pipe);
+    int status = pclose(pipe);
+    if (status == -1) {
+        throw std::runtime_error("Error: Failed to close pipe for command " + command);
+    }
     return output;
 }
 
@@ -915,6 +957,269 @@ void Utils::OpenProgram(const char* path) {
 #else
 void Utils::OpenProgram(const char *path){}
 #endif
+
+std::string Utils::GetPlatform() {
+#if defined(_WIN32) || defined(_WIN64)
+    return "Windows";
+#elif defined(__linux__)
+        return "Linux";
+#elif defined(__APPLE__) && defined(__MACH__)
+        return "macOS";
+#elif defined(__FreeBSD__)
+        return "FreeBSD";
+#elif defined(sunos) || defined(_SUNOS)
+        return "Solaris";
+#else
+        return "Unknown";
+#endif
+}
+
+int Utils::WStringSize(const std::string&str) {
+    // Convert UTF-8 std::string to std::wstring
+    static std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    std::wstring wideStr = converter.from_bytes(str);
+
+    // Return the size of the wide string
+    return static_cast<int>(wideStr.size());
+}
+
+std::string Utils::WStringInsert(const std::string&str, int pos, const std::string&insertStr) {
+    static std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+    std::wstring wideStr = converter.from_bytes(str);
+
+    // Insert the wide string into the original string
+    wideStr.insert(pos, converter.from_bytes(insertStr));
+
+    // Convert the wide string back to UTF-8
+    return converter.to_bytes(wideStr);
+}
+
+std::string StringExecutor::_Markdown(const std::string&text) {
+    static std::regex pattern(R"(```([\s\S]*?)```)", std::regex::icase); // 使用 [\s\S] 匹配任意字符
+    std::string result;
+    std::smatch match;
+    std::string::const_iterator searchStart(text.cbegin());
+
+    // 提取所有代码块内容
+    while (std::regex_search(searchStart, text.cend(), match, pattern)) {
+        result += match[1].str(); // 提取代码块内容
+        searchStart = match.suffix().first; // 移动到匹配结果之后的位置
+    }
+
+    // 如果没有找到代码块，返回原始文本
+    if (result.empty()) {
+        return text;
+    }
+
+    return result; // 返回提取的代码块内容
+}
+
+
+void StringExecutor::_WriteToFile(std::string filename, const std::string&content) {
+    static std::regex newline_pattern("\n");
+
+    // 替换换行符为空字符串
+    filename = std::regex_replace(filename, newline_pattern, "");
+    std::string fileParent = std::filesystem::path(filename).parent_path().string();
+    if (!fileParent.empty())
+        UDirectory::CreateDirIfNotExists(fileParent);
+    std::ofstream outfile(filename, ios::trunc);
+    if (outfile.is_open()) {
+        outfile << content;
+        outfile.close();
+        LogInfo("数据已保存到文件 {0}", filename);
+    }
+    else {
+        LogError("无法打开文件 {0}", filename);
+    }
+}
+
+std::string StringExecutor::AutoExecute(const std::string&text, const std::shared_ptr<ChatBot>&bot) {
+    return Python(CMD(File(Process(PreProcess(text, bot)))));
+}
+
+std::string StringExecutor::CMD(const std::string&text) {
+    static std::regex pattern(R"(\[Command\]([\x01-\xFF]*?)\[Command\])", std::regex::icase);
+    std::vector<std::string> commands;
+    std::smatch match;
+
+    // 使用 std::regex_iterator 匹配所有的命令
+    auto words_begin = std::sregex_iterator(text.begin(), text.end(), pattern);
+    auto words_end = std::sregex_iterator();
+
+    for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+        match = *i;
+        commands.push_back(match[1].str());
+    }
+
+    // 依次执行命令并替换原始命令
+    std::string replacedAnswer = text;
+    for (const auto&command: commands) {
+        std::string processedCommand = _Markdown(command);
+        std::string result = Utils::exec(processedCommand);
+        replacedAnswer = std::regex_replace(replacedAnswer, pattern, result,
+                                            std::regex_constants::format_first_only);
+    }
+
+    return replacedAnswer;
+}
+
+std::string StringExecutor::File(const std::string&text) {
+    static std::regex pattern1(R"(\[File\]([\x01-\xFF]*?)\[File\])");
+    static std::regex pattern2(R"(\[Path\]([\x01-\xFF]*?)\[Path\])");
+    static std::regex pattern3(R"(\[Content\]([\x01-\xFF]*?)\[Content\])");
+
+    std::string replacedAnswer = text;
+
+    try {
+        auto file_begin = std::sregex_iterator(text.begin(), text.end(), pattern1);
+        auto file_end = std::sregex_iterator();
+        for (std::sregex_iterator file_iter = file_begin; file_iter != file_end; ++file_iter) {
+            std::string fileContent = file_iter->str();
+
+            // 匹配路径和内容
+            std::vector<std::string> paths;
+            std::vector<std::string> contents;
+
+            auto path_begin = std::sregex_iterator(fileContent.begin(), fileContent.end(), pattern2);
+            auto path_end = std::sregex_iterator();
+            for (std::sregex_iterator path_iter = path_begin; path_iter != path_end; ++path_iter) {
+                paths.push_back(path_iter->str(1)); // 捕获路径
+            }
+
+            auto content_begin = std::sregex_iterator(fileContent.begin(), fileContent.end(), pattern3);
+            auto content_end = std::sregex_iterator();
+            for (std::sregex_iterator content_iter = content_begin; content_iter != content_end; ++content_iter) {
+                contents.push_back(content_iter->str(1)); // 捕获内容
+            }
+
+            // 确保路径和内容一一对应
+            if (paths.size() == contents.size()) {
+                for (size_t i = 0; i < paths.size(); ++i) {
+                    _WriteToFile(paths[i], contents[i]); // 写入文件
+                }
+            }
+            else {
+                LogError("Mismatch between paths and contents count");
+            }
+
+            // 移除匹配的 [File] 内容
+            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "", std::regex_constants::format_first_only);
+        }
+    }
+    catch (const std::exception&e) {
+        LogError("Error: {0}", e.what());
+    }
+
+    return replacedAnswer;
+}
+
+
+std::string StringExecutor::Python(const std::string&text) {
+    static std::regex pattern(R"(\[Python\]([\x01-\xFF]*?)\[Python\])", std::regex::icase);
+    static std::string tmpPythonPath = "Runtime/pythons/";
+    static int num = 0;
+    if (num == 0) {
+        UDirectory::Remove(tmpPythonPath);
+    }
+    std::string replacedAnswer = text;
+    std::smatch match;
+    std::vector<std::string> pythonMatches;
+    try {
+        auto python_begin = std::sregex_iterator(text.begin(), text.end(), pattern);
+        auto python_end = std::sregex_iterator();
+        for (std::sregex_iterator i = python_begin; i != python_end; ++i) {
+            match = *i;
+            pythonMatches.push_back(match[1].str());
+        }
+
+        for (const auto&pythonMatch: pythonMatches) {
+            std::string processedPy = _Markdown(pythonMatch);
+            std::string pyPath = tmpPythonPath + std::format("temp_{0}.py", num++);
+            _WriteToFile(pyPath, processedPy);
+            auto res = Application::ExecutePython(pyPath);
+            replacedAnswer = std::regex_replace(replacedAnswer, pattern, res,
+                                                std::regex_constants::format_first_only);
+        }
+    }
+    catch (const std::exception&e) {
+        LogError("Error: {0}", e.what());
+    }
+    return replacedAnswer;
+}
+
+std::string StringExecutor::Process(const std::string&text) {
+    static std::regex pattern1(R"(\[Process\]([\x01-\xFF]*?)\[Process\])");
+    static std::regex pattern2(R"(\[Output\]([\x01-\xFF]*?)\[Output\])");
+    static std::regex pythonPattern(R"(\[Python\]([\x01-\xFF]*?)\[Python\])");
+    std::string replacedAnswer = text;
+    std::smatch match;
+
+
+    try {
+        auto process_begin = std::sregex_iterator(text.begin(), text.end(), pattern1);
+        auto process_end = std::sregex_iterator();
+
+        for (std::sregex_iterator i = process_begin; i != process_end; ++i) {
+            match = *i;
+            std::string processBlock = match[1].str();
+
+            // 查找所有的 Output
+            std::vector<std::string> outputs;
+            auto output_begin = std::sregex_iterator(processBlock.begin(), processBlock.end(), pattern2);
+            for (std::sregex_iterator j = output_begin; j != std::sregex_iterator(); ++j) {
+                outputs.push_back(j->str(1));
+            }
+
+            // 查找所有的 Python 代码
+            std::vector<std::string> pythonCommands;
+            auto python_begin = std::sregex_iterator(processBlock.begin(), processBlock.end(), pythonPattern);
+            for (std::sregex_iterator j = python_begin; j != std::sregex_iterator(); ++j) {
+                pythonCommands.push_back(j->str(0));
+            }
+
+            // 确保每个 Output 和 Python 代码一一对应
+            size_t count = min(outputs.size(), pythonCommands.size());
+            for (size_t k = 0; k < count; ++k) {
+                // 执行 Python 命令并获取结果
+                auto res = Python(pythonCommands[k]);
+                // 将结果写入相应的文件
+                _WriteToFile(outputs[k], res);
+            }
+
+            // 替换已处理的内容
+            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "", std::regex_constants::format_first_only);
+        }
+    }
+    catch (const std::exception&e) {
+        LogError("Error: {0}", e.what());
+    }
+
+    return replacedAnswer;
+}
+
+std::string StringExecutor::PreProcess(const std::string&text, const std::shared_ptr<ChatBot>&bot) {
+    static std::regex pattern(R"(\[Reading\]([\x01-\xFF]*?)\[Reading\])");
+    std::string replacedAnswer = text;
+    std::smatch match;
+    try {
+        auto reading_begin = std::sregex_iterator(text.begin(), text.end(), pattern);
+        auto reading_end = std::sregex_iterator();
+        for (std::sregex_iterator i = reading_begin; i != reading_end; ++i) {
+            match = *i;
+            std::string processedReading = _Markdown(match[1].str());
+            auto res = Python(processedReading);
+            replacedAnswer = std::regex_replace(replacedAnswer, pattern, res,
+                                                std::regex_constants::format_first_only);
+            replacedAnswer = bot->Submit(replacedAnswer);
+        }
+    }
+    catch (const std::exception&e) {
+        LogError("Error: {0}", e.what());
+    }
+    return replacedAnswer;
+}
+
 
 void UImage::Base64ToImage(const std::string&str_base64, const std::string&dstPath) {
     std::ofstream out(dstPath, std::ios::binary);

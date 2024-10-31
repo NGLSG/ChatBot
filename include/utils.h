@@ -1,6 +1,8 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <codecvt>
+
 #include "pch.h"
 #include <Logger.h>
 #include <Progress.hpp>
@@ -13,6 +15,16 @@
 #include <stb_image_resize.h>
 #include <GL/glext.h>
 
+#ifdef _WIN32
+#define popen(arg1,arg2) _popen(arg1,arg2)
+#define pclose(arg1) _pclose(arg1)
+#else
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#endif
+
+class ChatBot;
 using json = nlohmann::json;
 
 #ifndef UTILS
@@ -70,21 +82,14 @@ class UDirectory {
 public:
     static bool Create(const std::string&dirname);
 
+    static bool CreateDirIfNotExists(const std::string&dir);
+
     static bool Exists(const std::string&dirname);
 
-    static std::vector<std::string> GetSubDirectories(const std::string&dirPath) {
-        std::filesystem::path path(dirPath);
-        std::vector<std::string> directories;
-        for (const auto&entry: std::filesystem::directory_iterator(path)) {
-            if (std::filesystem::is_directory(entry)) {
-                directories.push_back(entry.path().filename().string());
-                // 递归获取子文件夹下的子文件夹
-                // auto subdirectories = ListDirectories(entry);
-                // directories.insert(directories.end(), subdirectories.begin(), subdirectories.end());
-            }
-        }
-        return directories;
-    }
+    static bool Remove(const std::string&dir);
+
+
+    static std::vector<std::string> GetSubDirectories(const std::string&dirPath);
 };
 
 class UEncrypt {
@@ -131,6 +136,9 @@ private:
     static bool CheckFileSize(const std::string&file_path, int expected_size);
 
 public:
+    template<typename... Args>
+    static std::string ExecuteShell(const std::string&cmd, Args... args);
+
     static std::string GetAbsolutePath(const std::string&relativePath);
 
     static std::string exec(const std::string&command);
@@ -144,6 +152,28 @@ public:
     static std::string GetFileName(const std::string&dir);
 
     static std::string GetDirName(const std::string&dir);
+
+    static std::string GetspecificPath(const std::string&path) {
+        std::string specificPath = path;
+
+#ifdef _WIN32
+        // Replace all forward slashes with backslashes for Windows
+        for (char&c: specificPath) {
+            if (c == '/') {
+                c = '\\';
+            }
+        }
+#else
+        // Replace all backslashes with forward slashes for non-Windows systems
+        for (char& c : specificPath) {
+            if (c == '\\') {
+                c = '/';
+            }
+        }
+#endif
+
+        return specificPath;
+    }
 
     static std::string UrlEncode(const std::string&value) {
         std::ostringstream escaped;
@@ -321,7 +351,60 @@ public:
         std::vector<unsigned char> vuchar(str.begin(), str.end());
         return vuchar;
     }
+
+    static std::string GetPlatform();
+
+    static int WStringSize(const std::string&str);
+
+    static std::string WStringInsert(const std::string&str, int pos, const std::string&insertStr);
 };
+
+class StringExecutor {
+private:
+    static std::string _Markdown(const std::string&text);
+
+    static void _WriteToFile(std::string filename, const std::string&content);
+
+public:
+
+    static std::string AutoExecute(const std::string&text, const std::shared_ptr<ChatBot>&bot);
+
+    static std::string CMD(const std::string&text);
+
+    static std::string File(const std::string&text);
+
+    static std::string Python(const std::string&text);
+
+    static std::string Process(const std::string&text);
+
+    static std::string PreProcess(const std::string&text,const std::shared_ptr<ChatBot>& bot);
+};
+
+template<typename... Args>
+std::string Utils::ExecuteShell(const std::string&cmd, Args... args) {
+    std::ostringstream command;
+    command << cmd;
+
+    // Append arguments
+    std::vector<std::string> argList = {args...};
+    for (const auto&arg: argList) {
+        command << " " << arg;
+    }
+
+    std::string result;
+    FILE* pipe = popen(command.str().c_str(), "r");
+    if (!pipe) {
+        return "Error opening pipe.";
+    }
+
+    char buffer[128];
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        result += buffer;
+    }
+    pclose(pipe);
+
+    return result;
+}
 
 class UImage {
 public:

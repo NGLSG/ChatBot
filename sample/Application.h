@@ -43,17 +43,68 @@ enum State {
 class Application {
 private:
 #ifdef _WIN32
-    const std::string VitsConvertUrl =
+    inline static const std::string VitsConvertUrl =
             "https://github.com/NGLSG/MoeGoe/releases/download/1.1/VitsConvertor-win64.tar.gz";
-    const std::string whisperUrl =
+    inline static const std::string whisperUrl =
             "https://github.com/ggerganov/whisper.cpp/releases/download/v1.3.0/whisper-bin-Win32.zip";
-    const std::string vitsFile = "VitsConvertor.tar.gz";
-    const std::string exeSuffix = ".exe";
+    inline static const std::string vitsFile = "VitsConvertor.tar.gz";
+    inline static const std::string exeSuffix = ".exe";
+    inline static const std::string PythonHome = "bin\\Python\\";
+    inline static const std::string PythonExecute = "python.exe";
+    inline static const bool usePackageManagerInstaller = false;
+    inline static const std::string PythonInstallCMD = "";
+    inline static const std::string PythonGetPip = "https://bootstrap.pypa.io/get-pip.py";
+    inline static const std::string PythonLink =
+            "https://mirrors.aliyun.com/python-release/windows/python-3.10.9-embed-amd64.zip";
 #else
-    const std::string whisperUrl = "https://github.com/ggerganov/whisperData.cpp/releases/download/v1.3.0/whisper-bin-x64.zip";
-    const std::string VitsConvertUrl = "https://github.com/NGLSG/MoeGoe/releases/download/1.1/VitsConvertor-linux64.tar.xz";
-    const std::string vitsFile = "VitsConvertor.tar.gz";
-    const std::string exeSuffix = "";
+    inline static const std::string PythonGetPip="";
+    inline static const std::string whisperUrl = "https://github.com/ggerganov/whisperData.cpp/releases/download/v1.3.0/whisper-bin-x64.zip";
+    inline static const std::string VitsConvertUrl = "https://github.com/NGLSG/MoeGoe/releases/download/1.1/VitsConvertor-linux64.tar.xz";
+    inline static const std::string vitsFile = "VitsConvertor.tar.gz";
+    inline static const std::string exeSuffix = "";
+    inline static const std::string PythonHome = "";
+#ifdef __linux__
+    inline static const bool usePackageManagerInstaller = true;
+
+#ifdef __debian__
+    inline static const std::string PythonInstallCMD = "yes | sudo apt install python3";
+#elif defined(__fedora__)
+    inline static const std::string PythonInstallCMD = "yes | sudo dnf install python3";
+#elif defined(__centos__) || defined(__rhel__)
+    inline static const std::string PythonInstallCMD = "yes | sudo yum install python3";
+#elif defined(__arch__)
+    inline static const std::string PythonInstallCMD = "yes | sudo pacman -S python";
+#else
+    inline static const std::string PythonInstallCMD = "";
+    inline static const bool usePackageManagerInstaller = false;
+#endif
+
+    inline static std::string detectPythonExecutable() {
+        std::string pythonExecutable;
+        try {
+            std::string output = exec("which python3");
+            if (!output.empty()) {
+                pythonExecutable = "python3";
+            } else {
+                output = exec("which python");
+                if (!output.empty()) {
+                    pythonExecutable = "python";
+                }
+            }
+        } catch (const std::runtime_error& e) {
+            std::cerr << e.what() << std::endl;
+        }
+        return pythonExecutable;
+    }
+
+    inline static const std::string PythonExecute = detectPythonExecutable();
+#endif
+#ifdef __APPLE__
+    inline static const std::string PythonExecute="python3";
+    inline static const bool usePackageManagerInstaller = true;
+    inline static const PythonInstallCMD="yes | brew install python";
+#endif
+
 #endif
 
     struct Chat {
@@ -151,6 +202,7 @@ private:
     std::string title = reinterpret_cast<const char *>(u8"文件选择");
     std::vector<std::string> typeFilters;
     bool fileBrowser = false;
+    inline static bool PyInstalled = false;
     std::string BrowserPath;
     ConfirmDelegate PathOnConfirm = nullptr;
     std::filesystem::path ConversationPath = "Conversations/";
@@ -185,6 +237,7 @@ private:
     bool mwhisper = false;
     bool AppRunning = true;
     long long FirstTime = 0;
+    float fontSize = 16;
     std::vector<std::string> PluginsScript;
 
 
@@ -208,22 +261,14 @@ private:
         t.detach();
     }
 
+    void DisplayInputText(Chat chat) const;
+
+
     bool ContainsCommand(std::string&str, std::string&cmd, std::string&args) const;
 
-    void InlineCommand(const std::string&cmd, const std::string&args, long long ts) {
-        if (cmd == "draw" || cmd == reinterpret_cast<const char *>(u8"绘图")) {
-            Draw(args, ts);
-        }
-        else if (cmd == "help" || reinterpret_cast<const char *>(u8"帮助")) {
-            Chat help;
-            help.flag = 1;
-            help.timestamp = Utils::GetCurrentTimestamp() + 10;
-            help.content = reinterpret_cast<const char *>(u8"内置命令:\n/draw或者/绘图 [prompt] 绘制一张图片\n/help或者/帮助 唤起帮助");
-            chat_history.emplace_back(help);
-        }
-    }
+    void InlineCommand(const std::string&cmd, const std::string&args, long long ts);
 
-    inline void UniversalStyle() {
+    static inline void UniversalStyle() {
         // 定义通用样式
         ImGuiStyle&style = ImGui::GetStyle();
 
@@ -255,7 +300,7 @@ private:
         style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
     }
 
-    inline void RestoreDefaultStyle() {
+    static inline void RestoreDefaultStyle() {
         ImGuiStyle&style = ImGui::GetStyle();
 
         // 恢复默认样式
@@ -269,7 +314,6 @@ private:
         // 恢复默认颜色
         style.Colors[ImGuiCol_Text] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
         style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);
-        // ......
     }
 
     // 渲染聊天框
@@ -295,44 +339,7 @@ private:
     void initImGuiBindings(sol::state_view lua);
 
 
-    inline void FileChooser() {
-        static ImGui::FileBrowser fileDialog(ImGuiFileBrowserFlags_MultipleSelection | ImGuiFileBrowserFlags_NoModal);
-        static std::string path;
-
-        if (fileBrowser) {
-            fileDialog.SetTitle(title);
-            fileDialog.SetTypeFilters(typeFilters);
-            fileDialog.Open();
-            fileDialog.Display();
-            if (fileDialog.IsOpened()) {
-                if (fileDialog.HasSelected()) {
-                    // Get all selected files (if multiple selections are allowed)
-                    auto selectedFiles = fileDialog.GetMultiSelected();
-                    if (!selectedFiles.empty()) {
-                        // Return the first selected file's path
-                        path = selectedFiles[0].string();
-                        BrowserPath = path;
-                        if (PathOnConfirm != nullptr) {
-                            PathOnConfirm();
-                        }
-                    }
-                    fileBrowser = false;
-                    title = reinterpret_cast<const char *>(u8"文件选择");
-                    typeFilters.clear();
-                    PathOnConfirm = nullptr;
-                    fileDialog.Close();
-                }
-            }
-            if (!fileDialog.IsOpened()) {
-                BrowserPath = path;
-                fileBrowser = false;
-                title = reinterpret_cast<const char *>(u8"文件选择");
-                typeFilters.clear();
-                PathOnConfirm = nullptr;
-                fileDialog.Close();
-            }
-        }
-    }
+    inline void FileChooser();
 
     // 加载纹理,并保存元数据
     GLuint LoadTexture(const std::string&path);
@@ -367,6 +374,7 @@ private:
                                 const char* cancel = reinterpret_cast<const char *>(u8"取消")
     );
 
+
     static bool compareByTimestamp(const Chat&a, const Chat&b) {
         return a.timestamp < b.timestamp;
     }
@@ -374,6 +382,46 @@ private:
     Billing billing;
 
 public:
+    inline static bool IsPythonInstalled() {
+        if (!PyInstalled) {
+            try {
+                std::string output = GetPythonVersion();
+                if (!output.empty()) {
+                    std::cout << "Python is installed: " << output;
+                    PyInstalled = true;
+                    return true;
+                }
+            }
+            catch (const std::runtime_error&e) {
+                std::cerr << e.what() << std::endl;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    template<typename... Args>
+    static std::string ExecutePython(const std::string&pyPath, Args&&... args) {
+        if (IsPythonInstalled())
+            return Utils::ExecuteShell(PythonHome + PythonExecute, pyPath, args...);
+        return std::format("Wrong there is no python executable in your path {0}", PythonHome);
+    }
+
+    static std::string GetPythonPackage() {
+        if (IsPythonInstalled()) {
+            return Utils::ExecuteShell(PythonHome + PythonExecute, "-m", "pip", "list");
+        }
+        return "";
+    }
+
+    static std::string GetPythonVersion() {
+        return Utils::ExecuteShell(PythonHome + PythonExecute, "--version");
+    }
+
+    static std::string GetPythonHome() {
+        return PythonHome + PythonExecute;
+    }
+
     std::string WhisperConvertor(const std::string&file);
 
     void WhisperModelDownload(const std::string&model = "ggml-base.bin");
@@ -389,7 +437,7 @@ public:
     int Renderer();
 
     bool CheckFileExistence(const std::string&filePath, const std::string&fileType,
-                            const std::string&executableFile = "", bool isExecutable = false);
+                            const std::string&executableFile = "", bool isExecutable = false) const;
 };
 
 #endif

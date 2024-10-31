@@ -1,5 +1,7 @@
 ﻿#include "Application.h"
 
+#include "SystemRole.h"
+
 std::vector<std::string> scommands;
 bool cpshow = false;
 
@@ -30,14 +32,14 @@ Application::Application(const Configure&configure, bool setting) {
             GetClaudeHistory();
         }
         if (configure.openAi.enable) {
-            bot = CreateRef<ChatGPT>(configure.openAi);
+            bot = CreateRef<ChatGPT>(configure.openAi, SYSTEMROLE + SYSTEMROLE_EX);
         }
         if (configure.gemini.enable) {
             bot = CreateRef<Gemini>(configure.gemini);
             ConversationPath = std::filesystem::path(ConversationPath.string() + "Gemini/");
         }
         if (configure.gptLike.enable) {
-            bot = CreateRef<GPTLike>(configure.gptLike);
+            bot = CreateRef<GPTLike>(configure.gptLike, SYSTEMROLE + SYSTEMROLE_EX);
         }
         //billing = bot->GetBilling();
         voiceToText = CreateRef<VoiceToText>(configure.openAi);
@@ -179,9 +181,68 @@ void Application::Draw(Ref<std::string> prompt, long long ts, bool callFromBot) 
     }
 }
 
+void Application::DisplayInputText(Chat chat) const {
+    ImVec2 text_size, text_pos;
+    float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
+    int n = static_cast<int>(max_width / fontSize);
+
+    n = max(n, 1);
+    max_width = min(max_width, fontSize * n);
+
+    ImVec2 input_size = ImVec2(0, 0);
+    std::vector<std::string> lines;
+    std::string line;
+    std::istringstream stream(chat.content);
+    float max_line_width = 0;
+
+
+    // 按行读取内容
+    while (std::getline(stream, line)) {
+        lines.push_back(line);
+        text_size = ImGui::CalcTextSize(line.c_str());
+        max_line_width = max(max_line_width, text_size.x);
+    }
+    // 计算输入框的宽度
+    input_size.x = min(max_line_width, max_width) + 16;
+    static float orig = fontSize + ImGui::GetStyle().ItemSpacing.y;
+    input_size.y = 0;
+    // 处理每一行
+    std::string processed_content;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        line = lines[i];
+        int width = Utils::WStringSize(line);
+
+
+        input_size.y += orig; // 累加每行的高度
+
+        // 如果当前行宽度超过n，进行换行处理
+        int idx = 1;
+        while (width >= n) {
+            line = Utils::WStringInsert(line, n * idx, "\n");
+            width -= n;
+            idx++;
+        }
+
+        processed_content += line; // 合并处理后的行
+        if (i < lines.size() - 1) {
+            processed_content += "\n"; // 添加换行符
+        }
+    }
+
+    // 显示输入框
+    ImGui::InputTextMultiline(("##" + std::to_string(chat.timestamp)).c_str(),
+                              const_cast<char *>(processed_content.c_str()), processed_content.size() + 1,
+                              input_size,
+                              ImGuiInputTextFlags_ReadOnly |
+                              ImGuiInputTextFlags_AutoSelectAll);
+
+    // 显示时间戳
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(chat.timestamp).c_str());
+}
+
 bool Application::ContainsCommand(std::string&str, std::string&cmd, std::string&args) const {
     for (const auto&it: commands) {
-        std::regex cmd_regex(R"(/(\w+))"); // 定义匹配命令的正则表达式
+        std::regex cmd_regex(R"([CMD](\w+)[CMD])"); // 定义匹配命令的正则表达式
         std::regex args_regex(R"((\[[^\]]*\]))"); // 定义匹配参数的正则表达式
         std::smatch cmd_match, args_match;
 
@@ -201,6 +262,20 @@ bool Application::ContainsCommand(std::string&str, std::string&cmd, std::string&
         }
     }
     return false;
+}
+
+void Application::InlineCommand(const std::string&cmd, const std::string&args, long long ts) {
+    if (cmd == "draw" || cmd == reinterpret_cast<const char *>(u8"绘图")) {
+        Draw(args, ts);
+    }
+    else if (cmd == "help" || reinterpret_cast<const char *>(u8"帮助")) {
+        Chat help;
+        help.flag = 1;
+        help.timestamp = Utils::GetCurrentTimestamp() + 10;
+        help.content = reinterpret_cast<const char *>(
+            u8"内置命令:\n[CMD]draw[CMD]或者[CMD]绘图[CMD] [prompt] 绘制一张图片\n[CMD]help[CMD]或者[CMD]帮助[CMD] 唤起帮助");
+        chat_history.emplace_back(help);
+    }
 }
 
 void Application::RenderCodeBox() {
@@ -293,42 +368,9 @@ void Application::RenderChatBox() {
         ImVec2 text_size, text_pos;
 
         if (!userAsk.content.empty()) {
-            // Calculate the size of the input field
-            ImVec2 input_size = ImVec2(0, 0);
-            ImVec2 text_size = ImGui::CalcTextSize(userAsk.content.c_str());
-            float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
-
-            input_size.x = min(text_size.x, max_width) + 10;
-            input_size.y = text_size.y + ImGui::GetStyle().ItemSpacing.y * 2;
-            // Set the style of the input field
-            float rounding = 4.0f;
-
-            // Display the input field with the text and automatic line breaks
-            ImGui::InputTextMultiline(("##" + std::to_string(userAsk.timestamp)).c_str(),
-                                      const_cast<char *>(userAsk.content.c_str()), userAsk.content.size() + 1,
-                                      input_size,
-                                      ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_CtrlEnterForNewLine |
-                                      ImGuiInputTextFlags_AutoSelectAll);
-
-            // Display the timestamp below the chat record
-            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(userAsk.timestamp).c_str());
-
-            // Restore the style of the input field
+            DisplayInputText(userAsk);
         }
         if (!botAnswer.content.empty()) {
-            // Display the bot's answer
-            text_pos = ImVec2(ImGui::GetWindowContentRegionMin().x, ImGui::GetCursorPosY());
-            ImGui::SetCursorPosY(text_pos.y + ImGui::GetStyle().ItemSpacing.y);
-
-            // Set the maximum height and width of the multi-line input field
-            float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
-
-            // Calculate the size of the multi-line input field
-            ImVec2 input_size = ImVec2(0, 0);
-            ImVec2 text_size = ImGui::CalcTextSize(botAnswer.content.c_str());
-            input_size.x = min(text_size.x, max_width) + 10;
-            input_size.y = text_size.y + ImGui::GetStyle().ItemSpacing.y * 2;
-
             // Modify the style of the multi-line input field
             float rounding = 4.0f;
             ImVec4 bg_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -360,16 +402,9 @@ void Application::RenderChatBox() {
             }
             ImGui::PopID();
 
-
-            ImGui::SameLine();
-            // Display the multi-line input field
-            ImGui::InputTextMultiline(("##" + to_string(botAnswer.timestamp)).c_str(),
-                                      const_cast<char *>(botAnswer.content.c_str()), botAnswer.content.size() + 1,
-                                      input_size,
-                                      ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_AutoSelectAll);
-
+            // Display the bot's answer
+            DisplayInputText(botAnswer);
             // 加载纹理的线程
-
             if (!botAnswer.image.empty()) {
                 static bool wait = false;
                 if (!SDCache.contains(botAnswer.image)) {
@@ -391,7 +426,6 @@ void Application::RenderChatBox() {
                 }
             }
 
-            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(botAnswer.timestamp).c_str());
 
             // Restore the style
             ImGui::PopStyleVar();
@@ -524,7 +558,7 @@ void Application::RenderInputBox() {
                         std::remove(("recorded" + std::to_string(Rnum) + ".wav").c_str());
                         LogInfo("whisper: 删除录音{0}", "recorded" + std::to_string(Rnum) + ".wav");
                         std::shared_future<std::string> submit_future = std::async(std::launch::async, [&](void) {
-                            return bot->Submit(last_input, role);
+                            return StringExecutor::AutoExecute(bot->Submit(last_input, role), bot);
                         }).share(); {
                             std::lock_guard<std::mutex> lock(submit_futures_mutex);
                             submit_futures.push_back(std::move(submit_future));
@@ -593,11 +627,11 @@ void Application::RenderInputBox() {
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu(reinterpret_cast<const char *>(u8"指令"))) {
                 if (ImGui::Button(reinterpret_cast<const char *>(u8"绘图"))) {
-                    input_text += "/draw [ ]";
+                    input_text += "[CMD]draw[CMD] [ ]";
                 }
 
                 if (ImGui::Button(reinterpret_cast<const char *>(u8"帮助"))) {
-                    input_text += "/help";
+                    input_text += "[CMD]help[CMD]";
                 }
 
                 ImGui::EndMenu();
@@ -609,7 +643,7 @@ void Application::RenderInputBox() {
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
-        token = countTokens(input_buffer);
+        token = Utils::WStringSize(input_buffer);
         ImGui::Text(reinterpret_cast<const char *>(u8"字符数: %d"), token);
         ImGui::PopStyleVar();
         ImGui::PopStyleColor(3);
@@ -632,20 +666,22 @@ void Application::RenderInputBox() {
         if (ContainsCommand(last_input, cmd, args)) {
             InlineCommand(cmd, args, user.timestamp);
         }
+        else {
+            if (is_valid_text(last_input)) {
+                // 使用last_input作为键
+                if (whisperData.enable)
+                    listener->ResetRecorded();
+                std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]() {
+                    LogInfo(last_input);
+                    return StringExecutor::AutoExecute(bot->Submit(last_input, role), bot);
+                }).share();
+
+
+                submit_futures.push_back(std::move(submit_future));
+            }
+        }
         if (is_valid_text(user.content)) {
             AddChatRecord(user);
-        }
-        if (is_valid_text(last_input)) {
-            // 使用last_input作为键
-            if (whisperData.enable)
-                listener->ResetRecorded();
-            std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]() {
-                LogInfo(last_input);
-                return bot->Submit(last_input, role);
-            }).share();
-
-
-            submit_futures.push_back(std::move(submit_future));
         }
         input_text.clear();
         save(convid);
@@ -1802,6 +1838,45 @@ void Application::initImGuiBindings(sol::state_view lua) {
     lua.set_function("LoadImage", &Application::LoadTexture);
 }
 
+void Application::FileChooser() {
+    static ImGui::FileBrowser fileDialog(ImGuiFileBrowserFlags_MultipleSelection | ImGuiFileBrowserFlags_NoModal);
+    static std::string path;
+
+    if (fileBrowser) {
+        fileDialog.SetTitle(title);
+        fileDialog.SetTypeFilters(typeFilters);
+        fileDialog.Open();
+        fileDialog.Display();
+        if (fileDialog.IsOpened()) {
+            if (fileDialog.HasSelected()) {
+                // Get all selected files (if multiple selections are allowed)
+                auto selectedFiles = fileDialog.GetMultiSelected();
+                if (!selectedFiles.empty()) {
+                    // Return the first selected file's path
+                    path = selectedFiles[0].string();
+                    BrowserPath = path;
+                    if (PathOnConfirm != nullptr) {
+                        PathOnConfirm();
+                    }
+                }
+                fileBrowser = false;
+                title = reinterpret_cast<const char *>(u8"文件选择");
+                typeFilters.clear();
+                PathOnConfirm = nullptr;
+                fileDialog.Close();
+            }
+        }
+        if (!fileDialog.IsOpened()) {
+            BrowserPath = path;
+            fileBrowser = false;
+            title = reinterpret_cast<const char *>(u8"文件选择");
+            typeFilters.clear();
+            PathOnConfirm = nullptr;
+            fileDialog.Close();
+        }
+    }
+}
+
 int Application::Renderer() {
     // 初始化GLFW
     if (!glfwInit()) {
@@ -1847,7 +1922,7 @@ int Application::Renderer() {
     config.OversampleV = 1;
     config.PixelSnapH = true;
     config.GlyphExtraSpacing = ImVec2(0.0f, 1.0f);
-    ImFont* font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", 16.0f, &config,
+    ImFont* font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
                                                 io.Fonts->GetGlyphRangesChineseFull());
     IM_ASSERT(font != NULL);
     io.DisplayFramebufferScale = ImVec2(0.8f, 0.8f);
@@ -1903,7 +1978,7 @@ int Application::Renderer() {
         }
         PluginsScript.push_back(luaScript);
     }
-#pragma omp parallel for
+
     for (auto&it: TextureCache) {
         it.second = LoadTexture(Resources + it.first + ".png");
     }
@@ -1960,7 +2035,7 @@ int Application::Renderer() {
 }
 
 bool Application::CheckFileExistence(const std::string&filePath, const std::string&fileType,
-                                     const std::string&executableFile, bool isExecutable) {
+                                     const std::string&executableFile, bool isExecutable) const {
     if (isExecutable) {
         if (!UFile::Exists(filePath + executableFile + exeSuffix)) {
             LogWarn("Warning: {0} won't work because you don't have an executable \"{1}\" for {0} !",
@@ -2053,12 +2128,10 @@ void Application::AddChatRecord(const Chat&data) {
 }
 
 void Application::DeleteAllBotChat() {
-    chat_history.erase(
-        std::remove_if(chat_history.begin(), chat_history.end(),
-                       [](const Chat&c) {
-                           return c.flag == 1;
-                       }),
-        chat_history.end());
+    std::erase_if(chat_history,
+                  [](const Chat&c) {
+                      return c.flag == 1;
+                  });
 }
 
 vector<Application::Chat> Application::load(std::string name) {
@@ -2161,6 +2234,67 @@ void Application::save(std::string name, bool out) {
 }
 
 bool Application::Initialize() {
+    LogInfo("Python installed: {0}", IsPythonInstalled());
+    if (!IsPythonInstalled()) {
+        UDirectory::CreateDirIfNotExists(PythonHome);
+        if (usePackageManagerInstaller) {
+            Utils::exec(PythonInstallCMD);
+        }
+        else {
+            LogInfo("下载Python...");
+            const std::string pythonZip = PythonHome + "python.zip";
+            const std::string getPipPython = PythonHome + "get-pip.py";
+            bool success = Installer({
+                {PythonLink, pythonZip}
+            });
+            if (success) {
+                Utils::Decompress(pythonZip, PythonHome);
+                auto file = Utils::GetFilesWithExt(PythonHome, "._pth").front();
+                std::fstream fs(file, std::ios::out | std::ios::in);
+                if (!fs.is_open()) {
+                    LogError("Error: Failed to open file : {0}", file);
+                    return false;
+                }
+
+                // Read the file content into a vector of strings
+                std::vector<std::string> lines;
+                std::string line;
+                while (std::getline(fs, line)) {
+                    lines.push_back(line);
+                }
+
+                // Modify the last line
+                if (!lines.empty()) {
+                    lines.back() = "import site";
+                }
+
+                // Move the file pointer to the beginning of the file
+                fs.clear();
+                fs.seekp(0, std::ios::beg);
+
+                // Write the modified content back to the file
+                for (const auto&l: lines) {
+                    fs << l << std::endl;
+                }
+
+                fs.close();
+
+
+                success = Installer({
+                    {PythonGetPip, getPipPython}
+                });
+                if (success) {
+                    Utils::ExecuteShell(
+                        Utils::GetAbsolutePath(PythonHome + PythonExecute), Utils::GetAbsolutePath(getPipPython));
+                }
+                LogInfo("Python 安装成功");
+            }
+            else {
+                LogError("Python 安装失败");
+            }
+        }
+    }
+
     bool success = true;
     if (!UDirectory::Exists(ConversationPath.string())) {
         UDirectory::Create(ConversationPath.string());

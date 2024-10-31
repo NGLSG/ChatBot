@@ -61,13 +61,14 @@ if (MSVC)
     target_compile_options(${CMAKE_PROJECT_NAME} PRIVATE "/bigobj" "/utf-8")
 endif ()
 
-# 指定资源文件输出目录
-set_target_properties(CyberGirl PROPERTIES
-        RESOURCE "Resources/Info.rc"
-        RESOURCE "Resources/Info.plist"
-        RESOURCE "Resources/icon.png"
-)
 
+# 将Resources目录下的所有文件和子目录匹配并添加到资源变量中
+file(GLOB_RECURSE RESOURCES "Resources/*")
+
+# 为目标添加资源文件
+set_target_properties(CyberGirl PROPERTIES
+        RESOURCE "${RESOURCES}"
+)
 # 指定资源文件输出目录
 set_target_properties(CyberGirl PROPERTIES
         VS_RESOURCE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Resources"

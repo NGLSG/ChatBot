@@ -1,14 +1,29 @@
 #include "ChatBot.h"
 
-ChatGPT::ChatGPT(const OpenAIBotCreateInfo&chat_data) : chat_data_(chat_data) {
+ChatGPT::ChatGPT(const OpenAIBotCreateInfo&chat_data, std::string systemrole) : chat_data_(chat_data) {
     Logger::Init();
-    defaultJson["content"] = sys;
+    if (!systemrole.empty())
+        defaultJson["content"] = systemrole;
+    else
+        defaultJson["content"] = sys;
     defaultJson["role"] = "system";
 
     if (!UDirectory::Exists(ConversationPath)) {
         UDirectory::Create(ConversationPath);
         Add("default");
     }
+}
+
+long long ChatGPT::getCurrentTimestamp() {
+    auto currentTime = std::chrono::system_clock::now();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch()).count();
+}
+
+long long ChatGPT::getTimestampBefore(const int daysBefore) {
+    auto currentTime = std::chrono::system_clock::now();
+    auto days = std::chrono::hours(24 * daysBefore);
+    auto targetTime = currentTime - days;
+    return std::chrono::duration_cast<std::chrono::milliseconds>(targetTime.time_since_epoch()).count();
 }
 
 string ChatGPT::sendRequest(std::string data) {
@@ -305,6 +320,7 @@ std::string ChatGPT::Submit(std::string prompt, std::string role, std::string co
         LogInfo("User asked: {0}", prompt);
         if (!Conversation.contains(convid_)) {
             history.push_back(defaultJson);
+            history.push_back(defaultJson2);
             Conversation.insert({convid_, history});
         }
         history.emplace_back(ask);
@@ -317,11 +333,8 @@ std::string ChatGPT::Submit(std::string prompt, std::string role, std::string co
                            + "}\n";
         string text = sendRequest(data);
 
-        std::string str;
-        for (char c: text) {
-            str += c;
-            std::cout << "\rBot: " << str << flush;
-        }
+        std::cout << "\rBot: " << text << flush;
+
         return text;
     }
     catch (exception&e) {

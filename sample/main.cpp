@@ -9,6 +9,7 @@ int main(int argc, char* argv[]) {
         if (!UDirectory::Exists("Logs")) {
             UDirectory::Create("Logs");
         }
+
         bool setting = false;
         Logger::Init();
         Utils::SaveYaml("template.yaml", Utils::toYaml(Configure()));
