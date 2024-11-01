@@ -6,12 +6,13 @@
 
 # ChatBot
 
-_✨A chatbot based on various LLMs, supporting multiple languages and functionalities.✨_
+✨A chatbot based on various LLMs, supporting multiple languages, system operations, and mathematical processing, with a variety of features.✨
 
 If you like this project, please give it a ⭐️!
 
 </div>
 
+Demo:![img.png](img/img.png)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Author-Ge%E6%B1%81%E8%8F%8C-yellow">

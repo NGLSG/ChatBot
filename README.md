@@ -24,7 +24,7 @@ _✨基于各种LLM的聊天机器人，支持多种语言，支持系统操作�
   <img src="https://img.shields.io/github/forks/NGLSG/ChatBot.svg" alt="forks">
 </p>
 
-Demo示例:![img.png](img.png)
+Demo示例:![img.png](img/img.png)
 
 # 依赖项
 
