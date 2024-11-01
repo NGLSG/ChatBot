@@ -146,7 +146,7 @@ private:
     int Rnum = 0;
     int token;
 
-    char input_buffer[4096 * 32];
+    char input_buffer[4096 * 32]="";
 
     struct TextBuffer {
         std::string VarName = "";

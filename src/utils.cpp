@@ -1120,7 +1120,8 @@ std::string StringExecutor::Python(const std::string&text) {
     static std::string tmpPythonPath = "Runtime/pythons/";
     static int num = 0;
     if (num == 0) {
-        UDirectory::Remove(tmpPythonPath);
+        if (UDirectory::Exists(tmpPythonPath))
+            UDirectory::Remove(tmpPythonPath);
     }
     std::string replacedAnswer = text;
     std::smatch match;
