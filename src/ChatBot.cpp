@@ -317,10 +317,9 @@ std::string ChatGPT::Submit(std::string prompt, std::string role, std::string co
         json ask;
         ask["content"] = prompt;
         ask["role"] = role;
-        LogInfo("User asked: {0}", prompt);
         if (!Conversation.contains(convid_)) {
             history.push_back(defaultJson);
-            history.push_back(defaultJson2);
+            //history.push_back(defaultJson2);
             Conversation.insert({convid_, history});
         }
         history.emplace_back(ask);

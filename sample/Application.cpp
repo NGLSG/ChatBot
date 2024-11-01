@@ -10,8 +10,8 @@ Application::Application(const Configure&configure, bool setting) {
         scommands = commands;
         this->configure = configure;
         OnlySetting = setting;
-        if (!configure.claude.enable && (configure.openAi.api_key.empty() ||
-                                         configure.openAi.api_key == "")) {
+        if (configure.openAi.enable && (configure.openAi.api_key.empty() ||
+                                        configure.openAi.api_key == "")) {
             OnlySetting = true;
             state = State::NO_BOT_KEY;
         }
@@ -22,6 +22,10 @@ Application::Application(const Configure&configure, bool setting) {
             state = State::NO_BOT_KEY;
         }
         else if (configure.gemini.enable && configure.gemini._apiKey.empty()) {
+            OnlySetting = true;
+            state = State::NO_BOT_KEY;
+        }
+        else if (configure.gptLike.enable && configure.gptLike.api_key.empty()) {
             OnlySetting = true;
             state = State::NO_BOT_KEY;
         }
