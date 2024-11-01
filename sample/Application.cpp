@@ -407,6 +407,7 @@ void Application::RenderChatBox() {
             ImGui::PopID();
 
             // Display the bot's answer
+            ImGui::SameLine();
             DisplayInputText(botAnswer);
             // 加载纹理的线程
             if (!botAnswer.image.empty()) {
