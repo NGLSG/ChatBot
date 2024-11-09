@@ -20,6 +20,7 @@
 #include "Configure.h"
 #include "StableDiffusion.h"
 #include "imfilebrowser.h"
+#include "Script.h"
 #include "sol/sol.hpp"
 
 #define TEXT_BUFFER 4096
@@ -146,7 +147,7 @@ private:
     int Rnum = 0;
     int token;
 
-    char input_buffer[4096 * 32]="";
+    char input_buffer[4096 * 32] = "";
 
     struct TextBuffer {
         std::string VarName = "";
@@ -207,6 +208,7 @@ private:
     ConfirmDelegate PathOnConfirm = nullptr;
     std::filesystem::path ConversationPath = "Conversations/";
 
+    std::vector<std::string> forbidLuaPlugins;
     std::vector<std::string> live2dModel;
     std::vector<std::string> speakers = {reinterpret_cast<const char *>(u8"空空如也")};
     std::vector<std::string> vitsModels = {reinterpret_cast<const char *>(u8"空空如也")};
@@ -238,7 +240,7 @@ private:
     bool AppRunning = true;
     long long FirstTime = 0;
     float fontSize = 16;
-    std::vector<std::string> PluginsScript;
+    std::unordered_map<std::string, std::shared_ptr<Script>> PluginsScript1;
 
 
     std::vector<Chat> load(std::string name = "default");
@@ -274,7 +276,14 @@ private:
 
         style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
         style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+
         style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+        style.Colors[ImGuiCol_Tab] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+        style.Colors[ImGuiCol_TabHovered] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+        style.Colors[ImGuiCol_TabActive] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+        style.Colors[ImGuiCol_TabUnfocused] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+        style.Colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.75f, 0.75f, 0.75f, 1.0f);
+        style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
         style.Colors[ImGuiCol_FrameBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
         style.Colors[ImGuiCol_MenuBarBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
         style.Colors[ImGuiCol_Header] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
@@ -290,30 +299,12 @@ private:
         ImVec4 button_hovered_color(0.15f, 0.45f, 0.65f, 1.0f);
 
         style.Colors[ImGuiCol_PopupBg] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-        style.Colors[ImGuiCol_TitleBg] = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-        style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
         style.FrameRounding = 5.0f;
         style.GrabRounding = 5.0f;
         style.WindowRounding = 5.0f;
         style.Colors[ImGuiCol_Button] = button_color;
         style.Colors[ImGuiCol_ButtonHovered] = button_hovered_color;
         style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-    }
-
-    static inline void RestoreDefaultStyle() {
-        ImGuiStyle&style = ImGui::GetStyle();
-
-        // 恢复默认样式
-        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.94f, 0.94f, 0.94f, 1.0f);
-        style.Colors[ImGuiCol_TitleBg] = ImVec4(0.27f, 0.27f, 0.27f, 1.0f);
-        style.Colors[ImGuiCol_TitleBgActive] = ImVec4(0.32f, 0.32f, 0.32f, 1.0f);
-        style.FrameRounding = 0.0f;
-        style.GrabRounding = 0.0f;
-        style.WindowRounding = 0.0f;
-
-        // 恢复默认颜色
-        style.Colors[ImGuiCol_Text] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-        style.Colors[ImGuiCol_TextDisabled] = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);
     }
 
     // 渲染聊天框
@@ -335,8 +326,6 @@ private:
 
     // 渲染UI
     void RenderUI();
-
-    void initImGuiBindings(sol::state_view lua);
 
 
     inline void FileChooser();

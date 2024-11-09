@@ -57,6 +57,10 @@ public:
         return result;
     }
 
+    static std::string PlatformPath(std::string path) {
+        return std::filesystem::path(path).make_preferred().string();
+    }
+
     // 检查是否以某后缀结尾
     static bool EndsWith(const std::string&str, const std::string&suffix) {
         return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
@@ -366,7 +370,6 @@ private:
     static void _WriteToFile(std::string filename, const std::string&content);
 
 public:
-
     static std::string AutoExecute(const std::string&text, const std::shared_ptr<ChatBot>&bot);
 
     static std::string CMD(const std::string&text);
@@ -377,7 +380,7 @@ public:
 
     static std::string Process(const std::string&text);
 
-    static std::string PreProcess(const std::string&text,const std::shared_ptr<ChatBot>& bot);
+    static std::string PreProcess(const std::string&text, const std::shared_ptr<ChatBot>&bot);
 };
 
 template<typename... Args>
