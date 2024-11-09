@@ -1386,13 +1386,13 @@ void Application::RenderConfigBox() {
         }
 
         if (no_key) {
-            ImGui::OpenPopup(reinterpret_cast<const char *>(u8"需要配置OpenAI Key或者填写Claude token"));
+            ImGui::OpenPopup(reinterpret_cast<const char *>(u8"需要配置LLM服务的API Key,否则此应用无法正常使用"));
             no_key = false;
         }
 
-        if (ImGui::BeginPopupModal(reinterpret_cast<const char *>(u8"需要配置OpenAI Key或者填写Claude token"), NULL,
+        if (ImGui::BeginPopupModal(reinterpret_cast<const char *>(u8"需要配置LLM服务的API Key,否则此应用无法正常使用"), NULL,
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text(reinterpret_cast<const char *>(u8"您需要填写OpenAI API key 或Claude token 以正常启用本程序。"));
+            ImGui::Text(reinterpret_cast<const char *>(u8"您配置任意一项LLM服务的API Key 以正常启用本程序。"));
             if (ImGui::Button(reinterpret_cast<const char *>(u8"确定"), ImVec2(120, 0))) {
                 ImGui::CloseCurrentPopup();
             }
