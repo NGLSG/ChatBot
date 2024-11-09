@@ -4,7 +4,8 @@
 
 <div align="center">
 
-# ChatBot
+<h1 style="background: linear-gradient(to right, #00ffcc, #0099ff, #6600ff); -webkit-background-clip: text; color: transparent; font-style: italic;">ChatBot</h1>
+
 
 ✨A chatbot based on various LLMs, supporting multiple languages, system operations, and mathematical processing, with a variety of features.✨
 
