@@ -7,20 +7,23 @@
 using json = nlohmann::json;
 using namespace std;
 
-namespace Role {
+namespace Role
+{
     static std::string User = "user";
     static std::string System = "system";
     static std::string Assistant = "assistant";
 };
 
-struct Billing {
+struct Billing
+{
     float total = -1;
     float available = -1;
     float used = -1;
     long long date = -1;
 };
 
-class ChatBot {
+class ChatBot
+{
 public:
     virtual std::string Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") = 0;
 
@@ -41,9 +44,11 @@ public:
     map<long long, string> History;
 };
 
-class ChatGPT : public ChatBot {
+class ChatGPT : public ChatBot
+{
 public:
-    ChatGPT(std::string systemrole) {
+    ChatGPT(std::string systemrole)
+    {
         Logger::Init();
         if (!systemrole.empty())
             defaultJson["content"] = systemrole;
@@ -56,13 +61,14 @@ public:
         defaultJson2["role"] = "user";
 
 
-        if (!UDirectory::Exists(ConversationPath)) {
+        if (!UDirectory::Exists(ConversationPath))
+        {
             UDirectory::Create(ConversationPath);
             Add("default");
         }
     }
 
-    ChatGPT(const OpenAIBotCreateInfo&chat_data, std::string systemrole = "");
+    ChatGPT(const OpenAIBotCreateInfo& chat_data, std::string systemrole = "");
 
     std::string
     Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") override;
@@ -83,7 +89,8 @@ public:
 
     map<long long, string> GetHistory() override { return map<long long, string>(); }
 
-    static std::string Stamp2Time(long long timestamp) {
+    static std::string Stamp2Time(long long timestamp)
+    {
         time_t tick = (time_t)(timestamp / 1000); //转换时间
         tm tm;
         char s[40];
@@ -112,7 +119,8 @@ protected:
     json defaultJson;
     json defaultJson2;
 
-    bool IsSaved() {
+    bool IsSaved()
+    {
         return LastHistory == history;
     }
 
@@ -125,9 +133,11 @@ protected:
     static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp);
 };
 
-class GPTLike : public ChatGPT {
+class GPTLike : public ChatGPT
+{
 public:
-    GPTLike(const GPTLikeCreateInfo&data, std::string systemrole = ""): ChatGPT(systemrole) {
+    GPTLike(const GPTLikeCreateInfo& data, std::string systemrole = ""): ChatGPT(systemrole)
+    {
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
@@ -137,9 +147,25 @@ public:
     }
 };
 
-class Claude : public ChatBot {
+class Grok : public ChatGPT
+{
 public:
-    Claude(const ClaudeBotCreateInfo&data) : claudeData(data) {
+    Grok(const GPTLikeCreateInfo& data, std::string systemrole = ""): ChatGPT(systemrole)
+    {
+        chat_data_.enable = data.enable;
+        chat_data_.api_key = data.api_key;
+        chat_data_.model = data.model;
+        chat_data_.useLocalModel = false;
+        chat_data_.useWebProxy = true;
+        chat_data_._endPoint = "https://api.x.ai/";
+    }
+};
+
+class Claude : public ChatBot
+{
+public:
+    Claude(const ClaudeBotCreateInfo& data) : claudeData(data)
+    {
     }
 
     std::string
@@ -165,15 +191,18 @@ private:
     ClaudeBotCreateInfo claudeData;
 };
 
-class Gemini : public ChatBot {
+class Gemini : public ChatBot
+{
 public:
-    Gemini(const GeminiBotCreateInfo&data) : geminiData(data) {
+    Gemini(const GeminiBotCreateInfo& data) : geminiData(data)
+    {
     }
 
     std::string
     Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") override;
 
-    std::future<std::string> SubmitAsync(std::string prompt, std::string role, std::string convid) {
+    std::future<std::string> SubmitAsync(std::string prompt, std::string role, std::string convid)
+    {
     };
 
     void Reset() override;
