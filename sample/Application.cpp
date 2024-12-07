@@ -1241,8 +1241,8 @@ void Application::RenderConfigBox()
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
             double currentTime = ImGui::GetTime();
-            strcpy_s(GetBufferByName("api").buffer, configure.gptLike.api_key.c_str());
-            strcpy_s(GetBufferByName("model").buffer, configure.gptLike.model.c_str());
+            strcpy_s(GetBufferByName("api").buffer, configure.grok.api_key.c_str());
+            strcpy_s(GetBufferByName("model").buffer, configure.grok.model.c_str());
             if (currentTime - lastInputTime > 0.5)
             {
                 showPassword = false;
@@ -1253,7 +1253,7 @@ void Application::RenderConfigBox()
                                      GetBufferByName("api").buffer,
                                      sizeof(input_buffer)))
                 {
-                    configure.gptLike.api_key = GetBufferByName("api").buffer;
+                    configure.grok.api_key = GetBufferByName("api").buffer;
                 }
             }
             else
@@ -1263,7 +1263,7 @@ void Application::RenderConfigBox()
                                      sizeof(input_buffer),
                                      ImGuiInputTextFlags_Password))
                 {
-                    configure.gptLike.api_key = GetBufferByName("api").buffer;
+                    configure.grok.api_key = GetBufferByName("api").buffer;
                     showPassword = true;
                     lastInputTime = ImGui::GetTime();
                 }
@@ -1282,7 +1282,7 @@ void Application::RenderConfigBox()
             if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
                                  TEXT_BUFFER))
             {
-                configure.gptLike.model = GetBufferByName("model").buffer;
+                configure.grok.model = GetBufferByName("model").buffer;
             }
         }
     }
