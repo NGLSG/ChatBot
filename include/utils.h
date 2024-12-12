@@ -41,39 +41,47 @@ extern std::string FileName;
 
 #endif
 
-class UFile {
+class UFile
+{
 public:
-    static bool Exists(const std::string&filename);
+    static bool Exists(const std::string& filename);
 
     // 获取目录下所有文件
-    static std::vector<std::string> GetFilesInDirectory(const std::string&folder) {
+    static std::vector<std::string> GetFilesInDirectory(const std::string& folder)
+    {
         std::vector<std::string> result;
 
         // 使用filesystem遍历目录
-        for (const auto&entry: std::filesystem::directory_iterator(folder)) {
+        for (const auto& entry : std::filesystem::directory_iterator(folder))
+        {
             result.push_back(entry.path().string());
         }
 
         return result;
     }
 
-    static std::string PlatformPath(std::string path) {
+    static std::string PlatformPath(std::string path)
+    {
         return std::filesystem::path(path).make_preferred().string();
     }
 
     // 检查是否以某后缀结尾
-    static bool EndsWith(const std::string&str, const std::string&suffix) {
+    static bool EndsWith(const std::string& str, const std::string& suffix)
+    {
         return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
     }
 
-    static bool UCopyFile(const std::string&src, const std::string&dst) {
-        try {
+    static bool UCopyFile(const std::string& src, const std::string& dst)
+    {
+        try
+        {
             std::filesystem::copy_file(
                 std::filesystem::path(src),
                 std::filesystem::path(dst)
             );
         }
-        catch (std::filesystem::filesystem_error&e) {
+        catch (std::filesystem::filesystem_error& e)
+        {
             // 处理错误
             return false;
         }
@@ -82,32 +90,35 @@ public:
     }
 };
 
-class UDirectory {
+class UDirectory
+{
 public:
-    static bool Create(const std::string&dirname);
+    static bool Create(const std::string& dirname);
 
-    static bool CreateDirIfNotExists(const std::string&dir);
+    static bool CreateDirIfNotExists(const std::string& dir);
 
-    static bool Exists(const std::string&dirname);
+    static bool Exists(const std::string& dirname);
 
-    static bool Remove(const std::string&dir);
+    static bool Remove(const std::string& dir);
 
 
-    static std::vector<std::string> GetSubDirectories(const std::string&dirPath);
+    static std::vector<std::string> GetSubDirectories(const std::string& dirPath);
 };
 
-class UEncrypt {
+class UEncrypt
+{
 public:
-    static std::string ToMD5(const std::string&str);
+    static std::string ToMD5(const std::string& str);
 
-    static std::string GetMD5(const std::string&str);
+    static std::string GetMD5(const std::string& str);
 
     static std::string GetMD5(const void* data, std::size_t size);
 
-    static std::string md5(const std::string&data);
+    static std::string md5(const std::string& data);
 };
 
-class UCompression {
+class UCompression
+{
 public:
     static bool Decompress7z(std::string file, std::string path);
 
@@ -120,9 +131,11 @@ public:
     static bool DecompressRar(std::string file, std::string path);
 };
 
-class Utils {
+class Utils
+{
 private:
-    typedef struct {
+    typedef struct
+    {
         const float* data;
         int position;
         int length;
@@ -134,36 +147,70 @@ private:
                           PaStreamCallbackFlags statusFlags,
                           void* userData);
 
-    static bool DownloadThread(const std::string&url, const std::string&file_path, int start, int end, int id,
-                               std::vector<int>&progress);
+    static bool DownloadThread(const std::string& url, const std::string& file_path, int start, int end, int id,
+                               std::vector<int>& progress);
 
-    static bool CheckFileSize(const std::string&file_path, int expected_size);
+    static bool CheckFileSize(const std::string& file_path, int expected_size);
 
 public:
-    template<typename... Args>
-    static std::string ExecuteShell(const std::string&cmd, Args... args);
+    template <typename... Args>
+    static std::string ExecuteShell(const std::string& cmd, Args... args);
 
-    static std::string GetAbsolutePath(const std::string&relativePath);
+    static void AsyncExecuteShell(const std::string& cmd, std::vector<std::string> args)
+    {
+        std::thread([cmd, args]()
+        {
+            std::string command = cmd;
+            for (const auto& arg : args)
+            {
+                command += " " + arg;
+            }
+#ifdef _WIN32
+            std::unique_ptr<FILE, decltype(&_pclose)> pipe(popen(command.c_str(), "r"), _pclose);
+#else
+            std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+#endif
 
-    static std::string exec(const std::string&command);
+            if (!pipe)
+            {
+                std::cerr << "Error opening pipe." << std::endl;
+                return;
+            }
+
+            char buffer[128];
+            std::mutex mtx; // 用于同步输出的互斥锁
+            while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr)
+            {
+                std::lock_guard<std::mutex> lock(mtx); // 锁定互斥锁
+                std::cout << buffer;
+            }
+        }).detach(); // 使用detach让线程在后台运行
+    }
+
+    static std::string GetAbsolutePath(const std::string& relativePath);
+
+    static std::string exec(const std::string& command);
 
     static std::string GetErrorString(cpr::ErrorCode code);
 
-    static std::string execAsync(const std::string&command);
+    static std::string execAsync(const std::string& command);
 
-    static std::string GetLatestUrl(const std::string&url);
+    static std::string GetLatestUrl(const std::string& url);
 
-    static std::string GetFileName(const std::string&dir);
+    static std::string GetFileName(const std::string& dir);
 
-    static std::string GetDirName(const std::string&dir);
+    static std::string GetDirName(const std::string& dir);
 
-    static std::string GetspecificPath(const std::string&path) {
+    static std::string GetspecificPath(const std::string& path)
+    {
         std::string specificPath = path;
 
 #ifdef _WIN32
         // Replace all forward slashes with backslashes for Windows
-        for (char&c: specificPath) {
-            if (c == '/') {
+        for (char& c : specificPath)
+        {
+            if (c == '/')
+            {
                 c = '\\';
             }
         }
@@ -179,16 +226,19 @@ public:
         return specificPath;
     }
 
-    static std::string UrlEncode(const std::string&value) {
+    static std::string UrlEncode(const std::string& value)
+    {
         std::ostringstream escaped;
         escaped.fill('0');
         escaped << std::hex;
 
-        for (auto i = value.begin(), n = value.end(); i != n; ++i) {
+        for (auto i = value.begin(), n = value.end(); i != n; ++i)
+        {
             std::string::value_type c = (*i);
 
             // 保持字母和数字不变
-            if (isalnum(c) || c == '-') {
+            if (isalnum(c) || c == '-')
+            {
                 escaped << c;
                 continue;
             }
@@ -205,33 +255,51 @@ public:
 
     static void playAudio(const char* filename = "tmp.wav");
 
-    static void playAudioAsync(const std::string&filename, std::function<void()> callback);
+    static void playAudioAsync(const std::string& filename, std::function<void()> callback);
 
-    static void SaveYaml(const std::string&filename, const YAML::Node&node);
+    static void SaveYaml(const std::string& filename, const YAML::Node& node);
 
     // 下载文件
-    static bool UDownload(const std::pair<std::string, std::string>&task, int num_threads = 8);
+    static bool UDownload(const std::pair<std::string, std::string>& task, int num_threads = 8);
 
-    static std::future<bool> UDownloads(const std::map<std::string, std::string>&tasks, int num_threads = 8);
+    static std::future<bool> UDownloads(const std::map<std::string, std::string>& tasks, int num_threads = 8);
 
     static bool Decompress(std::string file, std::string path = "");
 
-    static void ExecuteInBackGround(const std::string&appName);
+    static void OpenURL(const std::string& url);
 
-    static void SaveFile(const std::string&content, const std::string&filename) {
+    static bool CheckCMDExist(const std::string& cmd)
+    {
+#ifdef _WIN32
+        std::string command = "where " + cmd;
+#else
+    std::string command = "which " + cmd;
+#endif
+
+        std::string result = Utils::exec(command);
+        return !result.empty();
+    }
+
+    static void ExecuteInBackGround(const std::string& appName);
+
+    static void SaveFile(const std::string& content, const std::string& filename)
+    {
         std::fstream outfile(filename);
-        if (outfile) {
+        if (outfile)
+        {
             outfile << content << std::endl;
             outfile.close();
             LogInfo("数据已保存到文件 {0}", filename);
         }
-        else {
+        else
+        {
             LogError("无法打开文件 {0}", filename);
         }
     }
 
-    template<typename T>
-    static T LoadYaml(const std::string&file) {
+    template <typename T>
+    static T LoadYaml(const std::string& file)
+    {
         // 从文件中读取YAML数据
         YAML::Node node = YAML::LoadFile(file);
 
@@ -239,8 +307,9 @@ public:
         return node.as<T>();
     }
 
-    template<typename T>
-    static YAML::Node toYaml(const T&value) {
+    template <typename T>
+    static YAML::Node toYaml(const T& value)
+    {
         YAML::Node node;
         node = value;
         return node;
@@ -250,43 +319,51 @@ public:
 
     static void OpenProgram(const char* path);
 
-    static std::vector<std::string> GetDirectories(const std::string&path);
+    static std::vector<std::string> GetDirectories(const std::string& path);
 
-    static std::vector<std::string> GetAllCodesFromText(const std::string&text);
+    static std::vector<std::string> GetAllCodesFromText(const std::string& text);
 
-    static std::string ExtractNormalText(const std::string&text);
+    static std::string ExtractNormalText(const std::string& text);
 
     static long long GetCurrentTimestamp() { return Logger::getCurrentTimestamp(); }
 
     static std::string Stamp2Time(long long timestamp) { return Logger::Stamp2Time(timestamp); }
 
-    static int Stamp2Day(long long timestamp) {
+    static int Stamp2Day(long long timestamp)
+    {
         return timestamp / 86400000;
     }
 
-    static std::wstring Unicode2String(const std::string&str);
+    static std::wstring Unicode2String(const std::string& str);
 
-    static std::string ReadFile(const std::string&filename);
+    static std::string ReadFile(const std::string& filename);
 
-    static std::vector<std::string> JsonArrayToStringVector(const json&array) {
+    static std::vector<std::string> JsonArrayToStringVector(const json& array)
+    {
         std::vector<std::string> result;
-        for (json::const_iterator it = array.begin(); it != array.end(); ++it) {
-            if (it->is_string()) {
+        for (json::const_iterator it = array.begin(); it != array.end(); ++it)
+        {
+            if (it->is_string())
+            {
                 result.push_back(it->get<std::string>());
             }
         }
         return result;
     }
 
-    static std::vector<std::string> JsonDictToStringVector(const json&array) {
+    static std::vector<std::string> JsonDictToStringVector(const json& array)
+    {
         std::vector<std::string> keys;
-        try {
+        try
+        {
             // 遍历JSON对象，将所有键的名字存储在vector中
-            for (auto it = array.begin(); it != array.end(); ++it) {
+            for (auto it = array.begin(); it != array.end(); ++it)
+            {
                 keys.push_back(it.key());
             }
         }
-        catch (const std::exception&e) {
+        catch (const std::exception& e)
+        {
             // 解析异常处理
             std::cerr << "Error: " << e.what() << std::endl;
         }
@@ -295,15 +372,18 @@ public:
     }
 
     // 获取文件夹下所有指定后缀的文件
-    static std::vector<std::string> GetFilesWithExt(const std::string&folder,
-                                                    const std::string&ext = ".txt") {
+    static std::vector<std::string> GetFilesWithExt(const std::string& folder,
+                                                    const std::string& ext = ".txt")
+    {
         std::vector<std::string> files = UFile::GetFilesInDirectory(folder);
 
         std::vector<std::string> result;
 
         // 找到所有匹配的文件
-        for (const auto&file: files) {
-            if (UFile::EndsWith(file, ext)) {
+        for (const auto& file : files)
+        {
+            if (UFile::EndsWith(file, ext))
+            {
                 result.push_back(file);
             }
         }
@@ -312,17 +392,21 @@ public:
     }
 
     // 如果vector为空,返回默认值。否则返回第一个元素。
-    static std::string GetDefaultIfEmpty(const std::vector<std::string>&vec,
-                                         const std::string&defaultValue) {
-        if (vec.empty()) {
+    static std::string GetDefaultIfEmpty(const std::vector<std::string>& vec,
+                                         const std::string& defaultValue)
+    {
+        if (vec.empty())
+        {
             return defaultValue;
         }
-        else {
+        else
+        {
             return vec[0];
         }
     }
 
-    static void OpenFileManager(const std::string&path) {
+    static void OpenFileManager(const std::string& path)
+    {
         std::string command;
 
 #ifdef _WIN32
@@ -345,73 +429,83 @@ public:
         // Execute the command to open the file manager
         int result = std::system(command.c_str());
 
-        if (result != 0) {
+        if (result != 0)
+        {
             // Failed to open the file manager
             std::cerr << "Error: Failed to open file manager." << std::endl;
         }
     }
 
-    static std::vector<unsigned char> Str2VUChar(const std::string&str) {
+    static std::vector<unsigned char> Str2VUChar(const std::string& str)
+    {
         std::vector<unsigned char> vuchar(str.begin(), str.end());
         return vuchar;
     }
 
     static std::string GetPlatform();
 
-    static int WStringSize(const std::string&str);
+    static int WStringSize(const std::string& str);
 
-    static std::string WStringInsert(const std::string&str, int pos, const std::string&insertStr);
+    static std::string WStringInsert(const std::string& str, int pos, const std::string& insertStr);
 };
 
-class StringExecutor {
+class StringExecutor
+{
 private:
-    static std::string _Markdown(const std::string&text);
+    static std::string _Markdown(const std::string& text);
 
-    static void _WriteToFile(std::string filename, const std::string&content);
+    static void _WriteToFile(std::string filename, const std::string& content);
 
 public:
-    static std::string AutoExecute(const std::string&text, const std::shared_ptr<ChatBot>&bot);
+    static std::string AutoExecute(const std::string& text, const std::shared_ptr<ChatBot>& bot);
 
-    static std::string CMD(const std::string&text);
+    static std::string CMD(const std::string& text);
 
-    static std::string File(const std::string&text);
+    static std::string File(const std::string& text);
 
-    static std::string Python(const std::string&text);
+    static std::string Python(const std::string& text);
 
-    static std::string Process(const std::string&text);
+    static std::string Process(const std::string& text);
 
-    static std::string PreProcess(const std::string&text, const std::shared_ptr<ChatBot>&bot);
+    static std::string PreProcess(const std::string& text, const std::shared_ptr<ChatBot>& bot);
 };
 
-template<typename... Args>
-std::string Utils::ExecuteShell(const std::string&cmd, Args... args) {
+template <typename... Args>
+std::string Utils::ExecuteShell(const std::string& cmd, Args... args)
+{
     std::ostringstream command;
     command << cmd;
 
     // Append arguments
     std::vector<std::string> argList = {args...};
-    for (const auto&arg: argList) {
+    for (const auto& arg : argList)
+    {
         command << " " << arg;
     }
 
     std::string result;
     FILE* pipe = popen(command.str().c_str(), "r");
-    if (!pipe) {
+    if (!pipe)
+    {
         return "Error opening pipe.";
     }
 
     char buffer[128];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr)
+    {
         result += buffer;
+        std::cout << buffer;
     }
     pclose(pipe);
 
     return result;
 }
 
-class UImage {
+class UImage
+{
 public:
-    struct Meta {
+    struct Meta
+    {
         char MetaType[4];
         int MipmapLevel;
         int Width;
@@ -420,22 +514,23 @@ public:
         int CompressSize;
     };
 
-    static void Base64ToImage(const std::string&str_base64, const std::string&dstPath);
+    static void Base64ToImage(const std::string& str_base64, const std::string& dstPath);
 
-    static GLuint Base64ToTextureFromPath(const std::string&imgPath);
+    static GLuint Base64ToTextureFromPath(const std::string& imgPath);
 
-    static GLuint Base64ToTexture(const std::string&base64_str);
+    static GLuint Base64ToTexture(const std::string& base64_str);
 
-    static std::string Img2Base64(const std::string&path);
+    static std::string Img2Base64(const std::string& path);
 
-    static GLuint Img2Texture(const std::string&path);
+    static GLuint Img2Texture(const std::string& path);
 
-    static void ImgResize(const std::string&base64_str, float scale, const std::string&path);
+    static void ImgResize(const std::string& base64_str, float scale, const std::string& path);
 
-    static void CompressImageFile(std::string&image_file_path, std::string&save_image_file_path) {
+    static void CompressImageFile(std::string& image_file_path, std::string& save_image_file_path)
+    {
     }
 
-    static GLuint LoadFromMeta(const std::string&filename);
+    static GLuint LoadFromMeta(const std::string& filename);
 
 private:
     static GLuint CreateGLTexture(const unsigned char* image_data, int width, int height, int channels);

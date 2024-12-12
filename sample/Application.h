@@ -24,13 +24,14 @@
 #include "sol/sol.hpp"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char *>(u8"CyberGirl v1.5");
+const std::string VERSION = reinterpret_cast<const char*>(u8"CyberGirl v1.5");
 extern std::vector<std::string> scommands;
 extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
 typedef std::function<void()> ConfirmDelegate;
 
-enum State {
+enum State
+{
     OK = 0,
     NO_BOT_KEY,
     NO_VITS,
@@ -41,13 +42,15 @@ enum State {
 };
 
 
-class Application {
+class Application
+{
 private:
+    inline static const std::string OllamaLink = "https://ollama.com/download";
 #ifdef _WIN32
     inline static const std::string VitsConvertUrl =
-            "https://github.com/NGLSG/MoeGoe/releases/download/1.1/VitsConvertor-win64.tar.gz";
+        "https://github.com/NGLSG/MoeGoe/releases/download/1.1/VitsConvertor-win64.tar.gz";
     inline static const std::string whisperUrl =
-            "https://github.com/ggerganov/whisper.cpp/releases/download/v1.3.0/whisper-bin-Win32.zip";
+        "https://github.com/ggerganov/whisper.cpp/releases/download/v1.3.0/whisper-bin-Win32.zip";
     inline static const std::string vitsFile = "VitsConvertor.tar.gz";
     inline static const std::string exeSuffix = ".exe";
     inline static const std::string PythonHome = "bin\\Python\\";
@@ -56,7 +59,8 @@ private:
     inline static const std::string PythonInstallCMD = "";
     inline static const std::string PythonGetPip = "https://bootstrap.pypa.io/get-pip.py";
     inline static const std::string PythonLink =
-            "https://mirrors.aliyun.com/python-release/windows/python-3.10.9-embed-amd64.zip";
+        "https://mirrors.aliyun.com/python-release/windows/python-3.10.9-embed-amd64.zip";
+
 #else
     inline static const std::string PythonGetPip="";
     inline static const std::string whisperUrl = "https://github.com/ggerganov/whisperData.cpp/releases/download/v1.3.0/whisper-bin-x64.zip";
@@ -108,7 +112,8 @@ private:
 
 #endif
 
-    struct Chat {
+    struct Chat
+    {
         int flag = 0; //0=user;1=bot
         long long timestamp;
         std::string content;
@@ -149,11 +154,13 @@ private:
 
     char input_buffer[4096 * 32] = "";
 
-    struct TextBuffer {
+    struct TextBuffer
+    {
         std::string VarName = "";
         char buffer[4096] = "";
 
-        TextBuffer(std::string varName = "") {
+        explicit TextBuffer(std::string varName = "")
+        {
             VarName = varName;
         }
     };
@@ -195,12 +202,12 @@ private:
     const std::vector<std::string> roles = {"user", "system", "assistant"};
     const std::vector<std::string> proxies = {"Cloudflare", "Tencent Cloud"};
     const std::vector<std::string> commands = {
-        "/draw", reinterpret_cast<const char *>(u8"/绘图"),
-        "/help", reinterpret_cast<const char *>(u8"/帮助")
+        "/draw", reinterpret_cast<const char*>(u8"/绘图"),
+        "/help", reinterpret_cast<const char*>(u8"/帮助")
     };
 
 
-    std::string title = reinterpret_cast<const char *>(u8"文件选择");
+    std::string title = reinterpret_cast<const char*>(u8"文件选择");
     std::vector<std::string> typeFilters;
     bool fileBrowser = false;
     inline static bool PyInstalled = false;
@@ -210,8 +217,8 @@ private:
 
     std::vector<std::string> forbidLuaPlugins;
     std::vector<std::string> live2dModel;
-    std::vector<std::string> speakers = {reinterpret_cast<const char *>(u8"空空如也")};
-    std::vector<std::string> vitsModels = {reinterpret_cast<const char *>(u8"空空如也")};
+    std::vector<std::string> speakers = {reinterpret_cast<const char*>(u8"空空如也")};
+    std::vector<std::string> vitsModels = {reinterpret_cast<const char*>(u8"空空如也")};
     std::map<std::string, std::vector<std::string>> codes;
     map<string, GLuint> TextureCache = {
         {"eye", 0},
@@ -249,7 +256,7 @@ private:
 
     void del(std::string name = "default");
 
-    void AddChatRecord(const Chat&data);
+    void AddChatRecord(const Chat& data);
 
     void DeleteAllBotChat();
 
@@ -257,7 +264,8 @@ private:
 
     void Draw(Ref<std::string> prompt, long long ts, bool callFromBot);
 
-    void Draw(const std::string&prompt, long long ts, bool callFromBot = false) {
+    void Draw(const std::string& prompt, long long ts, bool callFromBot = false)
+    {
         auto prompt_ref = CreateRef<std::string>(prompt);
         std::thread t([=] { Draw(prompt_ref, ts, callFromBot); });
         t.detach();
@@ -266,13 +274,14 @@ private:
     void DisplayInputText(Chat chat) const;
 
 
-    bool ContainsCommand(std::string&str, std::string&cmd, std::string&args) const;
+    bool ContainsCommand(std::string& str, std::string& cmd, std::string& args) const;
 
-    void InlineCommand(const std::string&cmd, const std::string&args, long long ts);
+    void InlineCommand(const std::string& cmd, const std::string& args, long long ts);
 
-    static inline void UniversalStyle() {
+    static inline void UniversalStyle()
+    {
         // 定义通用样式
-        ImGuiStyle&style = ImGui::GetStyle();
+        ImGuiStyle& style = ImGui::GetStyle();
 
         style.Colors[ImGuiCol_WindowBg] = ImVec4(0.95f, 0.95f, 0.95f, 1.0f);
         style.Colors[ImGuiCol_TitleBg] = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
@@ -331,57 +340,67 @@ private:
     inline void FileChooser();
 
     // 加载纹理,并保存元数据
-    GLuint LoadTexture(const std::string&path);
+    GLuint LoadTexture(const std::string& path);
 
     void Vits(std::string text);
 
     bool Initialize();
 
-    bool is_valid_text(const std::string&text) const;
+    bool is_valid_text(const std::string& text) const;
 
     void RuntimeDetector();
 
-    int countTokens(const std::string&str);
-
     void GetClaudeHistory();
 
-    static void EmptyFunction() {
+    static void EmptyFunction()
+    {
         // Do nothing
     }
 
-    TextBuffer& GetBufferByName(const std::string&name) {
-        return *std::ranges::find_if(text_buffers, [&](const TextBuffer&buffer) {
-            return buffer.VarName == name;
-        });
+    TextBuffer& GetBufferByName(const std::string& name)
+    {
+        for (auto& it : text_buffers)
+        {
+            if (it.VarName == name)
+            {
+                return it;
+            }
+        }
     }
 
-    void ShowConfirmationDialog(const char* title, const char* content, bool&mstate,
+    void ShowConfirmationDialog(const char* title, const char* content, bool& mstate,
                                 ConfirmDelegate on_confirm = nullptr,
                                 const char* failure = nullptr,
                                 const char* success = nullptr,
-                                const char* confirm = reinterpret_cast<const char *>(u8"确定"),
-                                const char* cancel = reinterpret_cast<const char *>(u8"取消")
+                                const char* confirm = reinterpret_cast<const char*>(u8"确定"),
+                                const char* cancel = reinterpret_cast<const char*>(u8"取消")
     );
 
 
-    static bool compareByTimestamp(const Chat&a, const Chat&b) {
+    static bool compareByTimestamp(const Chat& a, const Chat& b)
+    {
         return a.timestamp < b.timestamp;
     }
 
     Billing billing;
 
 public:
-    inline static bool IsPythonInstalled() {
-        if (!PyInstalled) {
-            try {
+    inline static bool IsPythonInstalled()
+    {
+        if (!PyInstalled)
+        {
+            try
+            {
                 std::string output = GetPythonVersion();
-                if (!output.empty()) {
+                if (!output.empty())
+                {
                     std::cout << "Python is installed: " << output;
                     PyInstalled = true;
                     return true;
                 }
             }
-            catch (const std::runtime_error&e) {
+            catch (const std::runtime_error& e)
+            {
                 std::cerr << e.what() << std::endl;
             }
             return false;
@@ -389,31 +408,36 @@ public:
         return true;
     }
 
-    template<typename... Args>
-    static std::string ExecutePython(const std::string&pyPath, Args&&... args) {
+    template <typename... Args>
+    static std::string ExecutePython(const std::string& pyPath, Args&&... args)
+    {
         if (IsPythonInstalled())
             return Utils::ExecuteShell(PythonHome + PythonExecute, pyPath, args...);
         return std::format("Wrong there is no python executable in your path {0}", PythonHome);
     }
 
-    static std::string GetPythonPackage() {
-        if (IsPythonInstalled()) {
+    static std::string GetPythonPackage()
+    {
+        if (IsPythonInstalled())
+        {
             return Utils::ExecuteShell(PythonHome + PythonExecute, "-m", "pip", "list");
         }
         return "";
     }
 
-    static std::string GetPythonVersion() {
+    static std::string GetPythonVersion()
+    {
         return Utils::ExecuteShell(PythonHome + PythonExecute, "--version");
     }
 
-    static std::string GetPythonHome() {
+    static std::string GetPythonHome()
+    {
         return PythonHome + PythonExecute;
     }
 
-    std::string WhisperConvertor(const std::string&file);
+    std::string WhisperConvertor(const std::string& file);
 
-    void WhisperModelDownload(const std::string&model = "ggml-base.bin");
+    void WhisperModelDownload(const std::string& model = "ggml-base.bin");
 
     void WhisperExeInstaller();
 
@@ -421,12 +445,12 @@ public:
 
     bool Installer(std::map<std::string, std::string> tasks);
 
-    explicit Application(const Configure&configure, bool setting = false);
+    explicit Application(const Configure& configure, bool setting = false);
 
     int Renderer();
 
-    bool CheckFileExistence(const std::string&filePath, const std::string&fileType,
-                            const std::string&executableFile = "", bool isExecutable = false) const;
+    bool CheckFileExistence(const std::string& filePath, const std::string& fileType,
+                            const std::string& executableFile = "", bool isExecutable = false) const;
 };
 
 #endif

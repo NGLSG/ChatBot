@@ -14,7 +14,7 @@ struct TranslateData
 
 struct OpenAIBotCreateInfo
 {
-    bool enable = false;
+    bool enable = true;
     bool useLocalModel = false;
     bool useWebProxy = true;
     std::string modelPath = "model/ChatGLM/";
@@ -26,10 +26,21 @@ struct OpenAIBotCreateInfo
 
 struct GPTLikeCreateInfo
 {
-    bool enable = false;
+    bool enable;
     std::string api_key;
     std::string model = ""; //Must be set
     std::string apiEndPoint = "";
+
+    GPTLikeCreateInfo(bool gptLike = false)
+    {
+        if (gptLike)
+        {
+            enable = false;
+            api_key = "empty";
+            model = "qwen2.5:3b";
+            apiEndPoint = "http://localhost:11434/";
+        }
+    }
 };
 
 struct VitsTask
@@ -60,7 +71,7 @@ struct VITSData
 {
     bool enable = false;
     bool UseGptSovite = false;
-    std::string apiEndPoint = "";
+    std::string apiEndPoint = "http://127.0.0.1:9880";
     std::string modelName = "empty";
     std::string model;
     std::string config;
@@ -84,7 +95,7 @@ struct LConfigure
 
 struct ClaudeBotCreateInfo
 {
-    bool enable = true;
+    bool enable = false;
     std::string channelID;
     std::string slackToken;
     std::string userName;
@@ -93,7 +104,7 @@ struct ClaudeBotCreateInfo
 
 struct GeminiBotCreateInfo
 {
-    bool enable = true;
+    bool enable = false;
     std::string _apiKey;
     std::string _endPoint;
 };
@@ -103,7 +114,7 @@ struct Live2D
 {
     bool enable = false;
     std::string model = "./model/Live2D/Mao";
-    std::string bin = "Live2D.exe";
+    std::string bin = "bin/Live2D/DesktopPet.exe";
 };
 
 struct Configure
@@ -115,7 +126,7 @@ struct Configure
     Live2D live2D;
     ClaudeBotCreateInfo claude;
     GeminiBotCreateInfo gemini;
-    GPTLikeCreateInfo gptLike;
+    GPTLikeCreateInfo gptLike = GPTLikeCreateInfo(true);
     GPTLikeCreateInfo grok;
     StableDiffusionData stableDiffusion;
 };

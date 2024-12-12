@@ -11,55 +11,70 @@ double DownloadSpeed;
 double RemainingTime;
 std::string FileName;
 
-bool UFile::Exists(const std::string&filename) {
+bool UFile::Exists(const std::string& filename)
+{
     std::ifstream file(filename);
     return file.good();
 }
 
-bool UDirectory::CreateDirIfNotExists(const std::string&dir) {
-    if (!Exists(dir)) {
+bool UDirectory::CreateDirIfNotExists(const std::string& dir)
+{
+    if (!Exists(dir))
+    {
         return Create(dir);
     }
     return true;
 }
 
-bool UDirectory::Create(const std::string&dirname) {
-    try {
+bool UDirectory::Create(const std::string& dirname)
+{
+    try
+    {
         std::filesystem::create_directories(dirname);
         return true;
     }
-    catch (std::filesystem::filesystem_error&e) {
+    catch (std::filesystem::filesystem_error& e)
+    {
         LogError(std::format("creating directory: {0}" , e.what()));
         return false;
     }
 }
 
-bool UDirectory::Exists(const std::string&dirname) {
+bool UDirectory::Exists(const std::string& dirname)
+{
     return std::filesystem::is_directory(dirname);
 }
 
-bool UDirectory::Remove(const std::string&dir) {
-    try {
+bool UDirectory::Remove(const std::string& dir)
+{
+    try
+    {
         // 使用 std::filesystem::remove_all 删除目录及其所有内容
-        if (std::filesystem::remove_all(dir)) {
+        if (std::filesystem::remove_all(dir))
+        {
             return true;
         }
-        else {
+        else
+        {
             LogError("Failed to remove directory '{0}{1}", dir, "'.");
             return false;
         }
     }
-    catch (const std::filesystem::filesystem_error&e) {
+    catch (const std::filesystem::filesystem_error& e)
+    {
         LogError("Error occurred while removing directory: {0}", e.what());
         return false;
     }
 }
 
-std::vector<std::string> UDirectory::GetSubDirectories(const std::string&dirPath) {
+std::vector<std::string> UDirectory::GetSubDirectories(const std::string& dirPath)
+{
     std::filesystem::path path(dirPath);
     std::vector<std::string> directories;
-    for (const auto&entry: std::filesystem::directory_iterator(path)) {
-        if (std::filesystem::is_directory(entry)) {
+    for (const auto& entry : std::filesystem::directory_iterator(path))
+    {
+        if (std::filesystem::is_directory(entry))
+        {
             directories.push_back(entry.path().filename().string());
             // 递归获取子文件夹下的子文件夹
             // auto subdirectories = ListDirectories(entry);
@@ -69,67 +84,79 @@ std::vector<std::string> UDirectory::GetSubDirectories(const std::string&dirPath
     return directories;
 }
 
-std::string UEncrypt::ToMD5(const std::string&str) {
+std::string UEncrypt::ToMD5(const std::string& str)
+{
     unsigned char md[16];
-    MD5((const unsigned char *)str.c_str(), str.length(), md);
+    MD5((const unsigned char*)str.c_str(), str.length(), md);
     char buf[33] = {'\0'};
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 16; ++i)
+    {
         sprintf(buf + i * 2, "%02x", md[i]);
     }
     return std::string(buf);
 }
 
-std::string UEncrypt::GetMD5(const std::string&str) {
+std::string UEncrypt::GetMD5(const std::string& str)
+{
     unsigned char digest[MD5_DIGEST_LENGTH];
-    MD5((const unsigned char *)str.c_str(), str.size(), digest);
+    MD5((const unsigned char*)str.c_str(), str.size(), digest);
     char md5_str[2 * MD5_DIGEST_LENGTH + 1];
-    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+    for (int i = 0; i < MD5_DIGEST_LENGTH; i++)
+    {
         sprintf(md5_str + 2 * i, "%02x", digest[i]);
     }
     md5_str[2 * MD5_DIGEST_LENGTH] = '\0';
     return std::string(md5_str);
 }
 
-std::string UEncrypt::GetMD5(const void* data, std::size_t size) {
+std::string UEncrypt::GetMD5(const void* data, std::size_t size)
+{
     unsigned char digest[MD5_DIGEST_LENGTH];
-    MD5((const unsigned char *)data, size, digest);
+    MD5((const unsigned char*)data, size, digest);
     char md5_str[2 * MD5_DIGEST_LENGTH + 1];
-    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+    for (int i = 0; i < MD5_DIGEST_LENGTH; i++)
+    {
         sprintf(md5_str + 2 * i, "%02x", digest[i]);
     }
     md5_str[2 * MD5_DIGEST_LENGTH] = '\0';
     return std::string(md5_str);
 }
 
-std::string UEncrypt::md5(const std::string&data) {
+std::string UEncrypt::md5(const std::string& data)
+{
     unsigned char md[MD5_DIGEST_LENGTH];
-    MD5(reinterpret_cast<const unsigned char *>(data.data()), data.size(), md);
+    MD5(reinterpret_cast<const unsigned char*>(data.data()), data.size(), md);
 
     std::stringstream ss;
-    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i) {
+    for (int i = 0; i < MD5_DIGEST_LENGTH; ++i)
+    {
         ss << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(md[i]);
     }
     return ss.str();
 }
 
 int Utils::paCallback(const void* inputBuffer, void* outputBuffer, unsigned long framesPerBuffer,
-                      const PaStreamCallbackTimeInfo* timeInfo, PaStreamCallbackFlags statusFlags, void* userData) {
-    paUserData* data = (paUserData *)userData;
+                      const PaStreamCallbackTimeInfo* timeInfo, PaStreamCallbackFlags statusFlags, void* userData)
+{
+    paUserData* data = (paUserData*)userData;
     const float* in = data->data + data->position;
-    float* out = (float *)outputBuffer;
+    float* out = (float*)outputBuffer;
     int framesLeft = data->length - data->position;
     int framesToCopy = framesPerBuffer;
-    if (framesToCopy > framesLeft) {
+    if (framesToCopy > framesLeft)
+    {
         framesToCopy = framesLeft;
     }
-    for (int i = 0; i < framesToCopy; i++) {
+    for (int i = 0; i < framesToCopy; i++)
+    {
         out[i] = in[i];
     }
     data->position += framesToCopy;
     return framesToCopy < framesPerBuffer ? paComplete : paContinue;
 }
 
-std::string Utils::GetAbsolutePath(const std::string&relativePath) {
+std::string Utils::GetAbsolutePath(const std::string& relativePath)
+{
     // 将相对路径转换为std::filesystem::path类型的路径
     std::filesystem::path path(relativePath);
 
@@ -139,40 +166,49 @@ std::string Utils::GetAbsolutePath(const std::string&relativePath) {
     return absolutePath.generic_string();
 }
 
-std::string Utils::execAsync(const std::string&command) {
+std::string Utils::execAsync(const std::string& command)
+{
     // 异步执行命令并返回输出结果
-    std::future<std::string> resultFuture = std::async(std::launch::async, [&command]() {
+    std::future<std::string> resultFuture = std::async(std::launch::async, [&command]()
+    {
         return exec(command);
     });
     // 等待异步任务完成并返回结果
     return resultFuture.get();
 }
 
-std::string Utils::exec(const std::string&command) {
+std::string Utils::exec(const std::string& command)
+{
     std::string output;
     FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
+    if (!pipe)
+    {
         throw std::runtime_error("Error: Failed to execute command " + command);
     }
     char buffer[128];
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr)
+    {
         output += buffer;
     }
     int status = pclose(pipe);
-    if (status == -1) {
+    if (status == -1)
+    {
         throw std::runtime_error("Error: Failed to close pipe for command " + command);
     }
     return output;
 }
 
-void Utils::playAudioAsync(const std::string&filename, std::function<void()> callback) {
+void Utils::playAudioAsync(const std::string& filename, std::function<void()> callback)
+{
     // 异步执行音频播放
-    std::thread([&]() {
+    std::thread([&]()
+    {
         // 打开音频文件
         NoRecord = true;
         SF_INFO info;
         SNDFILE* file = sf_open("tmp.wav", SFM_READ, &info);
-        if (!file) {
+        if (!file)
+        {
             std::cerr << "Failed to open file: tmp.wav" << std::endl;
             return;
         }
@@ -187,7 +223,8 @@ void Utils::playAudioAsync(const std::string&filename, std::function<void()> cal
 
         // 初始化PortAudio
         PaError err = Pa_Initialize();
-        if (err != paNoError) {
+        if (err != paNoError)
+        {
             std::cerr << "Failed to initialize PortAudio: " << Pa_GetErrorText(err) << std::endl;
             delete[] data;
             return;
@@ -198,7 +235,8 @@ void Utils::playAudioAsync(const std::string&filename, std::function<void()> cal
         PaStream* stream;
         err = Pa_OpenDefaultStream(&stream, channels, channels, paFloat32, sampleRate, FRAMES_PER_BUFFER, paCallback,
                                    &userData);
-        if (err != paNoError) {
+        if (err != paNoError)
+        {
             std::cerr << "Failed to open audio stream: " << Pa_GetErrorText(err) << std::endl;
             delete[] data;
             Pa_Terminate();
@@ -207,7 +245,8 @@ void Utils::playAudioAsync(const std::string&filename, std::function<void()> cal
 
         // 开始播放音频
         err = Pa_StartStream(stream);
-        if (err != paNoError) {
+        if (err != paNoError)
+        {
             std::cerr << "Failed to start audio stream: " << Pa_GetErrorText(err) << std::endl;
             delete[] data;
             Pa_CloseStream(stream);
@@ -216,13 +255,15 @@ void Utils::playAudioAsync(const std::string&filename, std::function<void()> cal
         }
 
         // 等待音频播放完成
-        while (Pa_IsStreamActive(stream)) {
+        while (Pa_IsStreamActive(stream))
+        {
             Pa_Sleep(100);
         }
         NoRecord = false;
         // 关闭音频流并清理资源
         err = Pa_StopStream(stream);
-        if (err != paNoError) {
+        if (err != paNoError)
+        {
             std::cerr << "Failed to stop audio stream: " << Pa_GetErrorText(err) << std::endl;
         }
         Pa_CloseStream(stream);
@@ -230,17 +271,20 @@ void Utils::playAudioAsync(const std::string&filename, std::function<void()> cal
         delete[] data;
 
         // 调用回调函数
-        if (callback) {
+        if (callback)
+        {
             callback();
         }
     }).join();
 }
 
-void Utils::playAudio(const char* filename) {
+void Utils::playAudio(const char* filename)
+{
     // 打开音频文件
     SF_INFO info;
     SNDFILE* file = sf_open(filename, SFM_READ, &info);
-    if (!file) {
+    if (!file)
+    {
         std::cerr << "Failed to open file: " << filename << std::endl;
         return;
     }
@@ -256,7 +300,8 @@ void Utils::playAudio(const char* filename) {
     // 初始化PortAudio
 
     PaError err = Pa_Initialize();
-    if (err != paNoError) {
+    if (err != paNoError)
+    {
         std::cerr << "Failed to initialize PortAudio: " << Pa_GetErrorText(err) << std::endl;
         delete[] data;
         return;
@@ -267,7 +312,8 @@ void Utils::playAudio(const char* filename) {
     PaStream* stream;
     err = Pa_OpenDefaultStream(&stream, channels, channels, paFloat32, sampleRate, FRAMES_PER_BUFFER, paCallback,
                                &userData);
-    if (err != paNoError) {
+    if (err != paNoError)
+    {
         std::cerr << "Failed to open audio stream: " << Pa_GetErrorText(err) << std::endl;
         delete[] data;
         Pa_Terminate();
@@ -276,7 +322,8 @@ void Utils::playAudio(const char* filename) {
 
     // 开始播放音频
     err = Pa_StartStream(stream);
-    if (err != paNoError) {
+    if (err != paNoError)
+    {
         std::cerr << "Failed to start audio stream: " << Pa_GetErrorText(err) << std::endl;
         delete[] data;
         Pa_CloseStream(stream);
@@ -285,13 +332,15 @@ void Utils::playAudio(const char* filename) {
     }
 
     // 等待音频播放完毕
-    while (Pa_IsStreamActive(stream)) {
+    while (Pa_IsStreamActive(stream))
+    {
         Pa_Sleep(100);
     }
 
     // 停止音频流并清理资源
     err = Pa_StopStream(stream);
-    if (err != paNoError) {
+    if (err != paNoError)
+    {
         std::cerr << "Failed to stop audio stream: " << Pa_GetErrorText(err) << std::endl;
     }
     Pa_CloseStream(stream);
@@ -299,9 +348,11 @@ void Utils::playAudio(const char* filename) {
     delete[] data;
 }
 
-void Utils::SaveYaml(const std::string&filename, const YAML::Node&node) {
+void Utils::SaveYaml(const std::string& filename, const YAML::Node& node)
+{
     std::ofstream file(filename);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         throw std::runtime_error("LogError: Failed to open file " + filename);
         return;
     }
@@ -309,73 +360,72 @@ void Utils::SaveYaml(const std::string&filename, const YAML::Node&node) {
     file.close();
 }
 
-size_t Utils::write_callback(char* ptr, size_t size, size_t nmemb, void* userdata) {
+size_t Utils::write_callback(char* ptr, size_t size, size_t nmemb, void* userdata)
+{
     size_t realsize = size * nmemb;
-    std::string* response_data = (std::string *)userdata;
+    std::string* response_data = (std::string*)userdata;
     response_data->append(ptr, realsize);
     return realsize;
 }
 
-std::string Utils::GetErrorString(cpr::ErrorCode code) {
+std::string Utils::GetErrorString(cpr::ErrorCode code)
+{
     static const std::map<cpr::ErrorCode, std::string> error_map = {
         {cpr::ErrorCode::OK, "OK"},
-        {cpr::ErrorCode::CONNECTION_FAILURE, "CONNECTION_FAILURE"},
-        {cpr::ErrorCode::EMPTY_RESPONSE, "EMPTY_RESPONSE"},
-        {cpr::ErrorCode::HOST_RESOLUTION_FAILURE, "HOST_RESOLUTION_FAILURE"},
-        {cpr::ErrorCode::INTERNAL_ERROR, "INTERNAL_ERROR"},
-        {cpr::ErrorCode::INVALID_URL_FORMAT, "INVALID_URL_FORMAT"},
-        {cpr::ErrorCode::NETWORK_RECEIVE_ERROR, "NETWORK_RECEIVE_ERROR"},
-        {cpr::ErrorCode::NETWORK_SEND_FAILURE, "NETWORK_SEND_FAILURE"},
         {cpr::ErrorCode::OPERATION_TIMEDOUT, "OPERATION_TIMEDOUT"},
-        {cpr::ErrorCode::PROXY_RESOLUTION_FAILURE, "PROXY_RESOLUTION_FAILURE"},
         {cpr::ErrorCode::SSL_CONNECT_ERROR, "SSL_CONNECT_ERROR"},
-        {cpr::ErrorCode::SSL_LOCAL_CERTIFICATE_ERROR, "SSL_LOCAL_CERTIFICATE_ERROR"},
-        {cpr::ErrorCode::SSL_REMOTE_CERTIFICATE_ERROR, "SSL_REMOTE_CERTIFICATE_ERROR"},
-        {cpr::ErrorCode::SSL_CACERT_ERROR, "SSL_CACERT_ERROR"},
-        {cpr::ErrorCode::GENERIC_SSL_ERROR, "GENERIC_SSL_ERROR"},
         {cpr::ErrorCode::UNSUPPORTED_PROTOCOL, "UNSUPPORTED_PROTOCOL"},
-        {cpr::ErrorCode::REQUEST_CANCELLED, "REQUEST_CANCELLED"},
         {cpr::ErrorCode::TOO_MANY_REDIRECTS, "TOO_MANY_REDIRECTS"},
         {cpr::ErrorCode::UNKNOWN_ERROR, "UNKNOWN_ERROR"}
     };
 
     auto it = error_map.find(code);
-    if (it != error_map.end()) {
+    if (it != error_map.end())
+    {
         return it->second;
     }
-    else {
+    else
+    {
         return "UNKNOWN_ERROR";
     }
 }
 
-std::string Utils::GetLatestUrl(const std::string&url) {
+std::string Utils::GetLatestUrl(const std::string& url)
+{
     // 发送HTTP请求
     cpr::Response response = cpr::Get(cpr::Url{url});
 
     // 解析版本号和URL
     std::string tag, download_url;
-    if (response.status_code == 200) {
+    if (response.status_code == 200)
+    {
         size_t pos = response.text.find("\"tag_name\":");
-        if (pos != std::string::npos) {
+        if (pos != std::string::npos)
+        {
             pos += 11;
             size_t endpos = response.text.find_first_of(",\n", pos);
-            if (endpos != std::string::npos) {
+            if (endpos != std::string::npos)
+            {
                 tag = response.text.substr(pos, endpos - pos);
             }
-            else {
+            else
+            {
                 tag = response.text.substr(pos);
             }
             tag = tag.substr(1, tag.size() - 2);
         }
 
         pos = response.text.find("\"browser_download_url\":");
-        if (pos != std::string::npos) {
+        if (pos != std::string::npos)
+        {
             pos += 23;
             size_t endpos = response.text.find_first_of(",\n", pos);
-            if (endpos != std::string::npos) {
+            if (endpos != std::string::npos)
+            {
                 download_url = response.text.substr(pos, endpos - pos);
             }
-            else {
+            else
+            {
                 download_url = response.text.substr(pos);
             }
             download_url = download_url.substr(1, download_url.size() - 2);
@@ -383,32 +433,41 @@ std::string Utils::GetLatestUrl(const std::string&url) {
     }
 
     // 返回URL或者空字符串
-    if (!download_url.empty()) {
+    if (!download_url.empty())
+    {
         return download_url;
     }
-    else {
+    else
+    {
         return "";
     }
 }
 
-std::string Utils::GetFileName(const std::string&dir) {
+std::string Utils::GetFileName(const std::string& dir)
+{
     // 使用 C++17 标准库中的文件系统库
     std::filesystem::path path(dir);
     // 获取文件夹中最后一个文件名
     return path.filename().string();
 }
 
-std::future<bool> Utils::UDownloads(const std::map<std::string, std::string>&tasks, int num_threads) {
-    return std::async(std::launch::async, [tasks, num_threads]() {
+std::future<bool> Utils::UDownloads(const std::map<std::string, std::string>& tasks, int num_threads)
+{
+    return std::async(std::launch::async, [tasks, num_threads]()
+    {
         bool success = true;
         std::vector<std::future<bool>> futures;
-        for (const auto&url_file_pair: tasks) {
-            futures.push_back(std::async(std::launch::async, [url_file_pair, num_threads]() {
+        for (const auto& url_file_pair : tasks)
+        {
+            futures.push_back(std::async(std::launch::async, [url_file_pair, num_threads]()
+            {
                 return UDownload(url_file_pair, num_threads);
             }));
         }
-        for (auto&future: futures) {
-            if (!future.get()) {
+        for (auto& future : futures)
+        {
+            if (!future.get())
+            {
                 success = false;
             }
         }
@@ -416,11 +475,14 @@ std::future<bool> Utils::UDownloads(const std::map<std::string, std::string>&tas
     });
 }
 
-bool Utils::UDownload(const std::pair<std::string, std::string>&task, int num_threads) {
-    try {
+bool Utils::UDownload(const std::pair<std::string, std::string>& task, int num_threads)
+{
+    try
+    {
         // 获取文件大小
         auto head = cpr::Head(cpr::Url{task.first}, cpr::Redirect{true});
-        if (head.status_code != 200) {
+        if (head.status_code != 200)
+        {
             LogError("Downloading Error: Failed to get file size: " + head.error.message);
             return false;
         }
@@ -428,8 +490,9 @@ bool Utils::UDownload(const std::pair<std::string, std::string>&task, int num_th
         FileSize = file_size;
         // 判断是否支持分块下载
         bool support_range =
-                head.header.find("Accept-Ranges") != head.header.end() && head.header["Accept-Ranges"] == "bytes";
-        if (!support_range) {
+            head.header.find("Accept-Ranges") != head.header.end() && head.header["Accept-Ranges"] == "bytes";
+        if (!support_range)
+        {
             LogWarn("Downloading Warning: The server does not support range requests, cannot do"
                 "wnload in multiple threads.");
             num_threads = 1;
@@ -438,7 +501,8 @@ bool Utils::UDownload(const std::pair<std::string, std::string>&task, int num_th
         // 下载文件
         std::string file_path = task.second;
         std::ofstream file(file_path, std::ios::binary | std::ios::out);
-        if (!file.is_open()) {
+        if (!file.is_open())
+        {
             LogError("Downloading Error: Failed to open file " + file_path);
             return false;
         }
@@ -447,7 +511,8 @@ bool Utils::UDownload(const std::pair<std::string, std::string>&task, int num_th
         std::vector<std::thread> threads(num_threads);
         int block_size = ceil((double)file_size / num_threads);
 
-        for (int i = 0; i < num_threads; i++) {
+        for (int i = 0; i < num_threads; i++)
+        {
             int start = i * block_size;
             int end = min((i + 1) * block_size - 1, file_size - 1);
             threads[i] = std::thread(DownloadThread, task.first, file_path, start, end, i, std::ref(progress));
@@ -457,15 +522,17 @@ bool Utils::UDownload(const std::pair<std::string, std::string>&task, int num_th
         ProgressBar progressBar(file_size);
         LogInfo("Downloading {0} to {1} size:{2}", task.first, file_path, ProgressBar::formatSize(file_size));
         auto start_time = std::chrono::high_resolution_clock::now();
-        while (true) {
+        while (true)
+        {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             int total_progress = 0;
-            for (int i = 0; i < num_threads; i++) {
+            for (int i = 0; i < num_threads; i++)
+            {
                 total_progress += progress[i];
             }
             auto current_time = std::chrono::high_resolution_clock::now();
             double elapsed_time =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time).count() / 1000.0;
+                std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time).count() / 1000.0;
             double speed = total_progress / elapsed_time;
             double remaining_time = (file_size - total_progress) / speed;
             RemainingTime = remaining_time;
@@ -473,17 +540,20 @@ bool Utils::UDownload(const std::pair<std::string, std::string>&task, int num_th
             DownloadedSize = total_progress;
             DownloadProgress = total_progress / (double)file_size;
             progressBar.update(total_progress, "Downloaded " + ProgressBar::formatSize(total_progress) + " of " +
-                                               ProgressBar::formatSize(file_size) + " (" +
-                                               ProgressBar::formatTime(remaining_time) + " left)");
-            if (total_progress == file_size) {
+                               ProgressBar::formatSize(file_size) + " (" +
+                               ProgressBar::formatTime(remaining_time) + " left)");
+            if (total_progress == file_size)
+            {
                 break;
             }
         }
         progressBar.end();
-        for (int i = 0; i < num_threads; i++) {
+        for (int i = 0; i < num_threads; i++)
+        {
             threads[i].join();
         }
-        if (!CheckFileSize(file_path, file_size)) {
+        if (!CheckFileSize(file_path, file_size))
+        {
             LogFatal("Downloading Error: Failed to download file {0}", task.first);
             return false;
         }
@@ -491,24 +561,29 @@ bool Utils::UDownload(const std::pair<std::string, std::string>&task, int num_th
         LogInfo("Downloaded {0} to {1} successful!", task.first, file_path);
         return true;
     }
-    catch (const std::exception&e) {
+    catch (const std::exception& e)
+    {
         LogError("Exception in Download: " + std::string(e.what()));
         return false;
     }
 }
 
-bool Utils::DownloadThread(const std::string&url, const std::string&file_path, int start, int end, int id,
-                           std::vector<int>&progress) {
+bool Utils::DownloadThread(const std::string& url, const std::string& file_path, int start, int end, int id,
+                           std::vector<int>& progress)
+{
     // 设置请求头
     cpr::Header headers = {{"Range", "bytes=" + std::to_string(start) + "-" + std::to_string(end)}};
 
     // 发送请求
     int retry = 0;
-    while (retry < 3) {
+    while (retry < 3)
+    {
         auto response = cpr::Get(cpr::Url{url}, headers, cpr::VerifySsl{false}, cpr::Redirect{true});
-        if (response.status_code == 206) {
+        if (response.status_code == 206)
+        {
             std::ofstream file(file_path, std::ios::binary | std::ios::out | std::ios::in);
-            if (!file.is_open()) {
+            if (!file.is_open())
+            {
                 LogError("Downloading Error: Failed to open file " + file_path);
                 return false;
             }
@@ -524,28 +599,35 @@ bool Utils::DownloadThread(const std::string&url, const std::string&file_path, i
     return false;
 }
 
-bool Utils::CheckFileSize(const std::string&file_path, int expected_size) {
-    try {
+bool Utils::CheckFileSize(const std::string& file_path, int expected_size)
+{
+    try
+    {
         std::ifstream file(file_path, std::ios::binary | std::ios::ate);
-        if (!file.is_open()) {
+        if (!file.is_open())
+        {
             LogError("Failed to open file " + file_path);
             return false;
         }
         int file_size = file.tellg();
-        if (file_size != expected_size) {
+        if (file_size != expected_size)
+        {
             LogError("Downloaded file size does not match expected size.");
             return false;
         }
         return true;
     }
-    catch (const std::exception&e) {
+    catch (const std::exception& e)
+    {
         LogError("Exception in CheckFileSize: " + std::string(e.what()));
         return false;
     }
 }
 
-bool Utils::Decompress(std::string file, std::string path) {
-    if (path.empty()) {
+bool Utils::Decompress(std::string file, std::string path)
+{
+    if (path.empty())
+    {
         path = GetDirName(GetAbsolutePath(file));
     }
 
@@ -553,55 +635,79 @@ bool Utils::Decompress(std::string file, std::string path) {
     std::string ext = GetFileExt(file);
 
     // 根据扩展名调用相应的解压缩函数
-    if (ext == "7z") {
+    if (ext == "7z")
+    {
         return UCompression::Decompress7z(file, path);
     }
-    else if (ext == "zip") {
+    else if (ext == "zip")
+    {
         return UCompression::DecompressZip(file, path);
     }
-    else if (ext == "gz") {
+    else if (ext == "gz")
+    {
         return UCompression::DecompressGz(file, path);
     }
-    else if (ext == "xz") {
+    else if (ext == "xz")
+    {
         return UCompression::DecompressXz(file, path);
     }
-    else if (ext == "rar") {
+    else if (ext == "rar")
+    {
         return UCompression::DecompressRar(file, path);
     }
-    else {
+    else
+    {
         LogError("Unsupported file extension: {0}", ext);
         return false;
     }
 }
 
-std::string Utils::GetDirName(const std::string&dir) {
+void Utils::OpenURL(const std::string& url)
+{
+#ifdef WIN32
+    ExecuteShell("start " + url);
+#elif __APPLE__
+    ExecuteShell("open " + url);
+#elif __linux__
+    ExecuteShell("xdg-open " + url);
+#endif
+}
+
+std::string Utils::GetDirName(const std::string& dir)
+{
     std::filesystem::path path(dir);
     return path.parent_path().string() + "/";
 }
 
-std::string Utils::GetFileExt(std::string file) {
+std::string Utils::GetFileExt(std::string file)
+{
     // 获取文件名中最后一个'.'的位置
     size_t dotPos = file.find_last_of('.');
-    if (dotPos == std::string::npos) {
+    if (dotPos == std::string::npos)
+    {
         // 没有找到'.'，返回空字符串
         return "";
     }
-    else {
+    else
+    {
         // 返回'.'后面的字符串作为扩展名
         return file.substr(dotPos + 1);
     }
 }
 
-bool UCompression::Decompress7z(std::string file, std::string path) {
+bool UCompression::Decompress7z(std::string file, std::string path)
+{
     // 打开7z文件
     struct archive* a = archive_read_new();
-    if (!a) {
+    if (!a)
+    {
         LogError("Failed to create archive object");
         return false;
     }
     archive_read_support_format_7zip(a);
     int r = archive_read_open_filename(a, file.c_str(), 10240);
-    if (r != ARCHIVE_OK) {
+    if (r != ARCHIVE_OK)
+    {
         LogError("Failed to open 7z file: {0}", archive_error_string(a));
         archive_read_free(a);
         return false;
@@ -609,7 +715,8 @@ bool UCompression::Decompress7z(std::string file, std::string path) {
 
     // 解压缩7z文件中的每个文件
     struct archive_entry* entry;
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+    while (archive_read_next_header(a, &entry) == ARCHIVE_OK)
+    {
         std::string filename = archive_entry_pathname(entry);
         std::string outfile = path + filename;
         struct archive* ext = archive_write_disk_new();
@@ -617,7 +724,8 @@ bool UCompression::Decompress7z(std::string file, std::string path) {
         archive_write_disk_set_standard_lookup(ext);
         archive_entry_set_pathname(entry, outfile.c_str());
         r = archive_read_extract(a, entry, 0);
-        if (r != ARCHIVE_OK) {
+        if (r != ARCHIVE_OK)
+        {
             LogError("Failed to extract file from 7z archive: {0}", archive_error_string(a));
             archive_write_free(ext);
             archive_read_free(a);
@@ -635,16 +743,19 @@ bool UCompression::Decompress7z(std::string file, std::string path) {
 }
 
 // 解压缩zip文件
-bool UCompression::DecompressZip(std::string file, std::string path) {
+bool UCompression::DecompressZip(std::string file, std::string path)
+{
     // 打开zip文件
     struct archive* a = archive_read_new();
-    if (!a) {
+    if (!a)
+    {
         LogError("Failed to create archive object");
         return false;
     }
     archive_read_support_format_zip(a);
     int r = archive_read_open_filename(a, file.c_str(), 10240);
-    if (r != ARCHIVE_OK) {
+    if (r != ARCHIVE_OK)
+    {
         LogError("Failed to open zip file: {0}", archive_error_string(a));
         archive_read_free(a);
         return false;
@@ -652,7 +763,8 @@ bool UCompression::DecompressZip(std::string file, std::string path) {
 
     // 解压缩zip文件中的每个文件
     struct archive_entry* entry;
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+    while (archive_read_next_header(a, &entry) == ARCHIVE_OK)
+    {
         std::string filename = archive_entry_pathname(entry);
         std::string outfile = path + filename;
         struct archive* ext = archive_write_disk_new();
@@ -660,7 +772,8 @@ bool UCompression::DecompressZip(std::string file, std::string path) {
         archive_write_disk_set_standard_lookup(ext);
         archive_entry_set_pathname(entry, outfile.c_str());
         r = archive_read_extract(a, entry, 0);
-        if (r != ARCHIVE_OK) {
+        if (r != ARCHIVE_OK)
+        {
             LogError("Failed to extract file from zip archive: {0}", archive_error_string(a));
             archive_write_free(ext);
             archive_read_free(a);
@@ -678,17 +791,20 @@ bool UCompression::DecompressZip(std::string file, std::string path) {
 }
 
 // 解压缩gz文件
-bool UCompression::DecompressGz(std::string file, std::string path) {
+bool UCompression::DecompressGz(std::string file, std::string path)
+{
     // 打开tar.gz文件
     struct archive* a = archive_read_new();
-    if (!a) {
+    if (!a)
+    {
         LogError("Failed to create archive object");
         return false;
     }
     archive_read_support_filter_gzip(a);
     archive_read_support_format_tar(a);
     int r = archive_read_open_filename(a, file.c_str(), 10240);
-    if (r != ARCHIVE_OK) {
+    if (r != ARCHIVE_OK)
+    {
         LogError("Failed to open tar.gz file: {0}", archive_error_string(a));
         archive_read_free(a);
         return false;
@@ -696,7 +812,8 @@ bool UCompression::DecompressGz(std::string file, std::string path) {
 
     // 解压缩tar.gz文件中的每个文件
     struct archive_entry* entry;
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+    while (archive_read_next_header(a, &entry) == ARCHIVE_OK)
+    {
         std::string filename = archive_entry_pathname(entry);
         std::string outfile = path + filename;
         struct archive* ext = archive_write_disk_new();
@@ -704,7 +821,8 @@ bool UCompression::DecompressGz(std::string file, std::string path) {
         archive_write_disk_set_standard_lookup(ext);
         archive_entry_set_pathname(entry, outfile.c_str());
         r = archive_read_extract(a, entry, 0);
-        if (r != ARCHIVE_OK) {
+        if (r != ARCHIVE_OK)
+        {
             LogError("Failed to extract file from tar.gz archive: {0}", archive_error_string(a));
             archive_write_free(ext);
             archive_read_free(a);
@@ -722,17 +840,20 @@ bool UCompression::DecompressGz(std::string file, std::string path) {
 }
 
 // 解压缩xz文件
-bool UCompression::DecompressXz(std::string file, std::string path) {
+bool UCompression::DecompressXz(std::string file, std::string path)
+{
     // 打开tar.xz文件
     struct archive* a = archive_read_new();
-    if (!a) {
+    if (!a)
+    {
         LogError("Failed to create archive object");
         return false;
     }
     archive_read_support_filter_xz(a);
     archive_read_support_format_tar(a);
     int r = archive_read_open_filename(a, file.c_str(), 10240);
-    if (r != ARCHIVE_OK) {
+    if (r != ARCHIVE_OK)
+    {
         LogError("Failed to open tar.xz file: {0}", archive_error_string(a));
         archive_read_free(a);
         return false;
@@ -740,7 +861,8 @@ bool UCompression::DecompressXz(std::string file, std::string path) {
 
     // 解压缩tar.xz文件中的每个文件
     struct archive_entry* entry;
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+    while (archive_read_next_header(a, &entry) == ARCHIVE_OK)
+    {
         std::string filename = archive_entry_pathname(entry);
         std::string outfile = path + filename;
         struct archive* ext = archive_write_disk_new();
@@ -748,7 +870,8 @@ bool UCompression::DecompressXz(std::string file, std::string path) {
         archive_write_disk_set_standard_lookup(ext);
         archive_entry_set_pathname(entry, outfile.c_str());
         r = archive_read_extract(a, entry, 0);
-        if (r != ARCHIVE_OK) {
+        if (r != ARCHIVE_OK)
+        {
             LogError("Failed to extract file from tar.xz archive: {0}", archive_error_string(a));
             archive_write_free(ext);
             archive_read_free(a);
@@ -765,16 +888,19 @@ bool UCompression::DecompressXz(std::string file, std::string path) {
     return true;
 }
 
-bool UCompression::DecompressRar(std::string file, std::string path) {
+bool UCompression::DecompressRar(std::string file, std::string path)
+{
     // 打开RAR文件
     struct archive* a = archive_read_new();
-    if (!a) {
+    if (!a)
+    {
         LogError("Failed to create archive object");
         return false;
     }
     archive_read_support_format_rar(a);
     int r = archive_read_open_filename(a, file.c_str(), 10240);
-    if (r != ARCHIVE_OK) {
+    if (r != ARCHIVE_OK)
+    {
         LogError("Failed to open RAR file: {0}", archive_error_string(a));
         archive_read_free(a);
         return false;
@@ -782,7 +908,8 @@ bool UCompression::DecompressRar(std::string file, std::string path) {
 
     // 解压缩RAR文件中的每个文件
     struct archive_entry* entry;
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+    while (archive_read_next_header(a, &entry) == ARCHIVE_OK)
+    {
         std::string filename = archive_entry_pathname(entry);
         std::string outfile = path + filename;
         struct archive* ext = archive_write_disk_new();
@@ -790,7 +917,8 @@ bool UCompression::DecompressRar(std::string file, std::string path) {
         archive_write_disk_set_standard_lookup(ext);
         archive_entry_set_pathname(entry, outfile.c_str());
         r = archive_read_extract(a, entry, 0);
-        if (r != ARCHIVE_OK) {
+        if (r != ARCHIVE_OK)
+        {
             LogError("Failed to extract file from RAR archive: {0}", archive_error_string(a));
             archive_write_free(ext);
             archive_read_free(a);
@@ -807,25 +935,31 @@ bool UCompression::DecompressRar(std::string file, std::string path) {
     return true;
 }
 
-std::vector<std::string> Utils::GetDirectories(const std::string&path) {
+std::vector<std::string> Utils::GetDirectories(const std::string& path)
+{
     std::vector<std::string> dirs;
     dirs.push_back("empty");
-    for (auto&entry: std::filesystem::directory_iterator(path)) {
-        if (entry.is_directory()) {
+    for (auto& entry : std::filesystem::directory_iterator(path))
+    {
+        if (entry.is_directory())
+        {
             dirs.push_back(GetAbsolutePath(entry.path().string()));
         }
     }
     return dirs;
 }
 
-std::vector<std::string> Utils::GetAllCodesFromText(const std::string&text) {
+std::vector<std::string> Utils::GetAllCodesFromText(const std::string& text)
+{
     std::regex codeRegex("`{3}([\\s\\S]*?)`{3}");
     std::vector<std::string> codeStrings;
     std::smatch matchResult;
     std::string::const_iterator searchStart(text.cbegin());
-    while (std::regex_search(searchStart, text.cend(), matchResult, codeRegex)) {
+    while (std::regex_search(searchStart, text.cend(), matchResult, codeRegex))
+    {
         searchStart = matchResult.suffix().first;
-        if (matchResult.size() >= 2) {
+        if (matchResult.size() >= 2)
+        {
             std::string codeString = matchResult[1].str();
             codeStrings.push_back(codeString);
         }
@@ -834,13 +968,15 @@ std::vector<std::string> Utils::GetAllCodesFromText(const std::string&text) {
     return codeStrings;
 }
 
-std::string Utils::ExtractNormalText(const std::string&text) {
+std::string Utils::ExtractNormalText(const std::string& text)
+{
     std::regex codeRegex("```[^`]*?\\n([\\s\\S]*?)\\n```"); // 匹配代码块
     std::string normalText = text;
     std::sregex_iterator codeBlockIterator(text.cbegin(), text.cend(), codeRegex);
     std::sregex_iterator endIterator;
 
-    for (auto it = codeBlockIterator; it != endIterator; ++it) {
+    for (auto it = codeBlockIterator; it != endIterator; ++it)
+    {
         std::string codeBlock = it->str();
         std::size_t position = normalText.find(codeBlock);
         if (position != std::string::npos) // 如果找到匹配的代码块，则将其替换为普通文本
@@ -852,24 +988,32 @@ std::string Utils::ExtractNormalText(const std::string&text) {
     return normalText;
 }
 
-std::wstring Utils::Unicode2String(const std::string&str) {
+std::wstring Utils::Unicode2String(const std::string& str)
+{
     std::wstring result;
-    for (size_t i = 0; i < str.size(); i++) {
-        if (str[i] == '\\' && i + 5 < str.size() && str[i + 1] == 'u') {
+    for (size_t i = 0; i < str.size(); i++)
+    {
+        if (str[i] == '\\' && i + 5 < str.size() && str[i + 1] == 'u')
+        {
             // Found a Unicode escape sequence
             wchar_t code_point = 0;
-            for (size_t j = 0; j < 4; j++) {
+            for (size_t j = 0; j < 4; j++)
+            {
                 char hex_digit = str[i + 2 + j];
-                if (hex_digit >= '0' && hex_digit <= '9') {
+                if (hex_digit >= '0' && hex_digit <= '9')
+                {
                     code_point = (code_point << 4) | (hex_digit - '0');
                 }
-                else if (hex_digit >= 'a' && hex_digit <= 'f') {
+                else if (hex_digit >= 'a' && hex_digit <= 'f')
+                {
                     code_point = (code_point << 4) | (hex_digit - 'a' + 10);
                 }
-                else if (hex_digit >= 'A' && hex_digit <= 'F') {
+                else if (hex_digit >= 'A' && hex_digit <= 'F')
+                {
                     code_point = (code_point << 4) | (hex_digit - 'A' + 10);
                 }
-                else {
+                else
+                {
                     // Invalid hex digit
                     return L"";
                 }
@@ -877,16 +1021,19 @@ std::wstring Utils::Unicode2String(const std::string&str) {
             result += code_point;
             i += 5;
         }
-        else {
+        else
+        {
             result += str[i];
         }
     }
     return result;
 }
 
-std::string Utils::ReadFile(const std::string&filename) {
+std::string Utils::ReadFile(const std::string& filename)
+{
     std::ifstream file(filename);
-    if (!file.is_open()) {
+    if (!file.is_open())
+    {
         // Failed to open file
         return "";
     }
@@ -900,8 +1047,10 @@ std::string Utils::ReadFile(const std::string&filename) {
 
 #include <windows.h>
 
-void Utils::OpenProgram(const char* path) {
-    std::thread worker([=]() {
+void Utils::OpenProgram(const char* path)
+{
+    std::thread worker([=]()
+    {
         STARTUPINFO si{};
         PROCESS_INFORMATION pi{};
 
@@ -914,12 +1063,14 @@ void Utils::OpenProgram(const char* path) {
         HANDLE g_hChildStd_OUT_Rd = nullptr;
         HANDLE g_hChildStd_OUT_Wr = nullptr;
 
-        if (!CreatePipe(&g_hChildStd_OUT_Rd, &g_hChildStd_OUT_Wr, &sa, 0)) {
+        if (!CreatePipe(&g_hChildStd_OUT_Rd, &g_hChildStd_OUT_Wr, &sa, 0))
+        {
             std::cerr << "Failed to create output pipe" << std::endl;
             return;
         }
 
-        if (!CreatePipe(&g_hChildStd_IN_Rd, &g_hChildStd_IN_Wr, &sa, 0)) {
+        if (!CreatePipe(&g_hChildStd_IN_Rd, &g_hChildStd_IN_Wr, &sa, 0))
+        {
             std::cerr << "Failed to create input pipe" << std::endl;
             return;
         }
@@ -932,8 +1083,9 @@ void Utils::OpenProgram(const char* path) {
 
         std::string cmdLine = path;
         if (!CreateProcess(nullptr,
-                           const_cast<char *>(cmdLine.c_str()),
-                           nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi)) {
+                           const_cast<char*>(cmdLine.c_str()),
+                           nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi))
+        {
             std::cerr << "Failed to open process" << std::endl;
             return;
         }
@@ -958,7 +1110,8 @@ void Utils::OpenProgram(const char* path) {
 void Utils::OpenProgram(const char *path){}
 #endif
 
-std::string Utils::GetPlatform() {
+std::string Utils::GetPlatform()
+{
 #if defined(_WIN32) || defined(_WIN64)
     return "Windows";
 #elif defined(__linux__)
@@ -974,7 +1127,8 @@ std::string Utils::GetPlatform() {
 #endif
 }
 
-int Utils::WStringSize(const std::string&str) {
+int Utils::WStringSize(const std::string& str)
+{
     // Convert UTF-8 std::string to std::wstring
     static std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
     std::wstring wideStr = converter.from_bytes(str);
@@ -983,7 +1137,8 @@ int Utils::WStringSize(const std::string&str) {
     return static_cast<int>(wideStr.size());
 }
 
-std::string Utils::WStringInsert(const std::string&str, int pos, const std::string&insertStr) {
+std::string Utils::WStringInsert(const std::string& str, int pos, const std::string& insertStr)
+{
     static std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
     std::wstring wideStr = converter.from_bytes(str);
 
@@ -994,20 +1149,23 @@ std::string Utils::WStringInsert(const std::string&str, int pos, const std::stri
     return converter.to_bytes(wideStr);
 }
 
-std::string StringExecutor::_Markdown(const std::string&text) {
+std::string StringExecutor::_Markdown(const std::string& text)
+{
     static std::regex pattern(R"(```([\s\S]*?)```)", std::regex::icase); // 使用 [\s\S] 匹配任意字符
     std::string result;
     std::smatch match;
     std::string::const_iterator searchStart(text.cbegin());
 
     // 提取所有代码块内容
-    while (std::regex_search(searchStart, text.cend(), match, pattern)) {
+    while (std::regex_search(searchStart, text.cend(), match, pattern))
+    {
         result += match[1].str(); // 提取代码块内容
         searchStart = match.suffix().first; // 移动到匹配结果之后的位置
     }
 
     // 如果没有找到代码块，返回原始文本
-    if (result.empty()) {
+    if (result.empty())
+    {
         return text;
     }
 
@@ -1015,7 +1173,8 @@ std::string StringExecutor::_Markdown(const std::string&text) {
 }
 
 
-void StringExecutor::_WriteToFile(std::string filename, const std::string&content) {
+void StringExecutor::_WriteToFile(std::string filename, const std::string& content)
+{
     static std::regex newline_pattern("\n");
 
     // 替换换行符为空字符串
@@ -1024,21 +1183,25 @@ void StringExecutor::_WriteToFile(std::string filename, const std::string&conten
     if (!fileParent.empty())
         UDirectory::CreateDirIfNotExists(fileParent);
     std::ofstream outfile(filename, ios::trunc);
-    if (outfile.is_open()) {
+    if (outfile.is_open())
+    {
         outfile << content;
         outfile.close();
         LogInfo("数据已保存到文件 {0}", filename);
     }
-    else {
+    else
+    {
         LogError("无法打开文件 {0}", filename);
     }
 }
 
-std::string StringExecutor::AutoExecute(const std::string&text, const std::shared_ptr<ChatBot>&bot) {
+std::string StringExecutor::AutoExecute(const std::string& text, const std::shared_ptr<ChatBot>& bot)
+{
     return Python(CMD(File(Process(PreProcess(text, bot)))));
 }
 
-std::string StringExecutor::CMD(const std::string&text) {
+std::string StringExecutor::CMD(const std::string& text)
+{
     static std::regex pattern(R"(\[Command\]([\x01-\xFF]*?)\[Command\])", std::regex::icase);
     std::vector<std::string> commands;
     std::smatch match;
@@ -1047,14 +1210,16 @@ std::string StringExecutor::CMD(const std::string&text) {
     auto words_begin = std::sregex_iterator(text.begin(), text.end(), pattern);
     auto words_end = std::sregex_iterator();
 
-    for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
+    for (std::sregex_iterator i = words_begin; i != words_end; ++i)
+    {
         match = *i;
         commands.push_back(match[1].str());
     }
 
     // 依次执行命令并替换原始命令
     std::string replacedAnswer = text;
-    for (const auto&command: commands) {
+    for (const auto& command : commands)
+    {
         std::string processedCommand = _Markdown(command);
         std::string result = Utils::exec(processedCommand);
         replacedAnswer = std::regex_replace(replacedAnswer, pattern, result,
@@ -1064,17 +1229,20 @@ std::string StringExecutor::CMD(const std::string&text) {
     return replacedAnswer;
 }
 
-std::string StringExecutor::File(const std::string&text) {
+std::string StringExecutor::File(const std::string& text)
+{
     static std::regex pattern1(R"(\[File\]([\x01-\xFF]*?)\[File\])");
     static std::regex pattern2(R"(\[Path\]([\x01-\xFF]*?)\[Path\])");
     static std::regex pattern3(R"(\[Content\]([\x01-\xFF]*?)\[Content\])");
 
     std::string replacedAnswer = text;
 
-    try {
+    try
+    {
         auto file_begin = std::sregex_iterator(text.begin(), text.end(), pattern1);
         auto file_end = std::sregex_iterator();
-        for (std::sregex_iterator file_iter = file_begin; file_iter != file_end; ++file_iter) {
+        for (std::sregex_iterator file_iter = file_begin; file_iter != file_end; ++file_iter)
+        {
             std::string fileContent = file_iter->str();
 
             // 匹配路径和内容
@@ -1083,23 +1251,28 @@ std::string StringExecutor::File(const std::string&text) {
 
             auto path_begin = std::sregex_iterator(fileContent.begin(), fileContent.end(), pattern2);
             auto path_end = std::sregex_iterator();
-            for (std::sregex_iterator path_iter = path_begin; path_iter != path_end; ++path_iter) {
+            for (std::sregex_iterator path_iter = path_begin; path_iter != path_end; ++path_iter)
+            {
                 paths.push_back(path_iter->str(1)); // 捕获路径
             }
 
             auto content_begin = std::sregex_iterator(fileContent.begin(), fileContent.end(), pattern3);
             auto content_end = std::sregex_iterator();
-            for (std::sregex_iterator content_iter = content_begin; content_iter != content_end; ++content_iter) {
+            for (std::sregex_iterator content_iter = content_begin; content_iter != content_end; ++content_iter)
+            {
                 contents.push_back(content_iter->str(1)); // 捕获内容
             }
 
             // 确保路径和内容一一对应
-            if (paths.size() == contents.size()) {
-                for (size_t i = 0; i < paths.size(); ++i) {
+            if (paths.size() == contents.size())
+            {
+                for (size_t i = 0; i < paths.size(); ++i)
+                {
                     _WriteToFile(paths[i], contents[i]); // 写入文件
                 }
             }
-            else {
+            else
+            {
                 LogError("Mismatch between paths and contents count");
             }
 
@@ -1107,7 +1280,8 @@ std::string StringExecutor::File(const std::string&text) {
             replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "", std::regex_constants::format_first_only);
         }
     }
-    catch (const std::exception&e) {
+    catch (const std::exception& e)
+    {
         LogError("Error: {0}", e.what());
     }
 
@@ -1115,26 +1289,31 @@ std::string StringExecutor::File(const std::string&text) {
 }
 
 
-std::string StringExecutor::Python(const std::string&text) {
+std::string StringExecutor::Python(const std::string& text)
+{
     static std::regex pattern(R"(\[Python\]([\x01-\xFF]*?)\[Python\])", std::regex::icase);
     static std::string tmpPythonPath = "Runtime/pythons/";
     static int num = 0;
-    if (num == 0) {
+    if (num == 0)
+    {
         if (UDirectory::Exists(tmpPythonPath))
             UDirectory::Remove(tmpPythonPath);
     }
     std::string replacedAnswer = text;
     std::smatch match;
     std::vector<std::string> pythonMatches;
-    try {
+    try
+    {
         auto python_begin = std::sregex_iterator(text.begin(), text.end(), pattern);
         auto python_end = std::sregex_iterator();
-        for (std::sregex_iterator i = python_begin; i != python_end; ++i) {
+        for (std::sregex_iterator i = python_begin; i != python_end; ++i)
+        {
             match = *i;
             pythonMatches.push_back(match[1].str());
         }
 
-        for (const auto&pythonMatch: pythonMatches) {
+        for (const auto& pythonMatch : pythonMatches)
+        {
             std::string processedPy = _Markdown(pythonMatch);
             std::string pyPath = tmpPythonPath + std::format("temp_{0}.py", num++);
             _WriteToFile(pyPath, processedPy);
@@ -1143,13 +1322,15 @@ std::string StringExecutor::Python(const std::string&text) {
                                                 std::regex_constants::format_first_only);
         }
     }
-    catch (const std::exception&e) {
+    catch (const std::exception& e)
+    {
         LogError("Error: {0}", e.what());
     }
     return replacedAnswer;
 }
 
-std::string StringExecutor::Process(const std::string&text) {
+std::string StringExecutor::Process(const std::string& text)
+{
     static std::regex pattern1(R"(\[Process\]([\x01-\xFF]*?)\[Process\])");
     static std::regex pattern2(R"(\[Output\]([\x01-\xFF]*?)\[Output\])");
     static std::regex pythonPattern(R"(\[Python\]([\x01-\xFF]*?)\[Python\])");
@@ -1157,31 +1338,36 @@ std::string StringExecutor::Process(const std::string&text) {
     std::smatch match;
 
 
-    try {
+    try
+    {
         auto process_begin = std::sregex_iterator(text.begin(), text.end(), pattern1);
         auto process_end = std::sregex_iterator();
 
-        for (std::sregex_iterator i = process_begin; i != process_end; ++i) {
+        for (std::sregex_iterator i = process_begin; i != process_end; ++i)
+        {
             match = *i;
             std::string processBlock = match[1].str();
 
             // 查找所有的 Output
             std::vector<std::string> outputs;
             auto output_begin = std::sregex_iterator(processBlock.begin(), processBlock.end(), pattern2);
-            for (std::sregex_iterator j = output_begin; j != std::sregex_iterator(); ++j) {
+            for (std::sregex_iterator j = output_begin; j != std::sregex_iterator(); ++j)
+            {
                 outputs.push_back(j->str(1));
             }
 
             // 查找所有的 Python 代码
             std::vector<std::string> pythonCommands;
             auto python_begin = std::sregex_iterator(processBlock.begin(), processBlock.end(), pythonPattern);
-            for (std::sregex_iterator j = python_begin; j != std::sregex_iterator(); ++j) {
+            for (std::sregex_iterator j = python_begin; j != std::sregex_iterator(); ++j)
+            {
                 pythonCommands.push_back(j->str(0));
             }
 
             // 确保每个 Output 和 Python 代码一一对应
             size_t count = min(outputs.size(), pythonCommands.size());
-            for (size_t k = 0; k < count; ++k) {
+            for (size_t k = 0; k < count; ++k)
+            {
                 // 执行 Python 命令并获取结果
                 auto res = Python(pythonCommands[k]);
                 // 将结果写入相应的文件
@@ -1192,21 +1378,25 @@ std::string StringExecutor::Process(const std::string&text) {
             replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "", std::regex_constants::format_first_only);
         }
     }
-    catch (const std::exception&e) {
+    catch (const std::exception& e)
+    {
         LogError("Error: {0}", e.what());
     }
 
     return replacedAnswer;
 }
 
-std::string StringExecutor::PreProcess(const std::string&text, const std::shared_ptr<ChatBot>&bot) {
+std::string StringExecutor::PreProcess(const std::string& text, const std::shared_ptr<ChatBot>& bot)
+{
     static std::regex pattern(R"(\[Reading\]([\x01-\xFF]*?)\[Reading\])");
     std::string replacedAnswer = text;
     std::smatch match;
-    try {
+    try
+    {
         auto reading_begin = std::sregex_iterator(text.begin(), text.end(), pattern);
         auto reading_end = std::sregex_iterator();
-        for (std::sregex_iterator i = reading_begin; i != reading_end; ++i) {
+        for (std::sregex_iterator i = reading_begin; i != reading_end; ++i)
+        {
             match = *i;
             std::string processedReading = _Markdown(match[1].str());
             auto res = Python(processedReading);
@@ -1215,23 +1405,27 @@ std::string StringExecutor::PreProcess(const std::string&text, const std::shared
             replacedAnswer = bot->Submit(replacedAnswer);
         }
     }
-    catch (const std::exception&e) {
+    catch (const std::exception& e)
+    {
         LogError("Error: {0}", e.what());
     }
     return replacedAnswer;
 }
 
 
-void UImage::Base64ToImage(const std::string&str_base64, const std::string&dstPath) {
+void UImage::Base64ToImage(const std::string& str_base64, const std::string& dstPath)
+{
     std::ofstream out(dstPath, std::ios::binary);
     std::vector<unsigned char> image_data = Utils::Str2VUChar(base64_decode(str_base64));
-    out.write(reinterpret_cast<const char *>(image_data.data()), image_data.size());
+    out.write(reinterpret_cast<const char*>(image_data.data()), image_data.size());
     out.close();
 }
 
-GLuint UImage::Base64ToTextureFromPath(const std::string&imgPath) {
+GLuint UImage::Base64ToTextureFromPath(const std::string& imgPath)
+{
     std::ifstream in(imgPath);
-    if (!in) {
+    if (!in)
+    {
         std::cerr << "Failed to open file: " << imgPath << std::endl;
         return 0;
     }
@@ -1243,12 +1437,14 @@ GLuint UImage::Base64ToTextureFromPath(const std::string&imgPath) {
     return Base64ToTexture(base64Str);
 }
 
-GLuint UImage::Base64ToTexture(const std::string&base64_str) {
+GLuint UImage::Base64ToTexture(const std::string& base64_str)
+{
     std::vector<unsigned char> image_decode = Utils::Str2VUChar(base64_decode(base64_str));
     int width, height, channels;
     unsigned char* pixels = stbi_load_from_memory(image_decode.data(), static_cast<int>(image_decode.size()), &width,
                                                   &height, &channels, 0);
-    if (!pixels) {
+    if (!pixels)
+    {
         LogError("Failed to load image from base64 data");
         return 0;
     }
@@ -1259,9 +1455,11 @@ GLuint UImage::Base64ToTexture(const std::string&base64_str) {
     return texture_id;
 }
 
-std::string UImage::Img2Base64(const std::string&path) {
+std::string UImage::Img2Base64(const std::string& path)
+{
     std::ifstream fin(path, std::ios::binary);
-    if (!fin) {
+    if (!fin)
+    {
         LogError("Failed to open file: {}", path);
         return "";
     }
@@ -1273,16 +1471,19 @@ std::string UImage::Img2Base64(const std::string&path) {
     std::vector<char> buffer(file_size);
     fin.read(buffer.data(), file_size);
 
-    return base64_encode(reinterpret_cast<const unsigned char *>(buffer.data()), buffer.size());
+    return base64_encode(reinterpret_cast<const unsigned char*>(buffer.data()), buffer.size());
 }
 
-GLuint UImage::Img2Texture(const std::string&imgPath) {
+GLuint UImage::Img2Texture(const std::string& imgPath)
+{
     auto metaPath = imgPath + ".meta";
     std::optional<GLuint> texture_id;
-    if (!UFile::Exists(metaPath)) {
+    if (!UFile::Exists(metaPath))
+    {
         int width, height, channels;
         unsigned char* pixels = stbi_load(imgPath.c_str(), &width, &height, &channels, 0);
-        if (!pixels) {
+        if (!pixels)
+        {
             LogError("Failed to load image from path: {0}", imgPath);
             return 0;
         }
@@ -1290,17 +1491,21 @@ GLuint UImage::Img2Texture(const std::string&imgPath) {
         Meta meta;
         GLuint imageFormat;
         //根据颜色通道数，判断颜色格式。
-        switch (channels) {
-            case 1: {
+        switch (channels)
+        {
+        case 1:
+            {
                 imageFormat = GL_ALPHA;
                 break;
             }
-            case 3: {
+        case 3:
+            {
                 imageFormat = GL_RGB;
                 meta.TextureFormat = GL_COMPRESSED_RGB_S3TC_DXT1_EXT;
                 break;
             }
-            case 4: {
+        case 4:
+            {
                 imageFormat = GL_RGBA;
                 meta.TextureFormat = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
                 break;
@@ -1342,12 +1547,13 @@ GLuint UImage::Img2Texture(const std::string&imgPath) {
         meta.TextureFormat = compress_format;
         meta.CompressSize = compress_size;
 
-        output_file_stream.write((char *)&meta, sizeof(Meta));
-        output_file_stream.write((char *)img, compress_size);
+        output_file_stream.write((char*)&meta, sizeof(Meta));
+        output_file_stream.write((char*)img, compress_size);
         output_file_stream.close();
         stbi_image_free(pixels);
     }
-    else {
+    else
+    {
         return LoadFromMeta(metaPath);
     }
 
@@ -1355,7 +1561,8 @@ GLuint UImage::Img2Texture(const std::string&imgPath) {
 }
 
 GLuint UImage::CreateGLTexture(const unsigned char* image_data, int width, int height, int channels, int newWidth,
-                               int newHeight) {
+                               int newHeight)
+{
     GLuint texture_id;
     glGenTextures(1, &texture_id);
     glBindTexture(GL_TEXTURE_2D, texture_id);
@@ -1371,12 +1578,14 @@ GLuint UImage::CreateGLTexture(const unsigned char* image_data, int width, int h
     return texture_id;
 }
 
-void UImage::ImgResize(const std::string&base64_str, float scale, const std::string&path) {
+void UImage::ImgResize(const std::string& base64_str, float scale, const std::string& path)
+{
     std::vector<unsigned char> image_decode = Utils::Str2VUChar(base64_decode(base64_str));
     int width, height, channels;
     unsigned char* pixels = stbi_load_from_memory(image_decode.data(), static_cast<int>(image_decode.size()), &width,
                                                   &height, &channels, 0);
-    if (!pixels) {
+    if (!pixels)
+    {
         LogError("Failed to load image from path: {0}", path);
         return;
     }
@@ -1394,17 +1603,18 @@ void UImage::ImgResize(const std::string&base64_str, float scale, const std::str
     delete[] resized_data;
 }
 
-GLuint UImage::LoadFromMeta(const std::string&filename) {
+GLuint UImage::LoadFromMeta(const std::string& filename)
+{
     Meta* texture2d = new Meta();
     GLuint textureID;
 
     //读取 cpt 压缩纹理文件
     std::ifstream ifs(filename, std::ios::in | std::ios::binary);
     Meta meta;
-    ifs.read((char *)&meta, sizeof(Meta));
+    ifs.read((char*)&meta, sizeof(Meta));
 
-    unsigned char* data = (unsigned char *)malloc(meta.CompressSize);
-    ifs.read((char *)data, meta.CompressSize);
+    unsigned char* data = (unsigned char*)malloc(meta.CompressSize);
+    ifs.read((char*)data, meta.CompressSize);
     ifs.close();
 
     texture2d->TextureFormat = meta.TextureFormat;
@@ -1416,7 +1626,8 @@ GLuint UImage::LoadFromMeta(const std::string&filename) {
     glGenTextures(1, &(textureID));
 
     //2. 将纹理绑定到特定纹理目标;
-    glBindTexture(GL_TEXTURE_2D, textureID); {
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    {
         //3. 将压缩纹理数据上传到GPU;
         glCompressedTexImage2D(GL_TEXTURE_2D, 0, texture2d->TextureFormat, texture2d->Width, texture2d->Height,
                                0, meta.CompressSize, data);
@@ -1431,7 +1642,8 @@ GLuint UImage::LoadFromMeta(const std::string&filename) {
     return textureID;
 }
 
-GLuint UImage::CreateGLTexture(const unsigned char* image_data, int width, int height, int channels) {
+GLuint UImage::CreateGLTexture(const unsigned char* image_data, int width, int height, int channels)
+{
     GLuint texture_id;
     glGenTextures(1, &texture_id);
     glBindTexture(GL_TEXTURE_2D, texture_id);

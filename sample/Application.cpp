@@ -35,7 +35,7 @@ Application::Application(const Configure& configure, bool setting)
             OnlySetting = true;
             state = State::NO_BOT_KEY;
         }
-        else if (configure.grok.enable && configure.gptLike.api_key.empty())
+        else if (configure.grok.enable && configure.grok.api_key.empty())
         {
             OnlySetting = true;
             state = State::NO_BOT_KEY;
@@ -101,6 +101,8 @@ Application::Application(const Configure& configure, bool setting)
         text_buffers.emplace_back("proxy");
         text_buffers.emplace_back("api");
         text_buffers.emplace_back("lan");
+        text_buffers.emplace_back("role");
+        text_buffers.emplace_back("live2d");
     }
     catch (exception& e)
     {
@@ -967,7 +969,7 @@ void Application::RenderConfigBox()
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground);
 
     // 显示 ChatBot 配置
-    if (ImGui::CollapsingHeader("ChatBot"))
+    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"对话功能")))
     {
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用Claude (实验性功能)"), &configure.claude.enable);
         if (configure.claude.enable)
@@ -1058,7 +1060,7 @@ void Application::RenderConfigBox()
                 configure.openAi.model = GetBufferByName("model").buffer;
             }
             ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用远程代理"), &configure.openAi.useWebProxy);
-            if (!configure.openAi.useWebProxy)
+            if (configure.openAi.useWebProxy)
                 if (ImGui::InputText(reinterpret_cast<const char*>(u8"对OpenAI使用的代理"),
                                      GetBufferByName("proxy").buffer,
                                      TEXT_BUFFER))
@@ -1288,7 +1290,7 @@ void Application::RenderConfigBox()
     }
 
     // 显示百度翻译配置
-    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"百度翻译")))
+    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"百度翻译(如果需要)")))
     {
         ImGui::InputText("BaiDu App ID", configure.baiDuTranslator.appId.data(),
                          TEXT_BUFFER);
@@ -1340,7 +1342,7 @@ void Application::RenderConfigBox()
     }
 
     // 显示 VITS 配置
-    if (ImGui::CollapsingHeader("VITS"))
+    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"语音聊天功能(基于VITS)")))
     {
         strcpy_s(GetBufferByName("lan").buffer, configure.vits.lanType.c_str());
         strcpy_s(GetBufferByName("endPoint").buffer, configure.vits.apiEndPoint.c_str());
@@ -1485,19 +1487,24 @@ void Application::RenderConfigBox()
     }
 
 #ifdef WIN32
-    if (ImGui::CollapsingHeader("Live2D"))
+    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"桌面宠物(基于Live2D)")))
     {
-        live2dModel = Utils::GetDirectories(model + Live2DPath);
-        auto it = std::find(live2dModel.begin(), live2dModel.end(), configure.live2D.model);
+        //live2dModel = Utils::GetDirectories(model + Live2DPath);
+        /*auto it = std::find(live2dModel.begin(), live2dModel.end(), configure.live2D.model);
         if (it != live2dModel.end() && live2dModel.size() > 1)
         {
             SelectIndices["Live2D"] = std::distance(live2dModel.begin(), it);
             lConfigure.model = configure.live2D.model;
-        }
+        }*/
+        strcpy_s(GetBufferByName("live2d").buffer, configure.live2D.bin.c_str());
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"启用Live2D"), &configure.live2D.enable);
-        ImGui::InputText(reinterpret_cast<const char*>(u8"Live2D 可执行文件"), configure.live2D.bin.data(),
-                         TEXT_BUFFER);
-        ImGui::InputFloat(reinterpret_cast<const char*>(u8"宽度缩放(400 * ScaleX)"), &lConfigure.scaleX,
+        if (ImGui::InputText(reinterpret_cast<const char*>(u8"Live2D 可执行文件"), GetBufferByName("live2d").buffer,
+                             TEXT_BUFFER))
+        {
+            configure.live2D.bin = GetBufferByName("live2d").buffer;
+        }
+
+        /*ImGui::InputFloat(reinterpret_cast<const char*>(u8"宽度缩放(400 * ScaleX)"), &lConfigure.scaleX,
                           0.1f, 1.0f, "%.2f");
         ImGui::InputFloat(reinterpret_cast<const char*>(u8"高度缩放(400 * ScaleY)"), &lConfigure.scaleY,
                           0.1f, 1.0f, "%.2f");
@@ -1527,11 +1534,11 @@ void Application::RenderConfigBox()
             }
             configure.live2D.model = live2dModel[SelectIndices["Live2D"]].c_str();
             ImGui::EndCombo(); // 结束下拉列表
-        }
+        }*/
     }
 #endif
     // 显示 Whisper 配置
-    if (ImGui::CollapsingHeader("Whisper"))
+    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"语音识别(基于Whisper)")))
     {
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"启用Whisper"), &configure.whisper.enable);
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用本地模型"), &configure.whisper.useLocalModel);
@@ -1561,7 +1568,7 @@ void Application::RenderConfigBox()
     }
 
     //显示Stable Diffusion配置
-    if (ImGui::CollapsingHeader("Stable Diffusion"))
+    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"AI绘图(基于Stable Diffusion)")))
     {
         static char search_text[256] = "";
         ImGui::InputText(reinterpret_cast<const char*>(u8"Http API"), configure.stableDiffusion.apiPath.data(),
@@ -1607,7 +1614,7 @@ void Application::RenderConfigBox()
         }
     }
 
-    if (ImGui::CollapsingHeader("Plugins"))
+    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"插件列表")))
     {
         auto dirs = UDirectory::GetSubDirectories(PluginPath);
         static std::vector<bool> enablePlugins(dirs.size(), true);
@@ -1698,14 +1705,55 @@ void Application::RenderConfigBox()
             ImGui::OpenPopup(reinterpret_cast<const char*>(u8"需要配置LLM服务的API Key,否则此应用无法正常使用"));
             no_key = false;
         }
-
+        static bool showPopup = false;
         if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"需要配置LLM服务的API Key,否则此应用无法正常使用"), NULL,
                                    ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::Text(reinterpret_cast<const char*>(u8"您配置任意一项LLM服务的API Key 以正常启用本程序。"));
+            ImGui::Text(reinterpret_cast<const char*>(u8"您配置任意一项LLM服务的API Key,或者安装本地模型 以正常启用本程序。"));
             if (ImGui::Button(reinterpret_cast<const char*>(u8"确定"), ImVec2(120, 0)))
             {
                 ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"安装本地模型"), ImVec2(120, 0)))
+            {
+                if (Utils::CheckCMDExist("ollama"))
+                {
+                    showPopup = true;
+                    Utils::AsyncExecuteShell("ollama", {"run", "qwen2.5:3b"});
+                    configure.openAi.enable = false;
+                    configure.gemini.enable = false;
+                    configure.claude.enable = false;
+                    configure.grok.enable = false;
+                    configure.gptLike.enable = true;
+                    configure.gptLike.apiEndPoint = "http://localhost:11434/";
+                    configure.gptLike.api_key = "123456";
+                    configure.gptLike.model = "qwen2.5:3b";
+                    Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+                }
+                else
+                {
+                    Utils::OpenURL(OllamaLink);
+                    LogWarn("ollama not found, please install it first");
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        if (showPopup)
+        {
+            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"通知"));
+            showPopup = false;
+        }
+        if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"通知"),NULL,
+                                   ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Text(reinterpret_cast<const char*>(u8"当控制台模型安装成功时,您可以重启此程序以开始使用"));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"重启"), ImVec2(120, 0)))
+            {
+                ImGui::CloseCurrentPopup();
+                std::string executable = "CyberGirl" + exeSuffix;
+                const char* argv[] = {executable.c_str(), NULL};
+                execvp(executable.c_str(), const_cast<char*const *>(argv));
             }
             ImGui::EndPopup();
         }
@@ -2324,10 +2372,20 @@ bool Application::Initialize()
     {
         if (!CheckFileExistence(live2D.bin, "Live2D executable file"))
         {
-            LogWarn(
-                "Initialize Warning: Since you don't have a \"Live2D Executable file\", the Live2D function isn't working properly!");
-            live2D.enable = false;
-            success = false;
+            bool compressed = false;
+            if (UFile::Exists(bin + "Live2D.zip"))
+            {
+                compressed = UCompression::DecompressZip(bin + "Live2D.zip", bin + Live2DPath);
+                configure.live2D.bin = bin + Live2DPath + "DesktopPet.exe";
+                Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+            }
+            if (!compressed)
+            {
+                LogWarn(
+                    "Initialize Warning: Since you don't have a \"Live2D Executable file\", the Live2D function isn't working properly!");
+                live2D.enable = false;
+                success = false;
+            }
         }
         if (!CheckFileExistence(live2D.model + "/" + Utils::GetFileName(live2D.model) + ".model3.json",
                                 "Live2D model"))
@@ -2353,114 +2411,6 @@ bool Application::is_valid_text(const std::string& text) const
     if (is_space && is_special) return false;
 
     return true;
-}
-
-int Application::countTokens(const string& str)
-{
-    // 单一字符的token数量，包括回车
-    const int singleCharTokenCount = 1;
-
-    // 按照中文、英文、数字、特殊字符、emojis将字符串分割
-    std::vector<std::string> tokens;
-    std::string token;
-
-    for (char c : str)
-    {
-        if ((c >= 0 && c <= 127) || (c >= -64 && c <= -33))
-        {
-            // 遇到ASCII码或者中文字符的第一个部分，加入前一个token
-            if (!token.empty())
-            {
-                tokens.push_back(token);
-                token.clear();
-            }
-
-            // 加入当前字符所对应的token数量，根据字节数判断是否是中文字符
-            if ((c >= 0 && c <= 127) || c == '\n')
-            {
-                tokens.push_back(std::string(singleCharTokenCount, c));
-            }
-            else
-            {
-                tokens.push_back(std::string(2, c));
-            }
-        }
-        else if (c >= -128 && c <= -65)
-        {
-            // 中文字符第二个部分，加入前一个token
-            if (!token.empty())
-            {
-                tokens.push_back(token);
-                token.clear();
-            }
-
-            // 加入当前字符所对应的token数量
-            token = std::string(2, c);
-            tokens.push_back(token);
-            token.clear();
-        }
-        else if ((c >= '0' && c <= '9')
-            || (c >= 'a' && c <= 'z')
-            || (c >= 'A' && c <= 'Z'))
-        {
-            // 数字或者字母的一段，加入前一个token
-            if (token.empty())
-            {
-                token += c;
-            }
-            else if (isdigit(c) == isdigit(token[0]))
-            {
-                token += c;
-            }
-            else
-            {
-                tokens.push_back(token);
-                token = c;
-            }
-        }
-        else
-        {
-            // 特殊字符或者emoji等，加入前一个token
-            if (!token.empty())
-            {
-                tokens.push_back(token);
-                token.clear();
-            }
-
-            // 根据不同类型的字符加入当前字符所对应的token数量
-            if (c == '\n')
-            {
-                tokens.push_back(std::string(singleCharTokenCount, c));
-            }
-            else if (c == 0xF0)
-            {
-                tokens.push_back(std::string(6, ' '));
-            }
-            else if (c == '[' || c == ']')
-            {
-                tokens.push_back(std::string(singleCharTokenCount, c));
-            }
-            else if (c == ' ' || c == '\t' || c == '.' || c == ',' || c == ';' || c == ':' || c == '!' ||
-                c == '?' || c == '(' || c == ')' || c == '{' || c == '}' || c == '/' || c == '\\' ||
-                c == '+' || c == '-' || c == '*' || c == '=' || c == '<' || c == '>' || c == '|' ||
-                c == '&' || c == '^' || c == '%' || c == '$' || c == '#' || c == '@')
-            {
-                tokens.push_back(std::string(singleCharTokenCount, c));
-            }
-            else
-            {
-                tokens.push_back(std::string(singleCharTokenCount, c));
-            }
-        }
-    }
-
-    // 加入最后一个token
-    if (!token.empty())
-    {
-        tokens.push_back(token);
-    }
-
-    return tokens.size();
 }
 
 void Application::
