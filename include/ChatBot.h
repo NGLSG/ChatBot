@@ -143,7 +143,7 @@ public:
         chat_data_.model = data.model;
         chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
-        chat_data_._endPoint = data.apiEndPoint;
+        chat_data_._endPoint = data.apiHost + data.apiPath;
     }
 };
 
@@ -157,7 +157,7 @@ public:
         chat_data_.model = data.model;
         chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
-        chat_data_._endPoint = "https://api.x.ai/";
+        chat_data_._endPoint = "https://api.x.ai/v1/chat/completions";
     }
 };
 

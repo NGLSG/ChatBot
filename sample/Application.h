@@ -24,7 +24,7 @@
 #include "sol/sol.hpp"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char*>(u8"CyberGirl v1.5");
+const std::string VERSION = reinterpret_cast<const char*>(u8"CyberGirl v1.6.1");
 extern std::vector<std::string> scommands;
 extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
@@ -277,6 +277,8 @@ private:
     bool ContainsCommand(std::string& str, std::string& cmd, std::string& args) const;
 
     void InlineCommand(const std::string& cmd, const std::string& args, long long ts);
+
+    void CreateBot();
 
     static inline void UniversalStyle()
     {

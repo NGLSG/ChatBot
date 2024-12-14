@@ -1,6 +1,7 @@
 #include "ChatBot.h"
 
-ChatGPT::ChatGPT(const OpenAIBotCreateInfo&chat_data, std::string systemrole) : chat_data_(chat_data) {
+ChatGPT::ChatGPT(const OpenAIBotCreateInfo& chat_data, std::string systemrole) : chat_data_(chat_data)
+{
     Logger::Init();
     if (!systemrole.empty())
         defaultJson["content"] = systemrole;
@@ -8,38 +9,47 @@ ChatGPT::ChatGPT(const OpenAIBotCreateInfo&chat_data, std::string systemrole) : 
         defaultJson["content"] = sys;
     defaultJson["role"] = "system";
 
-    if (!UDirectory::Exists(ConversationPath)) {
+    if (!UDirectory::Exists(ConversationPath))
+    {
         UDirectory::Create(ConversationPath);
         Add("default");
     }
 }
 
-long long ChatGPT::getCurrentTimestamp() {
+long long ChatGPT::getCurrentTimestamp()
+{
     auto currentTime = std::chrono::system_clock::now();
     return std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch()).count();
 }
 
-long long ChatGPT::getTimestampBefore(const int daysBefore) {
+long long ChatGPT::getTimestampBefore(const int daysBefore)
+{
     auto currentTime = std::chrono::system_clock::now();
     auto days = std::chrono::hours(24 * daysBefore);
     auto targetTime = currentTime - days;
     return std::chrono::duration_cast<std::chrono::milliseconds>(targetTime.time_since_epoch()).count();
 }
 
-string ChatGPT::sendRequest(std::string data) {
-    try {
+string ChatGPT::sendRequest(std::string data)
+{
+    try
+    {
         json parsed_response;
         std::string response_role = "";
         std::string full_response = "";
         int retry_count = 0;
-        while (retry_count < 3) {
-            try {
-                LogInfo("ChatGPT: Post request to openai...");
+        while (retry_count < 3)
+        {
+            try
+            {
+                LogInfo("ChatBot: Post request...");
                 std::string url = "";
-                if (!chat_data_.useWebProxy) {
-                    url = "https://api.openai.com/";
+                if (!chat_data_.useWebProxy)
+                {
+                    url = "https://api.openai.com/v1/chat/completions";
                 }
-                else {
+                else
+                {
                     url = chat_data_._endPoint;
                 }
 
@@ -48,23 +58,27 @@ string ChatGPT::sendRequest(std::string data) {
                 struct curl_slist* headers = NULL;
                 headers = curl_slist_append(headers, "Content-Type: application/json");
                 headers = curl_slist_append(headers, ("Authorization: Bearer " + chat_data_.api_key).c_str());
+                headers = curl_slist_append(headers, ("api-key: " + chat_data_.api_key).c_str());
                 headers = curl_slist_append(headers, "Transfer-Encoding: chunked");
 
                 curl = curl_easy_init();
-                if (curl) {
+                if (curl)
+                {
                     std::string response = "";
-                    curl_easy_setopt(curl, CURLOPT_URL, (url + "v1/chat/completions").c_str());
+                    curl_easy_setopt(curl, CURLOPT_URL, (url).c_str());
                     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
                     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
                     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
                     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-                    if (!chat_data_.useWebProxy && !chat_data_.proxy.empty()) {
+                    if (!chat_data_.useWebProxy && !chat_data_.proxy.empty())
+                    {
                         curl_easy_setopt(curl, CURLOPT_PROXY, chat_data_.proxy.c_str());
                     }
                     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); // disable SSL verification
                     res = curl_easy_perform(curl);
-                    if (res != CURLE_OK) {
-                        LogError("OpenAI Error: Request failed with error code " + std::to_string(res));
+                    if (res != CURLE_OK)
+                    {
+                        LogError("ChatBot Error: Request failed with error code " + std::to_string(res));
                         parsed_response = {};
                         retry_count++;
                     }
@@ -72,56 +86,69 @@ string ChatGPT::sendRequest(std::string data) {
                     curl_slist_free_all(headers);
                     std::stringstream stream(response);
                     std::string line;
-                    while (std::getline(stream, line)) {
-                        if (line.empty()) {
+                    while (std::getline(stream, line))
+                    {
+                        if (line.empty())
+                        {
                             continue;
                         }
                         // Remove "data: "
                         line = line.substr(6);
-                        if (line == "[DONE]") {
+                        if (line == "[DONE]")
+                        {
                             break;
                         }
                         json resp = json::parse(line);
                         json choices = resp.value("choices", json::array());
-                        if (choices.empty()) {
+                        if (choices.empty())
+                        {
                             continue;
                         }
                         json delta = choices[0].value("delta", json::object());
-                        if (delta.empty()) {
+                        if (delta.empty())
+                        {
                             continue;
                         }
-                        if (delta.count("role")) {
-                            response_role = delta["role"].get<std::string>();
+                        if (delta.count("reasoning_content"))
+                        {
                         }
-                        if (delta.count("content")) {
-                            std::string content = delta["content"].get<std::string>();
-                            full_response += content;
+                        if (delta.count("content"))
+                        {
+                            if (delta["content"].is_string())
+                            {
+                                full_response += delta["content"].get<std::string>();
+                            }
                         }
                     }
                     return full_response;
                 }
             }
-            catch (json::exception&e) {
-                LogError("OpenAI Error: " + std::string(e.what()));
+            catch (std::exception& e)
+            {
+                LogError("CahtBot Error: " + std::string(e.what()));
                 parsed_response = {};
                 retry_count++;
             }
         }
-        LogError("OpenAI Error: Request failed after three retries.");
+        LogError("ChatBot Error: Request failed after three retries.");
         return "";
     }
-    catch (exception&e) {
+    catch (exception& e)
+    {
         LogError(e.what());
     }
 }
 
-size_t ChatGPT::WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-    static_cast<std::string *>(userp)->append((char *)contents, size * nmemb);
+size_t ChatGPT::WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
+{
+    static_cast<std::string*>(userp)->append((char*)contents, size * nmemb);
     return size * nmemb;
 }
 
-std::string Claude::Submit(std::string text, std::string role, std::string convid) {
-    try {
+std::string Claude::Submit(std::string text, std::string role, std::string convid)
+{
+    try
+    {
         cpr::Payload payload{
             {"token", claudeData.slackToken},
             {"channel", claudeData.channelID},
@@ -130,22 +157,26 @@ std::string Claude::Submit(std::string text, std::string role, std::string convi
 
         cpr::Response r = cpr::Post(cpr::Url{"https://slack.com/api/chat.postMessage"},
                                     payload);
-        if (r.status_code == 200) {
+        if (r.status_code == 200)
+        {
             // 发送成功
         }
-        else {
+        else
+        {
             // 发送失败,打印错误信息
             LogError(r.error.message);
         }
         json response = json::parse(r.text);
     }
-    catch (std::exception&e) {
+    catch (std::exception& e)
+    {
         LogError(e.what());
     }
     return "";
 }
 
-void Claude::Reset() {
+void Claude::Reset()
+{
     /*        cpr::Payload payload{
                 {"token",   claudeData.slackToken},
                 {"channel", claudeData.channelID},
@@ -164,28 +195,35 @@ void Claude::Reset() {
     LogInfo("Claude : 重置成功");
 }
 
-void Claude::Load(std::string name) {
+void Claude::Load(std::string name)
+{
     LogInfo("Claude : 不支持的操作");
 }
 
-void Claude::Save(std::string name) {
+void Claude::Save(std::string name)
+{
     LogInfo("Claude : 不支持的操作");
 }
 
-void Claude::Del(std::string id) {
+void Claude::Del(std::string id)
+{
     LogInfo("Claude : 不支持的操作");
 }
 
-void Claude::Add(std::string name) {
+void Claude::Add(std::string name)
+{
     LogInfo("Claude : 不支持的操作");
 }
 
-Billing Claude::GetBilling() {
+Billing Claude::GetBilling()
+{
     return {999, 999, 0, Utils::GetCurrentTimestamp()};
 }
 
-map<long long, string> Claude::GetHistory() {
-    try {
+map<long long, string> Claude::GetHistory()
+{
+    try
+    {
         History.clear();
         auto _ts = to_string(Logger::getCurrentTimestamp());
         cpr::Payload payload = {
@@ -196,9 +234,12 @@ map<long long, string> Claude::GetHistory() {
         cpr::Response r2 = cpr::Post(cpr::Url{"https://slack.com/api/conversations.history"},
                                      payload);
         json j = json::parse(r2.text);
-        if (j["ok"].get<bool>()) {
-            for (auto&message: j["messages"]) {
-                if (message["bot_profile"]["name"] == "Claude") {
+        if (j["ok"].get<bool>())
+        {
+            for (auto& message : j["messages"])
+            {
+                if (message["bot_profile"]["name"] == "Claude")
+                {
                     long long ts = (long long)(atof(message["ts"].get<string>().c_str()) * 1000);
                     std::string text = message["blocks"][0]["elements"][0]["elements"][0]["text"].get<string>();
 
@@ -207,15 +248,18 @@ map<long long, string> Claude::GetHistory() {
             }
         }
     }
-    catch (const std::exception&e) {
+    catch (const std::exception& e)
+    {
         // 捕获并处理异常
         LogError("获取历史记录失败:" + string(e.what()));
     }
     return History;
 }
 
-std::string Gemini::Submit(std::string prompt, std::string role, std::string convid) {
-    try {
+std::string Gemini::Submit(std::string prompt, std::string role, std::string convid)
+{
+    try
+    {
         convid_ = convid;
         json ask;
         /*构造[
@@ -226,7 +270,8 @@ std::string Gemini::Submit(std::string prompt, std::string role, std::string con
         ask["parts"] = json::array();
         ask["parts"].push_back(json::object());
         ask["parts"][0]["text"] = prompt;
-        if (!Conversation.contains(convid)) {
+        if (!Conversation.contains(convid))
+        {
             Conversation.insert({convid, history});
         }
         history.emplace_back(ask);
@@ -238,12 +283,14 @@ std::string Gemini::Submit(std::string prompt, std::string role, std::string con
         else
             endPoint = "https://generativelanguage.googleapis.com";
         std::string url = endPoint + "/v1beta/models/gemini-pro:generateContent?key="
-                          +
-                          geminiData._apiKey;
+            +
+            geminiData._apiKey;
         int retry_count = 0;
-        while (retry_count < 3) {
+        while (retry_count < 3)
+        {
             auto r = cpr::Post(cpr::Url{url}, cpr::Header{{"Content-Type", "application/json"}}, cpr::Body{data});
-            if (r.status_code != 200) {
+            if (r.status_code != 200)
+            {
                 retry_count++;
                 LogError("Gemini: {0}", r.text);
                 return "NA";
@@ -260,64 +307,79 @@ std::string Gemini::Submit(std::string prompt, std::string role, std::string con
             return res.value_or("NA");
         }
     }
-    catch (const std::exception&e) {
+    catch (const std::exception& e)
+    {
         LogError("获取历史记录失败:" + string(e.what()));
     }
 }
 
-void Gemini::Reset() {
+void Gemini::Reset()
+{
     history.clear();
     Conversation[convid_] = history;
 }
 
-void Gemini::Load(std::string name) {
+void Gemini::Load(std::string name)
+{
     std::stringstream buffer;
     std::ifstream session_file(ConversationPath + name + suffix);
-    if (session_file.is_open()) {
+    if (session_file.is_open())
+    {
         buffer << session_file.rdbuf();
         history = json::parse(buffer.str());
     }
-    else {
+    else
+    {
         LogError("Gemini Error: Unable to load session " + name + ".");
     }
     LogInfo("Bot: 加载 {0} 成功", name);
 }
 
-void Gemini::Save(std::string name) {
+void Gemini::Save(std::string name)
+{
     std::ofstream session_file(ConversationPath + name + suffix);
 
-    if (session_file.is_open()) {
+    if (session_file.is_open())
+    {
         session_file << history.dump();
         session_file.close();
         LogInfo("Bot : Save {0} successfully", name);
     }
-    else {
+    else
+    {
         LogError("Gemini Error: Unable to save session {0},{1}", name, ".");
     }
 }
 
-void Gemini::Del(std::string name) {
-    if (remove((ConversationPath + name + suffix).c_str()) != 0) {
+void Gemini::Del(std::string name)
+{
+    if (remove((ConversationPath + name + suffix).c_str()) != 0)
+    {
         LogError("Gemini Error: Unable to delete session {0},{1}", name, ".");
     }
     LogInfo("Bot : 删除 {0} 成功", name);
 }
 
-void Gemini::Add(std::string name) {
+void Gemini::Add(std::string name)
+{
     history.clear();
     Save(name);
 }
 
-std::future<std::string> ChatGPT::SubmitAsync(std::string prompt, std::string role, std::string convid) {
+std::future<std::string> ChatGPT::SubmitAsync(std::string prompt, std::string role, std::string convid)
+{
     return std::async(std::launch::async, &ChatGPT::Submit, this, prompt, role, convid);
 }
 
-std::string ChatGPT::Submit(std::string prompt, std::string role, std::string convid) {
-    try {
+std::string ChatGPT::Submit(std::string prompt, std::string role, std::string convid)
+{
+    try
+    {
         json ask;
         ask["content"] = prompt;
         ask["role"] = role;
-        if (!Conversation.contains(convid_)) {
+        if (!Conversation.contains(convid_))
+        {
             history.push_back(defaultJson);
             //history.push_back(defaultJson2);
             Conversation.insert({convid_, history});
@@ -325,87 +387,103 @@ std::string ChatGPT::Submit(std::string prompt, std::string role, std::string co
         history.emplace_back(ask);
         Conversation[convid_] = history;
         std::string data = "{\n"
-                           "  \"model\": \"" + chat_data_.model + "\",\n"
-                           "  \"stream\": true,\n"
-                           "  \"messages\": " +
-                           Conversation[convid_].dump()
-                           + "}\n";
+            "  \"model\": \"" + chat_data_.model + "\",\n"
+            "  \"stream\": true,\n"
+            "  \"messages\": " +
+            Conversation[convid_].dump()
+            + "}\n";
         string text = sendRequest(data);
 
         std::cout << "\rBot: " << text << flush;
 
         return text;
     }
-    catch (exception&e) {
+    catch (exception& e)
+    {
         LogError(e.what());
     }
 }
 
-void ChatGPT::Reset() {
+void ChatGPT::Reset()
+{
     history.clear();
     history.push_back(defaultJson);
     Conversation[convid_] = history;
 }
 
-void ChatGPT::Load(std::string name) {
+void ChatGPT::Load(std::string name)
+{
     std::stringstream buffer;
     std::ifstream session_file(ConversationPath + name + suffix);
-    if (session_file.is_open()) {
+    if (session_file.is_open())
+    {
         buffer << session_file.rdbuf();
         history = json::parse(buffer.str());
         convid_ = name;
         Conversation[name] = history;
     }
-    else {
-        LogError("OpenAI Error: Unable to load session " + name + ".");
+    else
+    {
+        LogError("ChatBot Error: Unable to load session " + name + ".");
     }
     LogInfo("Bot: 加载 {0} 成功", name);
 }
 
-void ChatGPT::Save(std::string name) {
+void ChatGPT::Save(std::string name)
+{
     std::ofstream session_file(ConversationPath + name + suffix);
 
-    if (session_file.is_open()) {
+    if (session_file.is_open())
+    {
         session_file << history.dump();
         session_file.close();
         LogInfo("Bot : Save {0} successfully", name);
     }
-    else {
-        LogError("OpenAI Error: Unable to save session {0},{1}", name, ".");
+    else
+    {
+        LogError("ChatBot Error: Unable to save session {0},{1}", name, ".");
     }
 }
 
-void ChatGPT::Del(std::string name) {
-    if (remove((ConversationPath + name + suffix).c_str()) != 0) {
-        LogError("OpenAI Error: Unable to delete session {0},{1}", name, ".");
+void ChatGPT::Del(std::string name)
+{
+    if (remove((ConversationPath + name + suffix).c_str()) != 0)
+    {
+        LogError("ChatBot Error: Unable to delete session {0},{1}", name, ".");
     }
     LogInfo("Bot : 删除 {0} 成功", name);
 }
 
-void ChatGPT::Add(std::string name) {
+void ChatGPT::Add(std::string name)
+{
     history.clear();
     history.emplace_back(defaultJson);
     Save(name);
 }
 
-Billing ChatGPT::GetBilling() {
+Billing ChatGPT::GetBilling()
+{
     std::string url;
     Billing billing;
 
-    if (!chat_data_.useWebProxy) {
+    if (!chat_data_.useWebProxy)
+    {
         url = "https://api.openai.com/";
-        if (!chat_data_.proxy.empty()) {
+        if (!chat_data_.proxy.empty())
+        {
             session.SetProxies(cpr::Proxies{
                 {"http", chat_data_.proxy},
                 {"https", chat_data_.proxy}
             });
         }
     }
-    else {
+    else
+    {
         url = chat_data_.useWebProxy;
     }
 
-    auto t1 = std::async(std::launch::async, [&] {
+    auto t1 = std::async(std::launch::async, [&]
+    {
         // execute the first API request asynchronously
         cpr::Session session;
         session.SetUrl(cpr::Url{url + "v1/dashboard/billing/subscription"});
@@ -415,8 +493,9 @@ Billing ChatGPT::GetBilling() {
         session.SetVerifySsl(cpr::VerifySsl{false});
 
         auto response = session.Get();
-        if (response.status_code != 200) {
-            LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
+        if (response.status_code != 200)
+        {
+            LogError("ChatBot Error: Request failed with status code " + std::to_string(response.status_code));
             return;
         }
 
@@ -425,7 +504,8 @@ Billing ChatGPT::GetBilling() {
         billing.date = data["access_until"];
     });
 
-    auto t2 = std::async(std::launch::async, [&] {
+    auto t2 = std::async(std::launch::async, [&]
+    {
         // execute the second API request asynchronously
         cpr::Session session;
         string start = Stamp2Time(getTimestampBefore(100));
@@ -433,13 +513,15 @@ Billing ChatGPT::GetBilling() {
         url = url + "v1/dashboard/billing/usage?start_date=" + start + "&end_date=" + end;
         session.SetUrl(cpr::Url{url});
         session.SetHeader(cpr::Header{
-            {"Authorization", "Bearer " + chat_data_.api_key}
+            {"Authorization", "Bearer " + chat_data_.api_key},
+            {"api-key", chat_data_.api_key}
         });
         session.SetVerifySsl(cpr::VerifySsl{false});
 
         auto response = session.Get();
-        if (response.status_code != 200) {
-            LogError("OpenAI Error: Request failed with status code " + std::to_string(response.status_code));
+        if (response.status_code != 200)
+        {
+            LogError("ChatBot Error: Request failed with status code " + std::to_string(response.status_code));
             return;
         }
 

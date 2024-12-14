@@ -153,6 +153,34 @@ private:
     static bool CheckFileSize(const std::string& file_path, int expected_size);
 
 public:
+#ifdef WIN32
+    inline static std::atomic<HANDLE> childProcessHandle{nullptr};
+
+    static void CleanUpChildProcess()
+    {
+        if (childProcessHandle != nullptr)
+        {
+            TerminateProcess(childProcessHandle.load(), 0); // 强制终止子进程
+            CloseHandle(childProcessHandle.load()); // 关闭进程句柄
+            std::cout << "Child process terminated" << std::endl;
+        }
+    }
+
+    static void OpenProgram(const char* path);
+#else
+    std::atomic<pid_t> childPid{-1};
+
+    void signal_handler(int signum)
+    {
+        if (childPid != -1)
+        {
+            std::cerr << "Terminating child process" << std::endl;
+            kill(childPid.load(), SIGTERM);  // 发送终止信号给子进程
+        }
+    }
+
+    void OpenProgram(const char* path);
+#endif
     template <typename... Args>
     static std::string ExecuteShell(const std::string& cmd, Args... args);
 
@@ -188,7 +216,6 @@ public:
     }
 
     static std::string GetAbsolutePath(const std::string& relativePath);
-
     static std::string exec(const std::string& command);
 
     static std::string GetErrorString(cpr::ErrorCode code);
@@ -298,13 +325,22 @@ public:
     }
 
     template <typename T>
-    static T LoadYaml(const std::string& file)
+    static std::optional<T> LoadYaml(const std::string& file)
     {
-        // 从文件中读取YAML数据
-        YAML::Node node = YAML::LoadFile(file);
+        try
+        {
+            // 从文件中读取YAML数据
+            YAML::Node node = YAML::LoadFile(file);
 
-        // 将整个YAML节点转换为指定类型的对象
-        return node.as<T>();
+            // 将整个YAML节点转换为指定类型的对象
+            return node.as<T>();
+        }
+        catch (const std::exception& e)
+        {
+            // 解析异常处理
+            LogError("{0}", e.what());
+            return std::optional<T>();
+        }
     }
 
     template <typename T>
@@ -316,8 +352,6 @@ public:
     }
 
     static size_t write_callback(char* ptr, size_t size, size_t nmemb, void* userdata);
-
-    static void OpenProgram(const char* path);
 
     static std::vector<std::string> GetDirectories(const std::string& path);
 

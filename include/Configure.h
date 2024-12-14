@@ -16,7 +16,7 @@ struct OpenAIBotCreateInfo
 {
     bool enable = true;
     bool useLocalModel = false;
-    bool useWebProxy = true;
+    bool useWebProxy = false;
     std::string modelPath = "model/ChatGLM/";
     std::string api_key = "";
     std::string model = "gpt-4o";
@@ -29,17 +29,24 @@ struct GPTLikeCreateInfo
     bool enable;
     std::string api_key;
     std::string model = ""; //Must be set
-    std::string apiEndPoint = "";
+    std::string apiHost = "";
+    std::string apiPath = "";
 
-    GPTLikeCreateInfo(bool gptLike = false)
+    GPTLikeCreateInfo()
     {
-        if (gptLike)
-        {
-            enable = false;
-            api_key = "empty";
-            model = "qwen2.5:3b";
-            apiEndPoint = "http://localhost:11434/";
-        }
+        enable = false;
+    }
+
+
+    GPTLikeCreateInfo& operator=(const GPTLikeCreateInfo& data)
+    {
+        this->enable = data.enable;
+        this->api_key = data.api_key;
+        this->model = data.model;
+        this->apiHost = data.apiHost;
+        this->apiPath = data.apiPath;
+
+        return *this;
     }
 };
 
@@ -126,9 +133,9 @@ struct Configure
     Live2D live2D;
     ClaudeBotCreateInfo claude;
     GeminiBotCreateInfo gemini;
-    GPTLikeCreateInfo gptLike = GPTLikeCreateInfo(true);
     GPTLikeCreateInfo grok;
     StableDiffusionData stableDiffusion;
+    std::unordered_map<std::string, GPTLikeCreateInfo> customGPTs;
 };
 
 namespace YAML
@@ -142,7 +149,8 @@ namespace YAML
             node["enable"] = data.enable;
             node["api_key"] = data.api_key;
             node["model"] = data.model;
-            node["apiEndPoint"] = data.apiEndPoint;
+            node["apiHost"] = data.apiHost;
+            node["apiPath"] = data.apiPath;
             return node;
         }
 
@@ -151,7 +159,10 @@ namespace YAML
             data.enable = node["enable"].as<bool>();
             data.api_key = node["api_key"].as<std::string>();
             data.model = node["model"].as<std::string>();
-            data.apiEndPoint = node["apiEndPoint"].as<std::string>();
+            if (node["apiHost"])
+                data.apiHost = node["apiHost"].as<std::string>();
+            if (node["apiPath"])
+                data.apiPath = node["apiPath"].as<std::string>();
             return true;
         }
     };
@@ -464,8 +475,8 @@ namespace YAML
             node["whisper"] = config.whisper;
             node["live2D"] = config.live2D;
             node["stableDiffusion"] = config.stableDiffusion;
-            node["gptlike"] = config.gptLike;
             node["grok"] = config.grok;
+            node["customGPTs"] = config.customGPTs;
             return node;
         }
 
@@ -479,10 +490,10 @@ namespace YAML
             config.openAi = node["openAi"].as<OpenAIBotCreateInfo>();
             config.gemini = node["gemini"].as<GeminiBotCreateInfo>();
             config.claude = node["claude"].as<ClaudeBotCreateInfo>();
-            if (node["gptlike"])
-                config.gptLike = node["gptlike"].as<GPTLikeCreateInfo>();
             if (node["grok"])
                 config.grok = node["grok"].as<GPTLikeCreateInfo>();
+            if (node["customGPTs"])
+                config.customGPTs = node["customGPTs"].as<std::unordered_map<std::string, GPTLikeCreateInfo>>();
             config.baiDuTranslator = node["baiDuTranslator"].as<TranslateData>();
             config.vits = node["vits"].as<VITSData>();
             config.whisper = node["whisper"].as<WhisperCreateInfo>();

@@ -12,59 +12,9 @@ Application::Application(const Configure& configure, bool setting)
         scommands = commands;
         this->configure = configure;
         OnlySetting = setting;
-        if (configure.openAi.enable && (configure.openAi.api_key.empty() ||
-            configure.openAi.api_key == ""))
-        {
-            OnlySetting = true;
-            state = State::NO_BOT_KEY;
-        }
-        else if (configure.claude.enable &&
-            (configure.claude.slackToken.empty() ||
-                configure.claude.slackToken == "") && configure.gptLike.api_key == "")
-        {
-            OnlySetting = true;
-            state = State::NO_BOT_KEY;
-        }
-        else if (configure.gemini.enable && configure.gemini._apiKey.empty())
-        {
-            OnlySetting = true;
-            state = State::NO_BOT_KEY;
-        }
-        else if (configure.gptLike.enable && configure.gptLike.api_key.empty())
-        {
-            OnlySetting = true;
-            state = State::NO_BOT_KEY;
-        }
-        else if (configure.grok.enable && configure.grok.api_key.empty())
-        {
-            OnlySetting = true;
-            state = State::NO_BOT_KEY;
-        }
+        CreateBot();
         translator = CreateRef<Translate>(configure.baiDuTranslator);
-        if (configure.claude.enable)
-        {
-            bot = CreateRef<Claude>(configure.claude);
-            convid = "Claude";
-            GetClaudeHistory();
-        }
-        if (configure.openAi.enable)
-        {
-            bot = CreateRef<ChatGPT>(configure.openAi, SYSTEMROLE + SYSTEMROLE_EX);
-        }
-        if (configure.gemini.enable)
-        {
-            bot = CreateRef<Gemini>(configure.gemini);
-            ConversationPath = std::filesystem::path(ConversationPath.string() + "Gemini/");
-        }
-        if (configure.grok.enable)
-        {
-            bot = CreateRef<Grok>(configure.grok, SYSTEMROLE + SYSTEMROLE_EX);
-        }
-        if (configure.gptLike.enable)
-        {
-            bot = CreateRef<GPTLike>(configure.gptLike, SYSTEMROLE + SYSTEMROLE_EX);
-        }
-        //billing = bot->GetBilling();
+
         voiceToText = CreateRef<VoiceToText>(configure.openAi);
         listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
         stableDiffusion = CreateRef<StableDiffusion>(configure.stableDiffusion);
@@ -78,7 +28,7 @@ Application::Application(const Configure& configure, bool setting)
         if (live2D.enable)
         {
             Utils::OpenProgram(live2D.bin.c_str());
-            lConfigure = Utils::LoadYaml<LConfigure>("Lconfig.yml");
+            lConfigure = Utils::LoadYaml<LConfigure>("Lconfig.yml").value();
         }
         if (whisperData.enable && whisper && mwhisper)
         {
@@ -103,6 +53,10 @@ Application::Application(const Configure& configure, bool setting)
         text_buffers.emplace_back("lan");
         text_buffers.emplace_back("role");
         text_buffers.emplace_back("live2d");
+        text_buffers.emplace_back("newName");
+        text_buffers.emplace_back("apiPath");
+        text_buffers.emplace_back("apiHost");
+        text_buffers.emplace_back("search");
     }
     catch (exception& e)
     {
@@ -342,6 +296,90 @@ void Application::InlineCommand(const std::string& cmd, const std::string& args,
     }
 }
 
+void Application::CreateBot()
+{
+    auto isMissingKey = [](const std::string& key)
+    {
+        return key.empty();
+    };
+
+    if ((configure.openAi.enable && isMissingKey(configure.openAi.api_key)) ||
+        (configure.claude.enable && isMissingKey(configure.claude.slackToken)) ||
+        (configure.gemini.enable && isMissingKey(configure.gemini._apiKey)) ||
+        (configure.grok.enable && isMissingKey(configure.grok.api_key)))
+    {
+        OnlySetting = true;
+        state = State::NO_BOT_KEY;
+    }
+
+    if (!configure.openAi.enable && !configure.claude.enable &&
+        !configure.gemini.enable && !configure.grok.enable)
+    {
+        bool hasCustomGPT = false;
+        for (const auto& [name, cconfig] : configure.customGPTs)
+        {
+            if (cconfig.enable)
+            {
+                hasCustomGPT = true;
+                break;
+            }
+        }
+        if (!hasCustomGPT)
+        {
+            OnlySetting = true;
+            state = State::NO_BOT_KEY;
+            bot = CreateRef<GPTLike>(GPTLikeCreateInfo());
+        }
+    }
+
+    for (const auto& [name, cconfig] : configure.customGPTs)
+    {
+        if (cconfig.enable)
+        {
+            if (isMissingKey(cconfig.api_key))
+            {
+                OnlySetting = true;
+                state = State::NO_BOT_KEY;
+            }
+            else if (!cconfig.model.empty())
+            {
+                OnlySetting = false;
+                state = State::OK;
+            }
+        }
+    }
+
+    if (configure.claude.enable)
+    {
+        bot = CreateRef<Claude>(configure.claude);
+        GetClaudeHistory();
+    }
+    else if (configure.openAi.enable)
+    {
+        bot = CreateRef<ChatGPT>(configure.openAi, SYSTEMROLE + SYSTEMROLE_EX);
+    }
+    else if (configure.gemini.enable)
+    {
+        bot = CreateRef<Gemini>(configure.gemini);
+        ConversationPath /= "Gemini/";
+    }
+    else if (configure.grok.enable)
+    {
+        bot = CreateRef<Grok>(configure.grok, SYSTEMROLE + SYSTEMROLE_EX);
+    }
+    else
+    {
+        for (const auto& [name, cconfig] : configure.customGPTs)
+        {
+            if (cconfig.enable)
+            {
+                bot = CreateRef<GPTLike>(cconfig, SYSTEMROLE + SYSTEMROLE_EX);
+                break; // use the first available custom GPT
+            }
+        }
+    }
+}
+
 void Application::RenderCodeBox()
 {
     UniversalStyle();
@@ -469,7 +507,7 @@ void Application::RenderChatBox()
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
             ImGui::PushID(botAnswer.timestamp);
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["avatar"]), ImVec2(24, 24)))
+            if (ImGui::ImageButton("##" + TextureCache["avatar"], TextureCache["avatar"], ImVec2(24, 24)))
             {
                 fileBrowser = true;
                 title = reinterpret_cast<const char*>(u8"图片选择");
@@ -508,7 +546,7 @@ void Application::RenderChatBox()
                 else
                 {
                     // 如果纹理已加载,显示
-                    if (ImGui::ImageButton(reinterpret_cast<void*>(SDCache[botAnswer.image]),
+                    if (ImGui::ImageButton("##" + SDCache[botAnswer.image], (SDCache[botAnswer.image]),
                                            ImVec2(256, 256)))
                     {
                         Utils::OpenFileManager(Utils::GetAbsolutePath(Resources + "Images/" + botAnswer.image));
@@ -579,6 +617,7 @@ void Application::RenderChatBox()
                 for (int i = 0; i < conversations.size(); i++)
                 {
                     const bool is_selected = (SelectIndices["conversation"] == i);
+                    ImGui::PushID("conversation");
                     if (ImGui::MenuItem(reinterpret_cast<const char*>(conversations[i].c_str()), nullptr,
                                         is_selected))
                     {
@@ -590,6 +629,7 @@ void Application::RenderChatBox()
                             load(convid);
                         }
                     }
+                    ImGui::PopID();
                 }
             }
             ImGui::EndMenu();
@@ -708,7 +748,7 @@ void Application::RenderInputBox()
         ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 0);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
-        ImGui::Begin("Input filed", NULL,
+        ImGui::Begin("##", NULL,
                      ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
                      ImGuiWindowFlags_NoTitleBar);
         /*        ImGui::BeginGroup();
@@ -899,7 +939,7 @@ void Application::RenderConversationBox()
     UniversalStyle();
     ImGui::Begin(reinterpret_cast<const char*>(u8"会话"), NULL,
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav);
-    if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["add"]), ImVec2(16, 16)))
+    if (ImGui::ImageButton("##" + TextureCache["add"], TextureCache["add"], ImVec2(16, 16)))
     {
         // 显示输入框
         show_input_box = true;
@@ -910,23 +950,24 @@ void Application::RenderConversationBox()
     {
         ImGui::BeginGroup();
         // 消息框
-        ImGui::Image(reinterpret_cast<void*>(TextureCache["message"]), ImVec2(32, 32),
+        ImGui::Image(TextureCache["message"], ImVec2(32, 32),
                      ImVec2(0, 0),
                      ImVec2(1, 1));
 
         // 消息文本
         ImGui::SameLine();
+        ImGui::PushID(conversation.c_str());
         if (ImGui::Button(conversation.c_str(), ImVec2(100, 30)))
         {
             convid = conversation;
             bot->Load(convid);
             load(convid);
         }
-
+        ImGui::PopID();
         // 删除按钮
         ImGui::SameLine();
         ImGui::PushID(conversation.c_str());
-        if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["del"]), ImVec2(16, 16)) &&
+        if (ImGui::ImageButton("##" + TextureCache["del"], TextureCache["del"], ImVec2(16, 16)) &&
             conversations.size() > 1)
         {
             convid = conversation;
@@ -934,7 +975,6 @@ void Application::RenderConversationBox()
             del(convid);
             bot->Load(convid);
             load(convid);
-            ImGui::PopID();
             ImGui::EndGroup();
             break;
         }
@@ -976,28 +1016,33 @@ void Application::RenderConfigBox()
         {
             configure.gemini.enable = false;
             configure.openAi.enable = false;
-            configure.gptLike.enable = false;
+            configure.grok.enable = false;
+            for (auto& it : configure.customGPTs)
+            {
+                it.second.enable = false;
+            }
         }
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用Gemini"), &configure.gemini.enable);
         if (configure.gemini.enable)
         {
             configure.claude.enable = false;
             configure.openAi.enable = false;
-            configure.gptLike.enable = false;
+            configure.grok.enable = false;
+            for (auto& it : configure.customGPTs)
+            {
+                it.second.enable = false;
+            }
         }
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用OpenAI"), &configure.openAi.enable);
         if (configure.openAi.enable)
         {
             configure.claude.enable = false;
             configure.gemini.enable = false;
-            configure.gptLike.enable = false;
-        }
-        ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用GPT-Like"), &configure.gptLike.enable);
-        if (configure.gptLike.enable)
-        {
-            configure.claude.enable = false;
-            configure.gemini.enable = false;
-            configure.openAi.enable = false;
+            configure.grok.enable = false;
+            for (auto& it : configure.customGPTs)
+            {
+                it.second.enable = false;
+            }
         }
 
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用GPT-Grok"), &configure.grok.enable);
@@ -1006,9 +1051,72 @@ void Application::RenderConfigBox()
             configure.claude.enable = false;
             configure.gemini.enable = false;
             configure.openAi.enable = false;
+            for (auto& it : configure.customGPTs)
+            {
+                it.second.enable = false;
+            }
         }
+        static int filteredItemCount = 0;
 
+        float lineHeight = ImGui::GetTextLineHeightWithSpacing() * 1.5;
+        float childHeight = (filteredItemCount < 10 ? filteredItemCount : 10) * lineHeight + lineHeight;
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.0f, 1.0f)); // Orange
 
+        ImGui::Text("自定义API: ");
+
+        ImGui::PopStyleColor();
+        ImGui::BeginChild("##自定义API", ImVec2(0, childHeight), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        {
+            ImGui::InputText("##", GetBufferByName("search").buffer, TEXT_BUFFER);
+
+            std::string searchStr(GetBufferByName("search").buffer);
+
+            auto filterMatch = [&searchStr](const std::string& name) -> bool
+            {
+                if (searchStr.empty())
+                    return true;
+                return name.find(searchStr) != std::string::npos;
+            };
+
+            filteredItemCount = 0;
+            for (const auto& pair : configure.customGPTs)
+            {
+                if (filterMatch(pair.first))
+                {
+                    filteredItemCount++;
+                }
+            }
+            for (auto& pair : configure.customGPTs)
+            {
+                // Only display items that match the search criteria.
+                if (!filterMatch(pair.first))
+                    continue;
+
+                // Display a checkbox for each custom GPT.
+                if (ImGui::Checkbox(pair.first.c_str(), &pair.second.enable))
+                {
+                    // When a custom GPT is enabled, disable the other predefined providers.
+                    if (pair.second.enable)
+                    {
+                        configure.claude.enable = false;
+                        configure.gemini.enable = false;
+                        configure.openAi.enable = false;
+                        configure.grok.enable = false;
+
+                        // Disable all other custom GPTs.
+                        for (auto& pair2 : configure.customGPTs)
+                        {
+                            if (pair2.first != pair.first)
+                            {
+                                pair2.second.enable = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ImGui::EndChild();
+        ImGui::Text("API配置: ");
         if (configure.openAi.enable)
         {
             static bool showPassword = false, clicked = false;
@@ -1044,11 +1152,10 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+            if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, 1),
-                                   -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1)))
             {
@@ -1111,11 +1218,10 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+            if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, 1),
-                                   -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1)))
             {
@@ -1167,11 +1273,10 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+            if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, 1),
-                                   -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1)))
             {
@@ -1181,61 +1286,6 @@ void Application::RenderConfigBox()
                                  TEXT_BUFFER))
             {
                 configure.gemini._endPoint = GetBufferByName("endPoint").buffer;
-            }
-        }
-        else if (configure.gptLike.enable)
-        {
-            static bool showPassword = false, clicked = false;
-            static double lastInputTime = 0.0;
-            double currentTime = ImGui::GetTime();
-            strcpy_s(GetBufferByName("api").buffer, configure.gptLike.api_key.c_str());
-            strcpy_s(GetBufferByName("endPoint").buffer, configure.gptLike.apiEndPoint.c_str());
-            strcpy_s(GetBufferByName("model").buffer, configure.gptLike.model.c_str());
-            if (currentTime - lastInputTime > 0.5)
-            {
-                showPassword = false;
-            }
-            if (showPassword || clicked)
-            {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"ApiKey"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer)))
-                {
-                    configure.gptLike.api_key = GetBufferByName("api").buffer;
-                }
-            }
-            else
-            {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"ApiKey"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer),
-                                     ImGuiInputTextFlags_Password))
-                {
-                    configure.gptLike.api_key = GetBufferByName("api").buffer;
-                    showPassword = true;
-                    lastInputTime = ImGui::GetTime();
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
-                                   ImVec2(16, 16),
-                                   ImVec2(0, 0),
-                                   ImVec2(1, 1),
-                                   -1,
-                                   ImVec4(0, 0, 0, 0),
-                                   ImVec4(1, 1, 1, 1)))
-            {
-                clicked = !clicked;
-            }
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"API地址"), GetBufferByName("endPoint").buffer,
-                                 TEXT_BUFFER))
-            {
-                configure.gptLike.apiEndPoint = GetBufferByName("endPoint").buffer;
-            }
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
-                                 TEXT_BUFFER))
-            {
-                configure.gptLike.model = GetBufferByName("model").buffer;
             }
         }
         else if (configure.grok.enable)
@@ -1271,11 +1321,10 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+            if (ImGui::ImageButton("##" + (TextureCache["eye"]), (TextureCache["eye"]),
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, 1),
-                                   -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1)))
             {
@@ -1286,6 +1335,114 @@ void Application::RenderConfigBox()
             {
                 configure.grok.model = GetBufferByName("model").buffer;
             }
+        }
+
+        for (auto& [name,cdata] : configure.customGPTs)
+        {
+            if (cdata.enable)
+            {
+                static bool showPassword = false, clicked = false;
+                static double lastInputTime = 0.0;
+                double currentTime = ImGui::GetTime();
+                strcpy_s(GetBufferByName("api").buffer, cdata.api_key.c_str());
+                strcpy_s(GetBufferByName("apiHost").buffer, cdata.apiHost.c_str());
+                strcpy_s(GetBufferByName("apiPath").buffer, cdata.apiPath.c_str());
+                strcpy_s(GetBufferByName("model").buffer, cdata.model.c_str());
+                if (currentTime - lastInputTime > 0.5)
+                {
+                    showPassword = false;
+                }
+                if (showPassword || clicked)
+                {
+                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
+                                         GetBufferByName("api").buffer,
+                                         sizeof(input_buffer)))
+                    {
+                        cdata.api_key = GetBufferByName("api").buffer;
+                    }
+                }
+                else
+                {
+                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
+                                         GetBufferByName("api").buffer,
+                                         sizeof(input_buffer),
+                                         ImGuiInputTextFlags_Password))
+                    {
+                        cdata.api_key = GetBufferByName("api").buffer;
+                        showPassword = true;
+                        lastInputTime = ImGui::GetTime();
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
+                                       ImVec2(16, 16),
+                                       ImVec2(0, 0),
+                                       ImVec2(1, 1),
+                                       ImVec4(0, 0, 0, 0),
+                                       ImVec4(1, 1, 1, 1)))
+                {
+                    clicked = !clicked;
+                }
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 主机"), GetBufferByName("endPoint").buffer,
+                                     TEXT_BUFFER))
+                {
+                    cdata.apiHost = GetBufferByName("apiHost").buffer;
+                }
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 路径"), GetBufferByName("apiPath").buffer,
+                                     TEXT_BUFFER))
+                {
+                    cdata.apiPath = GetBufferByName("apiPath").buffer;
+                }
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
+                                     TEXT_BUFFER))
+                {
+                    cdata.model = GetBufferByName("model").buffer;
+                }
+
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"删除此API"), ImVec2(120, 30)))
+                {
+                    cdata.enable = false;
+                    configure.customGPTs.erase(name);
+                    continue;
+                }
+            }
+        }
+
+        if (ImGui::Button(reinterpret_cast<const char*>(u8"添加自定义API"), ImVec2(120, 30)))
+        {
+            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"请输入新的配置名字"));
+        }
+
+        ImGui::SameLine();
+
+        if (ImGui::Button(reinterpret_cast<const char*>(u8"切换模型"), ImVec2(120, 30)))
+        {
+            CreateBot();
+            Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+        }
+
+        if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"请输入新的配置名字"), NULL,
+                                   ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::InputText(reinterpret_cast<const char*>(u8"配置名字"), GetBufferByName("newName").buffer,
+                             TEXT_BUFFER);
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"确定"), ImVec2(120, 0)))
+            {
+                std::string name = GetBufferByName("newName").buffer;
+                if (name.empty())
+                {
+                    name = "NewConfig_" + std::to_string(configure.customGPTs.size());
+                }
+                configure.customGPTs[name] = GPTLikeCreateInfo();
+
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"取消"), ImVec2(120, 0)))
+            {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
     }
 
@@ -1322,11 +1479,10 @@ void Application::RenderConfigBox()
             }
         }
         ImGui::SameLine();
-        if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+        if (ImGui::ImageButton("##" + TextureCache["eye"], (TextureCache["eye"]),
                                ImVec2(16, 16),
                                ImVec2(0, 0),
                                ImVec2(1, 1),
-                               1,
                                ImVec4(0, 0, 0, 0),
                                ImVec4(1, 1, 1, 1)))
         {
@@ -1643,6 +1799,7 @@ void Application::RenderConfigBox()
             }();
         }
     }
+
     // 保存配置
     if (ImGui::Button(reinterpret_cast<const char*>(u8"保存配置")))
     {
@@ -1650,6 +1807,7 @@ void Application::RenderConfigBox()
         Utils::SaveYaml("Lconfig.yml", Utils::toYaml(lConfigure));
         should_restart = true;
     }
+
 
     ImGui::End();
     {
@@ -1724,10 +1882,12 @@ void Application::RenderConfigBox()
                     configure.gemini.enable = false;
                     configure.claude.enable = false;
                     configure.grok.enable = false;
-                    configure.gptLike.enable = true;
-                    configure.gptLike.apiEndPoint = "http://localhost:11434/";
-                    configure.gptLike.api_key = "123456";
-                    configure.gptLike.model = "qwen2.5:3b";
+                    configure.customGPTs.insert({"qwen2.5:3b", GPTLikeCreateInfo()});
+                    configure.customGPTs["qwen2.5:3b"].enable = true;
+                    configure.customGPTs["qwen2.5:3b"].apiHost = "http://localhost:11434";
+                    configure.customGPTs["qwen2.5:3b"].apiPath = "/v1/chat/completions";
+                    configure.customGPTs["qwen2.5:3b"].api_key = "123456";
+                    configure.customGPTs["qwen2.5:3b"].model = "qwen2.5:3b";
                     Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
                 }
                 else

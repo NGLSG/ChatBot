@@ -623,7 +623,116 @@ bool Utils::CheckFileSize(const std::string& file_path, int expected_size)
         return false;
     }
 }
+#ifdef WIN32
+void Utils::OpenProgram(const char* path)
+{
+    std::thread worker([=]()
+    {
+        STARTUPINFO si{};
+        PROCESS_INFORMATION pi{};
 
+        SECURITY_ATTRIBUTES sa{};
+        sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+        sa.bInheritHandle = TRUE;
+
+        HANDLE g_hChildStd_IN_Rd = nullptr;
+        HANDLE g_hChildStd_IN_Wr = nullptr;
+        HANDLE g_hChildStd_OUT_Rd = nullptr;
+        HANDLE g_hChildStd_OUT_Wr = nullptr;
+
+        if (!CreatePipe(&g_hChildStd_OUT_Rd, &g_hChildStd_OUT_Wr, &sa, 0))
+        {
+            std::cerr << "Failed to create output pipe" << std::endl;
+            return;
+        }
+
+        if (!CreatePipe(&g_hChildStd_IN_Rd, &g_hChildStd_IN_Wr, &sa, 0))
+        {
+            std::cerr << "Failed to create input pipe" << std::endl;
+            return;
+        }
+
+        GetStartupInfo(&si);
+        si.hStdInput = g_hChildStd_IN_Rd;
+        si.hStdOutput = g_hChildStd_OUT_Wr;
+        si.hStdError = g_hChildStd_OUT_Wr;
+        si.dwFlags |= STARTF_USESTDHANDLES;
+
+        std::string cmdLine = path;
+        if (!CreateProcess(nullptr,
+                           const_cast<char*>(cmdLine.c_str()),
+                           nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi))
+        {
+            std::cerr << "Failed to open process" << std::endl;
+            return;
+        }
+
+        childProcessHandle.store(pi.hProcess); // 存储子进程句柄
+
+        std::cout << "Open process successfully" << std::endl;
+
+        // 等待子进程完成
+        WaitForSingleObject(pi.hProcess, INFINITE);
+
+        std::cout << "Process finished" << std::endl;
+
+        // 关闭句柄
+        CloseHandle(g_hChildStd_IN_Rd);
+        CloseHandle(g_hChildStd_IN_Wr);
+        CloseHandle(g_hChildStd_OUT_Rd);
+        CloseHandle(g_hChildStd_OUT_Wr);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    });
+
+    worker.detach();
+
+    // 注册退出时清理函数
+    std::atexit(CleanUpChildProcess);
+}
+#else
+void Utils::OpenProgram(const char* path)
+{
+    std::thread worker([=]()
+            {
+                pid_t pid = fork();
+                if (pid == 0)
+                {
+                    // 在子进程中运行
+                    execl(path, path, nullptr);
+                    std::cerr << "Failed to start program" << std::endl;
+                    exit(1);
+                }
+                else if (pid > 0)
+                {
+                    // 在父进程中
+                    childPid.store(pid);  // 存储子进程的PID
+                    std::cout << "Open process successfully" << std::endl;
+
+                    // 等待子进程完成
+                    waitpid(pid, nullptr, 0);
+
+                    std::cout << "Process finished" << std::endl;
+                }
+                else
+                {
+                    std::cerr << "Failed to fork process" << std::endl;
+                }
+            });
+
+    // 注册退出时清理函数
+    std::signal(SIGTERM, signal_handler);
+    std::atexit([](){
+        if (childPid != -1)
+        {
+            std::cerr << "Automatically terminating child process due to main program exit" << std::endl;
+            kill(childPid.load(), SIGTERM);  // 发送SIGTERM信号给子进程
+        }
+    });
+
+    worker.detach();
+}
+#endif
 bool Utils::Decompress(std::string file, std::string path)
 {
     if (path.empty())
@@ -1042,73 +1151,6 @@ std::string Utils::ReadFile(const std::string& filename)
     buffer << file.rdbuf();
     return buffer.str();
 }
-
-#ifdef WIN32
-
-#include <windows.h>
-
-void Utils::OpenProgram(const char* path)
-{
-    std::thread worker([=]()
-    {
-        STARTUPINFO si{};
-        PROCESS_INFORMATION pi{};
-
-        SECURITY_ATTRIBUTES sa{};
-        sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-        sa.bInheritHandle = TRUE;
-
-        HANDLE g_hChildStd_IN_Rd = nullptr;
-        HANDLE g_hChildStd_IN_Wr = nullptr;
-        HANDLE g_hChildStd_OUT_Rd = nullptr;
-        HANDLE g_hChildStd_OUT_Wr = nullptr;
-
-        if (!CreatePipe(&g_hChildStd_OUT_Rd, &g_hChildStd_OUT_Wr, &sa, 0))
-        {
-            std::cerr << "Failed to create output pipe" << std::endl;
-            return;
-        }
-
-        if (!CreatePipe(&g_hChildStd_IN_Rd, &g_hChildStd_IN_Wr, &sa, 0))
-        {
-            std::cerr << "Failed to create input pipe" << std::endl;
-            return;
-        }
-
-        GetStartupInfo(&si);
-        si.hStdInput = g_hChildStd_IN_Rd;
-        si.hStdOutput = g_hChildStd_OUT_Wr;
-        si.hStdError = g_hChildStd_OUT_Wr;
-        si.dwFlags |= STARTF_USESTDHANDLES;
-
-        std::string cmdLine = path;
-        if (!CreateProcess(nullptr,
-                           const_cast<char*>(cmdLine.c_str()),
-                           nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi))
-        {
-            std::cerr << "Failed to open process" << std::endl;
-            return;
-        }
-
-        std::cout << "Open process successfully" << std::endl;
-
-        WaitForSingleObject(pi.hProcess, INFINITE);
-
-        std::cout << "Process finished" << std::endl;
-
-        CloseHandle(g_hChildStd_IN_Rd);
-        CloseHandle(g_hChildStd_IN_Wr);
-        CloseHandle(g_hChildStd_OUT_Rd);
-        CloseHandle(g_hChildStd_OUT_Wr);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    });
-    worker.detach();
-}
-
-#else
-void Utils::OpenProgram(const char *path){}
-#endif
 
 std::string Utils::GetPlatform()
 {
