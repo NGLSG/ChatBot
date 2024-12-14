@@ -37,7 +37,7 @@ string ChatGPT::sendRequest(std::string data) {
                 LogInfo("ChatGPT: Post request to openai...");
                 std::string url = "";
                 if (!chat_data_.useWebProxy) {
-                    url = "https://api.openai.com/";
+                    url = "https://api.openai.com/v1/chat/completions";
                 }
                 else {
                     url = chat_data_._endPoint;
@@ -53,7 +53,7 @@ string ChatGPT::sendRequest(std::string data) {
                 curl = curl_easy_init();
                 if (curl) {
                     std::string response = "";
-                    curl_easy_setopt(curl, CURLOPT_URL, (url + "v1/chat/completions").c_str());
+                    curl_easy_setopt(curl, CURLOPT_URL, (url).c_str());
                     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
                     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
                     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);

@@ -469,7 +469,7 @@ void Application::RenderChatBox()
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
             ImGui::PushID(botAnswer.timestamp);
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["avatar"]), ImVec2(24, 24)))
+            if (ImGui::ImageButton("###" + TextureCache["avatar"], TextureCache["avatar"], ImVec2(24, 24)))
             {
                 fileBrowser = true;
                 title = reinterpret_cast<const char*>(u8"图片选择");
@@ -508,7 +508,7 @@ void Application::RenderChatBox()
                 else
                 {
                     // 如果纹理已加载,显示
-                    if (ImGui::ImageButton(reinterpret_cast<void*>(SDCache[botAnswer.image]),
+                    if (ImGui::ImageButton("###"+SDCache[botAnswer.image],(SDCache[botAnswer.image]),
                                            ImVec2(256, 256)))
                     {
                         Utils::OpenFileManager(Utils::GetAbsolutePath(Resources + "Images/" + botAnswer.image));
@@ -899,7 +899,7 @@ void Application::RenderConversationBox()
     UniversalStyle();
     ImGui::Begin(reinterpret_cast<const char*>(u8"会话"), NULL,
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav);
-    if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["add"]), ImVec2(16, 16)))
+    if (ImGui::ImageButton("###"+TextureCache["add"],TextureCache["add"], ImVec2(16, 16)))
     {
         // 显示输入框
         show_input_box = true;
@@ -910,7 +910,7 @@ void Application::RenderConversationBox()
     {
         ImGui::BeginGroup();
         // 消息框
-        ImGui::Image(reinterpret_cast<void*>(TextureCache["message"]), ImVec2(32, 32),
+        ImGui::Image(TextureCache["message"], ImVec2(32, 32),
                      ImVec2(0, 0),
                      ImVec2(1, 1));
 
@@ -926,7 +926,7 @@ void Application::RenderConversationBox()
         // 删除按钮
         ImGui::SameLine();
         ImGui::PushID(conversation.c_str());
-        if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["del"]), ImVec2(16, 16)) &&
+        if (ImGui::ImageButton("###"+TextureCache["del"],TextureCache["del"], ImVec2(16, 16)) &&
             conversations.size() > 1)
         {
             convid = conversation;
@@ -977,6 +977,7 @@ void Application::RenderConfigBox()
             configure.gemini.enable = false;
             configure.openAi.enable = false;
             configure.gptLike.enable = false;
+            configure.grok.enable = false;
         }
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用Gemini"), &configure.gemini.enable);
         if (configure.gemini.enable)
@@ -984,6 +985,7 @@ void Application::RenderConfigBox()
             configure.claude.enable = false;
             configure.openAi.enable = false;
             configure.gptLike.enable = false;
+            configure.grok.enable = false;
         }
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用OpenAI"), &configure.openAi.enable);
         if (configure.openAi.enable)
@@ -991,6 +993,7 @@ void Application::RenderConfigBox()
             configure.claude.enable = false;
             configure.gemini.enable = false;
             configure.gptLike.enable = false;
+            configure.grok.enable = false;
         }
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用GPT-Like"), &configure.gptLike.enable);
         if (configure.gptLike.enable)
@@ -998,6 +1001,7 @@ void Application::RenderConfigBox()
             configure.claude.enable = false;
             configure.gemini.enable = false;
             configure.openAi.enable = false;
+            configure.grok.enable = false;
         }
 
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用GPT-Grok"), &configure.grok.enable);
@@ -1006,6 +1010,7 @@ void Application::RenderConfigBox()
             configure.claude.enable = false;
             configure.gemini.enable = false;
             configure.openAi.enable = false;
+            configure.gptLike.enable = false;
         }
 
 
@@ -1044,11 +1049,10 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+            if (ImGui::ImageButton("###"+TextureCache["eye"],TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, 1),
-                                   -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1)))
             {
@@ -1111,11 +1115,10 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+            if (ImGui::ImageButton("###"+TextureCache["eye"],TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, 1),
-                                   -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1)))
             {
@@ -1167,11 +1170,10 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+            if (ImGui::ImageButton("###"+TextureCache["eye"],TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, 1),
-                                   -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1)))
             {
@@ -1217,11 +1219,10 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+            if (ImGui::ImageButton("###"+TextureCache["eye"],TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, 1),
-                                   -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1)))
             {
@@ -1271,11 +1272,10 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+            if (ImGui::ImageButton("###"+(TextureCache["eye"]),(TextureCache["eye"]),
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
                                    ImVec2(1, 1),
-                                   -1,
                                    ImVec4(0, 0, 0, 0),
                                    ImVec4(1, 1, 1, 1)))
             {
@@ -1322,11 +1322,10 @@ void Application::RenderConfigBox()
             }
         }
         ImGui::SameLine();
-        if (ImGui::ImageButton(reinterpret_cast<void*>(TextureCache["eye"]),
+        if (ImGui::ImageButton("###"+TextureCache["eye"],(TextureCache["eye"]),
                                ImVec2(16, 16),
                                ImVec2(0, 0),
                                ImVec2(1, 1),
-                               1,
                                ImVec4(0, 0, 0, 0),
                                ImVec4(1, 1, 1, 1)))
         {
@@ -1725,7 +1724,7 @@ void Application::RenderConfigBox()
                     configure.claude.enable = false;
                     configure.grok.enable = false;
                     configure.gptLike.enable = true;
-                    configure.gptLike.apiEndPoint = "http://localhost:11434/";
+                    configure.gptLike.apiEndPoint = "http://localhost:11434/v1/chat/completions";
                     configure.gptLike.api_key = "123456";
                     configure.gptLike.model = "qwen2.5:3b";
                     Utils::SaveYaml("config.yaml", Utils::toYaml(configure));

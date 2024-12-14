@@ -16,7 +16,7 @@ struct OpenAIBotCreateInfo
 {
     bool enable = true;
     bool useLocalModel = false;
-    bool useWebProxy = true;
+    bool useWebProxy = false;
     std::string modelPath = "model/ChatGLM/";
     std::string api_key = "";
     std::string model = "gpt-4o";
@@ -38,7 +38,7 @@ struct GPTLikeCreateInfo
             enable = false;
             api_key = "empty";
             model = "qwen2.5:3b";
-            apiEndPoint = "http://localhost:11434/";
+            apiEndPoint = "http://localhost:11434/v1/chat/completions";
         }
     }
 };

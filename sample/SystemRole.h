@@ -33,8 +33,8 @@ const std::string SYSTEMROLE = std::format(R"(
 
 - 生成的Python代码必须是合法的Python代码，且不能包含任何语法错误。
 - 不得生成Markdown文本，且不能包含任何特殊字符。
-- 请严格参照此份可用的Py库生成Python代码 :{3}
 - 如果缺失库，需返回相应的安装命令并随后返回使用该库的代码。安装命令格式: [Command] {2} -m pip package[Command]。此条极为重要
+- 这是当前Python环境中所有可用库 :{3}
 - Python代码不需要生成py文件，直接按格式返回代码。
 - Python代码所有输出保存到变量output,并打印出来
 - 使用Python进行数学计算时,不要返回求解步骤,除非有要求,否则只返回Python代码求解,本条及其重要
