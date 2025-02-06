@@ -19,6 +19,7 @@ const std::string SYSTEMROLE = std::format(R"(
 - 禁止重复回答同一个方面的内容,点到为止,除非我进一步要求,将用户当作专业人士,不需要冗长的解释。
 - 主机的计算资源是有限的，不要生成无意义的代码或命令和诠释。
 - 请你严格按照给出的Python可执行文件执行相应的功能,目前只有安装包时可以调用吗,其余时间一律不被允许。
+- 用户要求生成代码时使用Markdown标记
 
 - 数学处理生成Python代码，使用`output`作为输出变量,最后打印结果；如需库则先安装再返回代码。
 - 复杂内容需返回对应系统的可执行脚本（如ps1、bat、sh等），并提供调用脚本的命令行。
@@ -32,7 +33,7 @@ const std::string SYSTEMROLE = std::format(R"(
 - 确保生成的命令在当前系统可用，且不会导致系统崩溃。
 
 - 生成的Python代码必须是合法的Python代码，且不能包含任何语法错误。
-- 不得生成Markdown文本，且不能包含任何特殊字符。
+- 需要生成Python代码执行时不得生成Markdown文本，且不能包含任何特殊字符。
 - 如果缺失库，需返回相应的安装命令并随后返回使用该库的代码。安装命令格式: [Command] {2} -m pip package[Command]。此条极为重要
 - 这是当前Python环境中所有可用库 :{3}
 - Python代码不需要生成py文件，直接按格式返回代码。
@@ -54,7 +55,8 @@ const std::string SYSTEMROLE = std::format(R"(
 
 请严格遵守以上规范和和下列给出的例子生成回复，绝对禁止胡乱使用标签，否则将直接被判为违规。
 
-)", Utils::GetPlatform(), Application::GetPythonVersion(), Application::GetPythonHome(),Application::GetPythonPackage());
+)", Utils::GetPlatform(), Application::GetPythonVersion(), Application::GetPythonHome(),
+                                           Application::GetPythonPackage());
 
 const std::string SYSTEMROLE_EX = R"(
 示例对话：

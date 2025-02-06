@@ -149,11 +149,11 @@ void Application::Draw(Ref<std::string> prompt, long long ts, bool callFromBot)
             std::lock_guard<std::mutex> lock(chat_mutex);
             for (auto& it : chat_history)
             {
-                if (it.flag == 1)
+                if (it->flag == 1)
                 {
-                    if (it.timestamp >= ts)
+                    if (it->timestamp >= ts)
                     {
-                        it.image = uid;
+                        it->image = uid;
                         break;
                     }
                 }
@@ -173,7 +173,7 @@ void Application::Draw(Ref<std::string> prompt, long long ts, bool callFromBot)
 
             // 使用互斥锁保护共享资源 chat_history
             std::lock_guard<std::mutex> lock(chat_mutex);
-            chat_history.emplace_back(img);
+            chat_history.emplace_back(CreateRef<Chat>(img));
         }
     }
     else
@@ -183,72 +183,82 @@ void Application::Draw(Ref<std::string> prompt, long long ts, bool callFromBot)
         img.timestamp = Utils::GetCurrentTimestamp() + 10;
         img.content = reinterpret_cast<const char*>(u8"抱歉,我不能为您生成图片,因为您的api地址为空");
         std::lock_guard<std::mutex> lock(chat_mutex);
-        chat_history.emplace_back(img);
+        chat_history.emplace_back(CreateRef<Chat>(img));
     }
 }
 
-void Application::DisplayInputText(Chat chat) const
+void Application::DisplayInputText(Ref<Chat> chat) const
 {
-    ImVec2 text_size, text_pos;
-    float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
-    int n = static_cast<int>(max_width / fontSize);
-
-    n = max(n, 1);
-    max_width = min(max_width, fontSize * n);
-
-    ImVec2 input_size = ImVec2(0, 0);
-    std::vector<std::string> lines;
-    std::string line;
-    std::istringstream stream(chat.content);
-    float max_line_width = 0;
-
-
-    // 按行读取内容
-    while (std::getline(stream, line))
+    try
     {
-        lines.push_back(line);
-        text_size = ImGui::CalcTextSize(line.c_str());
-        max_line_width = max(max_line_width, text_size.x);
-    }
-    // 计算输入框的宽度
-    input_size.x = min(max_line_width, max_width) + 16;
-    static float orig = fontSize + ImGui::GetStyle().ItemSpacing.y;
-    input_size.y = 0;
-    // 处理每一行
-    std::string processed_content;
-    for (size_t i = 0; i < lines.size(); ++i)
-    {
-        line = lines[i];
-        int width = Utils::WStringSize(line);
+        ImVec2 text_size, text_pos;
+        float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
+        int n = static_cast<int>(max_width / fontSize);
+
+        n = max(n, 1);
+        max_width = min(max_width, fontSize * n);
+
+        ImVec2 input_size = ImVec2(0, 0);
+        std::vector<std::string> lines;
+        std::string line;
+        std::istringstream stream(chat->content);
+        float max_line_width = 0;
 
 
-        input_size.y += orig; // 累加每行的高度
-
-        // 如果当前行宽度超过n，进行换行处理
-        int idx = 1;
-        while (width >= n)
+        // 按行读取内容
+        while (std::getline(stream, line))
         {
-            line = Utils::WStringInsert(line, n * idx, "\n");
-            width -= n;
-            idx++;
+            lines.push_back(line);
+            text_size = ImGui::CalcTextSize(line.c_str());
+            max_line_width = max(max_line_width, text_size.x);
+        }
+        // 计算输入框的宽度
+        input_size.x = min(max_line_width, max_width) + 16;
+        static float orig = fontSize + ImGui::GetStyle().ItemSpacing.y;
+        input_size.y = 0;
+        // 处理每一行
+        std::string processed_content;
+        for (size_t i = 0; i < lines.size(); ++i)
+        {
+            line = lines[i];
+            int width = Utils::WStringSize(line);
+
+
+            input_size.y += orig; // 累加每行的高度
+
+            // 如果当前行宽度超过n，进行换行处理
+            int idx = 1;
+            while (width >= n)
+            {
+                line = Utils::WStringInsert(line, n * idx, "\n");
+                width -= n;
+                idx++;
+            }
+            input_size.y += (idx - 1) * orig;
+            processed_content += line; // 合并处理后的行
+            if (i < lines.size() - 1)
+            {
+                processed_content += "\n"; // 添加换行符
+            }
         }
 
-        processed_content += line; // 合并处理后的行
-        if (i < lines.size() - 1)
-        {
-            processed_content += "\n"; // 添加换行符
-        }
+        std::vector<char> mutableBuffer(processed_content.begin(), processed_content.end());
+
+        // Ensure the buffer is null-terminated.
+        mutableBuffer.push_back('\0');
+
+        ImGui::InputTextMultiline(("##" + std::to_string(chat->timestamp) + std::to_string(chat->flag)).c_str(),
+                                  mutableBuffer.data(), mutableBuffer.size(),
+                                  input_size,
+                                  ImGuiInputTextFlags_ReadOnly |
+                                  ImGuiInputTextFlags_AutoSelectAll);
+
+        // 显示时间戳
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(chat->timestamp).c_str());
     }
-
-    // 显示输入框
-    ImGui::InputTextMultiline(("##" + std::to_string(chat.timestamp)).c_str(),
-                              const_cast<char*>(processed_content.c_str()), processed_content.size() + 1,
-                              input_size,
-                              ImGuiInputTextFlags_ReadOnly |
-                              ImGuiInputTextFlags_AutoSelectAll);
-
-    // 显示时间戳
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(chat.timestamp).c_str());
+    catch (...)
+    {
+    }
 }
 
 bool Application::ContainsCommand(std::string& str, std::string& cmd, std::string& args) const
@@ -292,12 +302,13 @@ void Application::InlineCommand(const std::string& cmd, const std::string& args,
         help.timestamp = Utils::GetCurrentTimestamp() + 10;
         help.content = reinterpret_cast<const char*>(
             u8"内置命令:\n[CMD]draw[CMD]或者[CMD]绘图[CMD] [prompt] 绘制一张图片\n[CMD]help[CMD]或者[CMD]帮助[CMD] 唤起帮助");
-        chat_history.emplace_back(help);
+        chat_history.emplace_back(CreateRef<Chat>(help));
     }
 }
 
 void Application::CreateBot()
 {
+    OnlySetting = false;
     auto isMissingKey = [](const std::string& key)
     {
         return key.empty();
@@ -474,24 +485,28 @@ void Application::RenderChatBox()
     ImGui::BeginChild("Chat Box Content", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing()), false,
                       ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoSavedSettings);
     std::sort(chat_history.begin(), chat_history.end(), compareByTimestamp);
+    bool new_chat = false;
     // 显示聊天记录
     for (auto& chat : chat_history)
     {
-        Chat userAsk;
-        Chat botAnswer;
-        if (chat.flag == 0)
+        Ref<Chat> userAsk;
+        Ref<Chat> botAnswer;
+        if (!chat)
+            continue;
+        if (chat->flag == 0)
             userAsk = chat;
         else
             botAnswer = chat;
-        ImVec2 text_size, text_pos;
 
-        if (!userAsk.content.empty())
+        if (userAsk && !userAsk->content.empty())
         {
             DisplayInputText(userAsk);
         }
-        if (!botAnswer.content.empty())
+        if (botAnswer && !botAnswer->content.empty())
         {
             // Modify the style of the multi-line input field
+            new_chat = botAnswer->newMessage;
+            botAnswer->newMessage = false;
             float rounding = 4.0f;
             ImVec4 bg_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
             ImVec4 text_color = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -506,8 +521,9 @@ void Application::RenderChatBox()
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, text_color);
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
             ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
-            ImGui::PushID(botAnswer.timestamp);
-            if (ImGui::ImageButton("##" + TextureCache["avatar"], TextureCache["avatar"], ImVec2(24, 24)))
+            ImGui::PushID(("Avatar" + std::to_string(botAnswer->timestamp)).c_str());
+            if (ImGui::ImageButton("##" + TextureCache["avatar"], TextureCache["avatar"],
+                                   ImVec2(24, 24)))
             {
                 fileBrowser = true;
                 title = reinterpret_cast<const char*>(u8"图片选择");
@@ -524,48 +540,47 @@ void Application::RenderChatBox()
             }
             ImGui::PopID();
 
-            // Display the bot's answer
             ImGui::SameLine();
             DisplayInputText(botAnswer);
             // 加载纹理的线程
-            if (!botAnswer.image.empty())
+            if (!botAnswer->image.empty())
             {
                 static bool wait = false;
-                if (!SDCache.contains(botAnswer.image))
+                if (!SDCache.contains(botAnswer->image))
                 {
                     // 如果没有加载过该纹理
                     if (!wait)
                     {
                         wait = true;
-                        LogInfo("开始加载图片: {0}", Resources + "Images/" + botAnswer.image);
-                        auto t = LoadTexture(Resources + "Images/" + botAnswer.image);
-                        SDCache[botAnswer.image] = t;
+                        LogInfo("开始加载图片: {0}", Resources + "Images/" + botAnswer->image);
+                        auto t = LoadTexture(Resources + "Images/" + botAnswer->image);
+                        SDCache[botAnswer->image] = t;
                         wait = false;
                     }
                 }
                 else
                 {
                     // 如果纹理已加载,显示
-                    if (ImGui::ImageButton("##" + SDCache[botAnswer.image], (SDCache[botAnswer.image]),
+                    if (ImGui::ImageButton("##" + SDCache[botAnswer->image], (SDCache[botAnswer->image]),
                                            ImVec2(256, 256)))
                     {
-                        Utils::OpenFileManager(Utils::GetAbsolutePath(Resources + "Images/" + botAnswer.image));
+                        Utils::OpenFileManager(Utils::GetAbsolutePath(Resources + "Images/" + botAnswer->image));
                     }
                 }
             }
 
-
-            // Restore the style
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(8);
         }
     }
     // 滚动到底部
-    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetStyle().ItemSpacing.x - 20)
+    if (new_chat)
     {
-        ImGui::SetScrollHereY(1.0f);
+        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetStyle().ItemSpacing.x - 20)
+        {
+            ImGui::SetScrollHereY(1.0f);
+        }
     }
-
     ImGui::EndChild();
 
     // 显示菜单栏
@@ -708,18 +723,31 @@ void Application::RenderInputBox()
                     {
                         text.erase(std::remove(text.begin(), text.end(), '\n'), text.end());
                         last_input = text;
-                        Chat user;
-                        user.timestamp = Utils::GetCurrentTimestamp();
-                        user.content = last_input;
+                        Ref<Chat> user = CreateRef<Chat>();
+                        user->timestamp = Utils::GetCurrentTimestamp();
+                        user->content = last_input;
                         AddChatRecord(user);
 
                         Rnum -= 1;
 
                         std::remove(("recorded" + std::to_string(Rnum) + ".wav").c_str());
                         LogInfo("whisper: 删除录音{0}", "recorded" + std::to_string(Rnum) + ".wav");
-                        std::shared_future<std::string> submit_future = std::async(std::launch::async, [&](void)
+                        std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]()
                         {
-                            return StringExecutor::AutoExecute(bot->Submit(last_input, role), bot);
+                            Ref<Chat> botR = CreateRef<Chat>();
+                            botR->flag = 1;
+                            botR->timestamp = Utils::GetCurrentTimestamp() + 1;
+                            std::lock_guard<std::mutex> lock(chat_history_mutex);
+                            AddChatRecord(botR);
+                            bot->SubmitAsync(last_input, botR->timestamp);
+                            while (!bot->Finished(botR->timestamp))
+                            {
+                                botR->content = bot->GetResponse(botR->timestamp);
+                                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                            }
+                            botR->content = bot->GetResponse(botR->timestamp);
+                            botR->content = StringExecutor::AutoExecute(botR->content, bot);
+                            return botR->content;
                         }).share();
                         {
                             std::lock_guard<std::mutex> lock(submit_futures_mutex);
@@ -751,42 +779,6 @@ void Application::RenderInputBox()
         ImGui::Begin("##", NULL,
                      ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
                      ImGuiWindowFlags_NoTitleBar);
-        /*        ImGui::BeginGroup();
-                // 设置子窗口的背景颜色为浅灰色
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-        // 设置子窗口的圆角半径为10像素
-                ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 5.0f);
-        // 创建一个子窗口，注意要设置大小和标志
-        // 大小要和你的控件一致，标志要去掉边框和滚动条
-                ImGui::BeginChild("background", ImVec2(500, 20), false,
-                                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
-                                  ImGuiWindowFlags_NoDecoration);
-        // 恢复默认的样式
-                ImGui::PopStyleColor();
-                ImGui::PopStyleVar();
-        // 显示你的控件
-                ImGui::SameLine();
-                ImGui::Text(reinterpret_cast<const char *>(u8"总额: %.2f"), billing.total);
-                ImGui::SameLine();
-                ImGui::Text(reinterpret_cast<const char *>(u8"可用: %.2f"), billing.available);
-                ImGui::SameLine();
-                ImGui::Text(reinterpret_cast<const char *>(u8"剩余: %d 天"),
-                            Utils::Stamp2Day(billing.date * 1000 - Utils::getCurrentTimestamp()));
-                ImGui::SameLine();
-        // 设置进度条的背景颜色为透明
-                ImGui::PushStyleColor(ImGuiCol_PlotHistogramHovered, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-        // 设置进度条的前景颜色为白色
-                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(1.00f, 1.0f, 1.0f, 1.0f));
-        // 设置进度条的圆角半径为10像素
-                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.0f);
-        // 显示进度条，注意要设置frame_padding为-1，否则会有边框
-                ImGui::ProgressBar(billing.used / billing.total, ImVec2(100, 20), NULL);
-        // 恢复默认的样式
-                ImGui::PopStyleVar();
-                ImGui::PopStyleColor(2);
-        // 结束子窗口
-                ImGui::EndChild();
-                ImGui::EndGroup();*/
         if (ImGui::BeginMenuBar())
         {
             if (ImGui::BeginMenu(reinterpret_cast<const char*>(u8"指令")))
@@ -827,14 +819,14 @@ void Application::RenderInputBox()
 
     if ((strlen(last_input.c_str()) > 0 && ImGui::IsKeyPressed(ImGuiKey_Enter) && (!ImGui::GetIO().KeyCtrl)))
     {
-        Chat user;
+        Ref<Chat> user = CreateRef<Chat>();
         std::string cmd, args;
-        user.timestamp = Utils::GetCurrentTimestamp();
+        user->timestamp = Utils::GetCurrentTimestamp();
 
-        user.content = last_input;
+        user->content = last_input;
         if (ContainsCommand(last_input, cmd, args))
         {
-            InlineCommand(cmd, args, user.timestamp);
+            InlineCommand(cmd, args, user->timestamp);
         }
         else
         {
@@ -845,15 +837,25 @@ void Application::RenderInputBox()
                     listener->ResetRecorded();
                 std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]()
                 {
-                    LogInfo(last_input);
-                    return StringExecutor::AutoExecute(bot->Submit(last_input, role), bot);
+                    Ref<Chat> botR = CreateRef<Chat>();
+                    botR->flag = 1;
+                    botR->timestamp = Utils::GetCurrentTimestamp() + 1;
+                    std::lock_guard<std::mutex> lock(chat_history_mutex);
+                    AddChatRecord(botR);
+                    bot->SubmitAsync(last_input, botR->timestamp);
+                    while (!bot->Finished(botR->timestamp))
+                    {
+                        botR->content = bot->GetResponse(botR->timestamp);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                    }
+                    botR->content = bot->GetResponse(botR->timestamp);
+                    botR->content = StringExecutor::AutoExecute(botR->content, bot);
+                    return botR->content;
                 }).share();
-
-
                 submit_futures.push_back(std::move(submit_future));
             }
         }
-        if (is_valid_text(user.content))
+        if (is_valid_text(user->content))
         {
             AddChatRecord(user);
         }
@@ -876,13 +878,6 @@ void Application::RenderInputBox()
             if (!configure.claude.enable)
             {
                 std::string response = it->get();
-                std::lock_guard<std::mutex> lock(chat_history_mutex);
-                Chat botR;
-                botR.flag = 1;
-
-                botR.timestamp = Utils::GetCurrentTimestamp();
-                botR.content = response;
-                AddChatRecord(botR);
 
                 it = submit_futures.erase(it);
                 auto tmp_code = Utils::GetAllCodesFromText(response);
@@ -1116,7 +1111,12 @@ void Application::RenderConfigBox()
             }
         }
         ImGui::EndChild();
+        if (ImGui::Button(reinterpret_cast<const char*>(u8"添加自定义API"), ImVec2(120, 30)))
+        {
+            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"请输入新的配置名字"));
+        }
         ImGui::Text("API配置: ");
+        ImGui::BeginChild("##API配置", ImVec2(0, 160), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
         if (configure.openAi.enable)
         {
             static bool showPassword = false, clicked = false;
@@ -1253,7 +1253,7 @@ void Application::RenderConfigBox()
             }
             if (showPassword || clicked)
             {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"ApiKey"),
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
                                      GetBufferByName("api").buffer,
                                      sizeof(input_buffer)))
                 {
@@ -1262,7 +1262,7 @@ void Application::RenderConfigBox()
             }
             else
             {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"ApiKey"),
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
                                      GetBufferByName("api").buffer,
                                      sizeof(input_buffer),
                                      ImGuiInputTextFlags_Password))
@@ -1301,7 +1301,7 @@ void Application::RenderConfigBox()
             }
             if (showPassword || clicked)
             {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"ApiKey"),
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
                                      GetBufferByName("api").buffer,
                                      sizeof(input_buffer)))
                 {
@@ -1310,7 +1310,7 @@ void Application::RenderConfigBox()
             }
             else
             {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"ApiKey"),
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
                                      GetBufferByName("api").buffer,
                                      sizeof(input_buffer),
                                      ImGuiInputTextFlags_Password))
@@ -1383,7 +1383,7 @@ void Application::RenderConfigBox()
                 {
                     clicked = !clicked;
                 }
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 主机"), GetBufferByName("endPoint").buffer,
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 主机"), GetBufferByName("apiHost").buffer,
                                      TEXT_BUFFER))
                 {
                     cdata.apiHost = GetBufferByName("apiHost").buffer;
@@ -1407,13 +1407,7 @@ void Application::RenderConfigBox()
                 }
             }
         }
-
-        if (ImGui::Button(reinterpret_cast<const char*>(u8"添加自定义API"), ImVec2(120, 30)))
-        {
-            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"请输入新的配置名字"));
-        }
-
-        ImGui::SameLine();
+        ImGui::EndChild();
 
         if (ImGui::Button(reinterpret_cast<const char*>(u8"切换模型"), ImVec2(120, 30)))
         {
@@ -2235,21 +2229,21 @@ bool Application::Installer(std::map<std::string, std::string> tasks)
 }
 
 
-void Application::AddChatRecord(const Chat& data)
+void Application::AddChatRecord(Ref<Chat> data)
 {
-    chat_history.push_back(data);
+    chat_history.emplace_back(data);
 }
 
 void Application::DeleteAllBotChat()
 {
     std::erase_if(chat_history,
-                  [](const Chat& c)
+                  [](const Ref<Chat> c)
                   {
-                      return c.flag == 1;
+                      return c->flag == 1;
                   });
 }
 
-vector<Application::Chat> Application::load(std::string name)
+vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
 {
     if (UFile::Exists(ConversationPath.string() + name + ".yaml"))
     {
@@ -2265,10 +2259,15 @@ vector<Application::Chat> Application::load(std::string name)
             for (const auto& record_node : node)
             {
                 // 从 YAML 映射节点中读取 ChatRecord 对象的成员变量
+                Ref<Chat> record = CreateRef<Chat>();
                 int flag = record_node["flag"].as<int>();
+                if (record_node["newmsg"])
+                {
+                    record->newMessage = record_node["newmsg"].as<bool>();
+                }
                 long long timestamp;
                 std::string content;
-                Chat record;
+
                 if (flag == 0)
                 {
                     timestamp = record_node["user"]["timestamp"].as<long long>();
@@ -2278,15 +2277,15 @@ vector<Application::Chat> Application::load(std::string name)
                 {
                     timestamp = record_node["bot"]["timestamp"].as<long long>();
                     content = record_node["bot"]["content"].as<std::string>();
-                    record.image = record_node["bot"]["image"].as<std::string>();
+                    record->image = record_node["bot"]["image"].as<std::string>();
                 }
 
-                record.flag = flag;
-                record.content = content;
-                record.timestamp = timestamp;
+                record->flag = flag;
+                record->content = content;
+                record->timestamp = timestamp;
 
                 // 创建一个新的 ChatRecord 对象，并将其添加到 chat_history 中
-                chat_history.push_back(record);
+                AddChatRecord(record);
             }
 
             session_file.close();
@@ -2333,17 +2332,18 @@ void Application::save(std::string name, bool out)
             YAML::Node record_node(YAML::NodeType::Map);
 
             // 将 ChatRecord 对象的成员变量映射到 YAML 映射节点中
-            record_node["flag"] = record.flag;
-            if (record.flag == 0)
+            record_node["flag"] = record->flag;
+            record_node["newmsg"] = record->newMessage;
+            if (record->flag == 0)
             {
-                record_node["user"]["timestamp"] = record.timestamp;
-                record_node["user"]["content"] = record.content;
+                record_node["user"]["timestamp"] = record->timestamp;
+                record_node["user"]["content"] = record->content;
             }
             else
             {
-                record_node["bot"]["timestamp"] = record.timestamp;
-                record_node["bot"]["content"] = record.content;
-                record_node["bot"]["image"] = record.image;
+                record_node["bot"]["timestamp"] = record->timestamp;
+                record_node["bot"]["content"] = record->content;
+                record_node["bot"]["image"] = record->image;
             }
 
             // 将 YAML 映射节点添加到主节点中
@@ -2660,7 +2660,7 @@ void Application::GetClaudeHistory()
                 {
                     botR.timestamp = it.first;
                     botR.content = it.second;
-                    AddChatRecord(botR);
+                    AddChatRecord(CreateRef<Chat>(botR));
                 }
             }
             // 按时间戳排序
@@ -2668,9 +2668,9 @@ void Application::GetClaudeHistory()
 
             for (const auto& chat : chat_history)
             {
-                if (chat.flag == 0)
+                if (chat->flag == 0)
                 {
-                    FirstTime = chat.timestamp;
+                    FirstTime = chat->timestamp;
                     break;
                 }
             }
@@ -2678,9 +2678,9 @@ void Application::GetClaudeHistory()
             // 删除早于FirstTime的对话
             chat_history.erase(
                 std::remove_if(chat_history.begin(), chat_history.end(),
-                               [&](const Chat& c)
+                               [&](const Ref<Chat> c)
                                {
-                                   return c.timestamp < FirstTime;
+                                   return c->timestamp < FirstTime;
                                }),
                 chat_history.end());
             save(convid, false);

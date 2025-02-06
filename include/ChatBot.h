@@ -25,7 +25,14 @@ struct Billing
 class ChatBot
 {
 public:
-    virtual std::string Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") = 0;
+    virtual std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
+                               std::string convid = "defult") = 0;
+
+    void SubmitAsync(std::string prompt, size_t timeStamp, std::string role = Role::User,
+                     std::string convid = "defult")
+    {
+        std::thread([=] { Submit(prompt, timeStamp, role, convid); }).detach();
+    }
 
     virtual void Reset() = 0;
 
@@ -37,11 +44,23 @@ public:
 
     virtual void Add(std::string name) = 0;
 
-    virtual Billing GetBilling() = 0;
+    std::string GetResponse(size_t uid)
+    {
+        return std::get<0>(Response[uid]);
+    }
+
+    bool Finished(size_t uid)
+    {
+        return std::get<1>(Response[uid]);
+    }
 
     virtual map<long long, string> GetHistory() = 0;
 
+
     map<long long, string> History;
+
+protected:
+    std::unordered_map<size_t, std::tuple<std::string, bool>> Response; //ts,response,finished
 };
 
 class ChatGPT : public ChatBot
@@ -71,9 +90,8 @@ public:
     ChatGPT(const OpenAIBotCreateInfo& chat_data, std::string systemrole = "");
 
     std::string
-    Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") override;
-
-    std::future<std::string> SubmitAsync(std::string prompt, std::string role, std::string convid);
+    Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
+           std::string convid = "defult") override;
 
     void Reset() override;
 
@@ -84,8 +102,6 @@ public:
     void Del(std::string name) override;
 
     void Add(std::string name) override;
-
-    Billing GetBilling() override;
 
     map<long long, string> GetHistory() override { return map<long long, string>(); }
 
@@ -128,9 +144,7 @@ protected:
 
     static long long getTimestampBefore(const int daysBefore);
 
-    string sendRequest(std::string data);
-
-    static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp);
+    std::string sendRequest(std::string data, size_t ts);
 };
 
 class GPTLike : public ChatGPT
@@ -169,7 +183,8 @@ public:
     }
 
     std::string
-    Submit(std::string text, std::string role = Role::User, std::string convid = "defult") override;
+    Submit(std::string text, size_t timeStamp, std::string role = Role::User,
+           std::string convid = "defult") override;
 
     void Reset() override;;
 
@@ -181,9 +196,7 @@ public:
 
     void Add(std::string name = "default") override;
 
-    Billing GetBilling() override;;
-
-    map<long long, string> GetHistory() override;;
+    map<long long, string> GetHistory() override;
 
 private:
     map<string, string> ChannelListName;
@@ -199,7 +212,8 @@ public:
     }
 
     std::string
-    Submit(std::string prompt, std::string role = Role::User, std::string convid = "defult") override;
+    Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
+           std::string convid = "defult") override;
 
     std::future<std::string> SubmitAsync(std::string prompt, std::string role, std::string convid)
     {
@@ -215,9 +229,7 @@ public:
 
     void Add(std::string name) override;
 
-    Billing GetBilling() override { return Billing(); };
-
-    map<long long, string> GetHistory() override { return map<long long, string>(); };
+    map<long long, string> GetHistory() override { return map<long long, string>(); }
 
 private:
     GeminiBotCreateInfo geminiData;
@@ -227,40 +239,6 @@ private:
     std::map<std::string, json> Conversation;
     json history;
 };
-
-/*
-class Claude2 {
-public:
-    Claude2(const std::string &sessionKey) : sessionKey_(sessionKey) {}
-
-    std::string startConversation(const std::string &message) {
-        // 1. 开始新对话
-        cpr::Response r = cpr::Post(cpr::Url{"https://api.claude.ai/conversation"},
-                                    cpr::Body{{"message", message}},
-                                    cpr::Header{{"Content-Type", "application/json"},
-                                                {"Cookie",       "sessionKey=" + sessionKey_}});
-
-        // 2. 获取对话ID,使用 nlohmann::json 解析
-        json response = json::parse(r.text);
-        std::string conversationId = response["conversationId"];
-
-
-        // 3. 发送消息
-        r = cpr::Post(cpr::Url{"https://api.claude.ai/conversation/" + conversationId},
-                      cpr::Body{{"message", message}},
-                      cpr::Header{{"Content-Type", "application/json"},
-                                  {"Cookie",       "sessionKey=" + sessionKey_}});
-
-        // 4. 获取回复
-        std::string reply = r.text;
-
-        return reply;
-    }
-
-private:
-    std::string sessionKey_;
-};
-*/
 
 
 #endif

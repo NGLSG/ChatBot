@@ -1,5 +1,103 @@
 #include "ChatBot.h"
 
+//userp:<string,string>
+struct DString
+{
+    std::string* str1;
+    std::string* str2;
+};
+
+static inline void TrimLeading(std::string& s)
+{
+    size_t pos = 0;
+    while (pos < s.size() && std::isspace(static_cast<unsigned char>(s[pos])))
+        pos++;
+    if (pos > 0)
+        s.erase(0, pos);
+}
+
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
+{
+    DString* dstr = static_cast<DString*>(userp);
+    std::string* buffer = dstr->str1;
+    std::string* rp = dstr->str2;
+
+    size_t totalSize = size * nmemb;
+    std::string dataChunk(static_cast<char*>(contents), totalSize);
+
+    // Append incoming data to the buffer.
+    buffer->append(dataChunk);
+    LogInfo("Accumulated Buffer:\n" + *buffer);
+
+    std::stringstream ss(*buffer);
+    std::string line;
+    std::string remaining; // Will be used to reassemble any unprocessed data.
+
+    // Process the buffer line-by-line.
+    while (std::getline(ss, line))
+    {
+        // In case the line is empty, or only whitespace, skip it.
+        if (line.find_first_not_of(" \t\r\n") == std::string::npos)
+            continue;
+
+        // Trim leading spaces.
+        TrimLeading(line);
+
+        // Remove prefix "data: " if it exists.
+        const std::string dataPrefix = "data: ";
+        if (line.compare(0, dataPrefix.length(), dataPrefix) == 0)
+        {
+            line = line.substr(dataPrefix.length());
+        }
+
+        // Remove termination marker "[DONE]" if present.
+        size_t donePos = line.find("[DONE]");
+        if (donePos != std::string::npos)
+        {
+            line.erase(donePos);
+        }
+
+        // Log the processed line before JSON parsing.
+        LogInfo("Processing line: " + line);
+
+        try
+        {
+            // Parse the JSON from the line.
+            json resp = json::parse(line);
+            // Process the JSON: extract "choices"[0]["delta"]["content"] if available.
+            json choices = resp.value("choices", json::array());
+            if (!choices.empty())
+            {
+                json delta = choices[0].value("delta", json::object());
+                if (!delta.empty() && delta.contains("content"))
+                {
+                    if (delta["content"].is_string())
+                    {
+                        rp->append(delta["content"].get<std::string>());
+                        std::cout << "Updated response: " << *rp << std::endl;
+                    }
+                }
+            }
+        }
+        catch (const json::exception& e)
+        {
+            LogWarn("JSON parse warning: " + std::string(e.what()));
+            remaining += line + "\n";
+        }
+        catch (const std::exception& e)
+        {
+            LogError("General error: " + std::string(e.what()));
+        }
+    }
+
+    // After processing, update the buffer with any unprocessed remaining data.
+    buffer->clear();
+    buffer->append(remaining);
+
+    return totalSize;
+}
+
+
 ChatGPT::ChatGPT(const OpenAIBotCreateInfo& chat_data, std::string systemrole) : chat_data_(chat_data)
 {
     Logger::Init();
@@ -30,13 +128,10 @@ long long ChatGPT::getTimestampBefore(const int daysBefore)
     return std::chrono::duration_cast<std::chrono::milliseconds>(targetTime.time_since_epoch()).count();
 }
 
-string ChatGPT::sendRequest(std::string data)
+std::string ChatGPT::sendRequest(std::string data, size_t ts)
 {
     try
     {
-        json parsed_response;
-        std::string response_role = "";
-        std::string full_response = "";
         int retry_count = 0;
         while (retry_count < 3)
         {
@@ -64,12 +159,14 @@ string ChatGPT::sendRequest(std::string data)
                 curl = curl_easy_init();
                 if (curl)
                 {
-                    std::string response = "";
                     curl_easy_setopt(curl, CURLOPT_URL, (url).c_str());
                     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
                     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
                     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-                    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+                    DString dstr;
+                    dstr.str1 = new string();
+                    dstr.str2 = &std::get<0>(Response[ts]);
+                    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dstr);
                     if (!chat_data_.useWebProxy && !chat_data_.proxy.empty())
                     {
                         curl_easy_setopt(curl, CURLOPT_PROXY, chat_data_.proxy.c_str());
@@ -79,76 +176,34 @@ string ChatGPT::sendRequest(std::string data)
                     if (res != CURLE_OK)
                     {
                         LogError("ChatBot Error: Request failed with error code " + std::to_string(res));
-                        parsed_response = {};
                         retry_count++;
                     }
                     curl_easy_cleanup(curl);
                     curl_slist_free_all(headers);
-                    std::stringstream stream(response);
-                    std::string line;
-                    while (std::getline(stream, line))
-                    {
-                        if (line.empty())
-                        {
-                            continue;
-                        }
-                        // Remove "data: "
-                        line = line.substr(6);
-                        if (line == "[DONE]")
-                        {
-                            break;
-                        }
-                        json resp = json::parse(line);
-                        json choices = resp.value("choices", json::array());
-                        if (choices.empty())
-                        {
-                            continue;
-                        }
-                        json delta = choices[0].value("delta", json::object());
-                        if (delta.empty())
-                        {
-                            continue;
-                        }
-                        if (delta.count("reasoning_content"))
-                        {
-                        }
-                        if (delta.count("content"))
-                        {
-                            if (delta["content"].is_string())
-                            {
-                                full_response += delta["content"].get<std::string>();
-                            }
-                        }
-                    }
-                    return full_response;
+                    return std::get<0>(Response[ts]);
                 }
             }
             catch (std::exception& e)
             {
-                LogError("CahtBot Error: " + std::string(e.what()));
-                parsed_response = {};
+                LogError("ChatBot Error: " + std::string(e.what()));
                 retry_count++;
             }
         }
         LogError("ChatBot Error: Request failed after three retries.");
-        return "";
     }
     catch (exception& e)
     {
         LogError(e.what());
-    }
+    };
+    return "";
 }
 
-size_t ChatGPT::WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
-{
-    static_cast<std::string*>(userp)->append((char*)contents, size * nmemb);
-    return size * nmemb;
-}
 
-std::string Claude::Submit(std::string text, std::string role, std::string convid)
+std::string Claude::Submit(std::string text, size_t timeStamp, std::string role, std::string convid)
 {
     try
     {
+        Response[timeStamp] = std::make_tuple("", false);
         cpr::Payload payload{
             {"token", claudeData.slackToken},
             {"channel", claudeData.channelID},
@@ -172,6 +227,7 @@ std::string Claude::Submit(std::string text, std::string role, std::string convi
     {
         LogError(e.what());
     }
+    std::get<1>(Response[timeStamp]) = true;
     return "";
 }
 
@@ -191,7 +247,7 @@ void Claude::Reset()
             // 发送失败,打印错误信息
             LogError(r.error.message);
         }*/
-    Submit("请忘记上面的会话内容");
+    Submit("请忘记上面的会话内容", Logger::getCurrentTimestamp());
     LogInfo("Claude : 重置成功");
 }
 
@@ -213,11 +269,6 @@ void Claude::Del(std::string id)
 void Claude::Add(std::string name)
 {
     LogInfo("Claude : 不支持的操作");
-}
-
-Billing Claude::GetBilling()
-{
-    return {999, 999, 0, Utils::GetCurrentTimestamp()};
 }
 
 map<long long, string> Claude::GetHistory()
@@ -256,11 +307,12 @@ map<long long, string> Claude::GetHistory()
     return History;
 }
 
-std::string Gemini::Submit(std::string prompt, std::string role, std::string convid)
+std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
 {
     try
     {
         convid_ = convid;
+        Response[timeStamp] = std::make_tuple("", false);
         json ask;
         /*构造[
         {"role":"user",
@@ -293,7 +345,8 @@ std::string Gemini::Submit(std::string prompt, std::string role, std::string con
             {
                 retry_count++;
                 LogError("Gemini: {0}", r.text);
-                return "NA";
+                std::get<1>(Response[timeStamp]) = true;
+                continue;
             }
             json response = json::parse(r.text);
             std::optional<std::string> res = response["candidates"][0]["content"]["parts"][0]["text"];
@@ -304,6 +357,7 @@ std::string Gemini::Submit(std::string prompt, std::string role, std::string con
             ans["parts"][0]["text"] = res.value();
             history.emplace_back(ans);
             Conversation[convid_] = history;
+            std::get<1>(Response[timeStamp]) = true;
             return res.value_or("NA");
         }
     }
@@ -311,6 +365,7 @@ std::string Gemini::Submit(std::string prompt, std::string role, std::string con
     {
         LogError("获取历史记录失败:" + string(e.what()));
     }
+    return "";
 }
 
 void Gemini::Reset()
@@ -366,12 +421,7 @@ void Gemini::Add(std::string name)
     Save(name);
 }
 
-std::future<std::string> ChatGPT::SubmitAsync(std::string prompt, std::string role, std::string convid)
-{
-    return std::async(std::launch::async, &ChatGPT::Submit, this, prompt, role, convid);
-}
-
-std::string ChatGPT::Submit(std::string prompt, std::string role, std::string convid)
+std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
 {
     try
     {
@@ -392,11 +442,14 @@ std::string ChatGPT::Submit(std::string prompt, std::string role, std::string co
             "  \"messages\": " +
             Conversation[convid_].dump()
             + "}\n";
-        string text = sendRequest(data);
-
-        std::cout << "\rBot: " << text << flush;
-
-        return text;
+        Response[timeStamp] = std::make_tuple("", false);
+        std::string res = sendRequest(data, timeStamp);
+        json response;
+        response["content"] = res;
+        response["role"] = "assistant";
+        std::get<1>(Response[timeStamp]) = true;
+        LogInfo("ChatBot: Post finished");
+        return res;
     }
     catch (exception& e)
     {
@@ -409,6 +462,8 @@ void ChatGPT::Reset()
     history.clear();
     history.push_back(defaultJson);
     Conversation[convid_] = history;
+    Del(convid_);
+    Save(convid_);
 }
 
 void ChatGPT::Load(std::string name)
@@ -459,79 +514,4 @@ void ChatGPT::Add(std::string name)
     history.clear();
     history.emplace_back(defaultJson);
     Save(name);
-}
-
-Billing ChatGPT::GetBilling()
-{
-    std::string url;
-    Billing billing;
-
-    if (!chat_data_.useWebProxy)
-    {
-        url = "https://api.openai.com/";
-        if (!chat_data_.proxy.empty())
-        {
-            session.SetProxies(cpr::Proxies{
-                {"http", chat_data_.proxy},
-                {"https", chat_data_.proxy}
-            });
-        }
-    }
-    else
-    {
-        url = chat_data_.useWebProxy;
-    }
-
-    auto t1 = std::async(std::launch::async, [&]
-    {
-        // execute the first API request asynchronously
-        cpr::Session session;
-        session.SetUrl(cpr::Url{url + "v1/dashboard/billing/subscription"});
-        session.SetHeader(cpr::Header{
-            {"Authorization", "Bearer " + chat_data_.api_key},
-        });
-        session.SetVerifySsl(cpr::VerifySsl{false});
-
-        auto response = session.Get();
-        if (response.status_code != 200)
-        {
-            LogError("ChatBot Error: Request failed with status code " + std::to_string(response.status_code));
-            return;
-        }
-
-        json data = json::parse(response.text);
-        billing.total = data["system_hard_limit_usd"];
-        billing.date = data["access_until"];
-    });
-
-    auto t2 = std::async(std::launch::async, [&]
-    {
-        // execute the second API request asynchronously
-        cpr::Session session;
-        string start = Stamp2Time(getTimestampBefore(100));
-        string end = Stamp2Time(getCurrentTimestamp());
-        url = url + "v1/dashboard/billing/usage?start_date=" + start + "&end_date=" + end;
-        session.SetUrl(cpr::Url{url});
-        session.SetHeader(cpr::Header{
-            {"Authorization", "Bearer " + chat_data_.api_key},
-            {"api-key", chat_data_.api_key}
-        });
-        session.SetVerifySsl(cpr::VerifySsl{false});
-
-        auto response = session.Get();
-        if (response.status_code != 200)
-        {
-            LogError("ChatBot Error: Request failed with status code " + std::to_string(response.status_code));
-            return;
-        }
-
-        json data = json::parse(response.text);
-        billing.used = float(data["total_usage"]) / 100;
-        billing.available = billing.total - billing.used;
-    });
-
-    t1.wait(); // wait for both tasks to finish
-    t2.wait();
-
-    return billing;
 }

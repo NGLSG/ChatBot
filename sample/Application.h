@@ -24,7 +24,7 @@
 #include "sol/sol.hpp"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char*>(u8"CyberGirl v1.6.1");
+const std::string VERSION = reinterpret_cast<const char*>(u8"CyberGirl v1.6.2");
 extern std::vector<std::string> scommands;
 extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
@@ -115,9 +115,10 @@ private:
     struct Chat
     {
         int flag = 0; //0=user;1=bot
-        long long timestamp;
-        std::string content;
+        size_t timestamp;
+        std::string content = "...";
         std::string image;
+        bool newMessage = true;
     };
 
     Ref<Translate> translator;
@@ -131,7 +132,7 @@ private:
     GLFWwindow* window = nullptr;
 
     std::vector<std::string> conversations;
-    std::vector<Chat> chat_history;
+    std::vector<std::shared_ptr<Chat>> chat_history;
 
     // 存储当前输入的文本
     std::string input_text;
@@ -250,13 +251,13 @@ private:
     std::unordered_map<std::string, std::shared_ptr<Script>> PluginsScript1;
 
 
-    std::vector<Chat> load(std::string name = "default");
+    vector<std::shared_ptr<Application::Chat>> load(std::string name = "default");
 
     void save(std::string name = "default", bool out = true);
 
     void del(std::string name = "default");
 
-    void AddChatRecord(const Chat& data);
+    void AddChatRecord(Ref<Chat> data);
 
     void DeleteAllBotChat();
 
@@ -271,7 +272,7 @@ private:
         t.detach();
     }
 
-    void DisplayInputText(Chat chat) const;
+    void DisplayInputText(Ref<Chat> chat) const;
 
 
     bool ContainsCommand(std::string& str, std::string& cmd, std::string& args) const;
@@ -379,9 +380,9 @@ private:
     );
 
 
-    static bool compareByTimestamp(const Chat& a, const Chat& b)
+    static bool compareByTimestamp(const Ref<Chat> a, const Ref<Chat> b)
     {
-        return a.timestamp < b.timestamp;
+        return a->timestamp < b->timestamp;
     }
 
     Billing billing;

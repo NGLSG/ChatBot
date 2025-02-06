@@ -19,7 +19,7 @@ public:
         return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
     }
 
-    static std::string Stamp2Time(long long int timestamp, bool nospace = false) {
+    static std::string Stamp2Time(size_t timestamp, bool nospace = false) {
         int ms = timestamp % 1000;//取毫秒
         time_t tick = (time_t) (timestamp / 1000);//转换时间
         struct tm tm;

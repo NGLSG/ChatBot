@@ -1220,7 +1220,7 @@ void StringExecutor::_WriteToFile(std::string filename, const std::string& conte
     static std::regex newline_pattern("\n");
 
     // 替换换行符为空字符串
-    filename = std::regex_replace(filename, newline_pattern, "");
+    filename = std::regex_replace(filename, newline_pattern, "...");
     std::string fileParent = std::filesystem::path(filename).parent_path().string();
     if (!fileParent.empty())
         UDirectory::CreateDirIfNotExists(fileParent);
@@ -1319,7 +1319,7 @@ std::string StringExecutor::File(const std::string& text)
             }
 
             // 移除匹配的 [File] 内容
-            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "", std::regex_constants::format_first_only);
+            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "...", std::regex_constants::format_first_only);
         }
     }
     catch (const std::exception& e)
@@ -1417,7 +1417,7 @@ std::string StringExecutor::Process(const std::string& text)
             }
 
             // 替换已处理的内容
-            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "", std::regex_constants::format_first_only);
+            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "...", std::regex_constants::format_first_only);
         }
     }
     catch (const std::exception& e)
@@ -1444,7 +1444,7 @@ std::string StringExecutor::PreProcess(const std::string& text, const std::share
             auto res = Python(processedReading);
             replacedAnswer = std::regex_replace(replacedAnswer, pattern, res,
                                                 std::regex_constants::format_first_only);
-            replacedAnswer = bot->Submit(replacedAnswer);
+            replacedAnswer = bot->Submit(replacedAnswer, Utils::GetCurrentTimestamp());
         }
     }
     catch (const std::exception& e)
