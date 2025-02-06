@@ -5,6 +5,7 @@ struct DString
 {
     std::string* str1;
     std::string* str2;
+    std::mutex mtx;
 };
 
 static inline void TrimLeading(std::string& s)
@@ -19,52 +20,48 @@ static inline void TrimLeading(std::string& s)
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
 {
     DString* dstr = static_cast<DString*>(userp);
-    std::string* buffer = dstr->str1;
-    std::string* rp = dstr->str2;
-
     size_t totalSize = size * nmemb;
     std::string dataChunk(static_cast<char*>(contents), totalSize);
 
-    // Append incoming data to the buffer.
-    buffer->append(dataChunk);
-    LogInfo("Accumulated Buffer:\n" + *buffer);
+    {
+        // Lock while appending to str1.
+        std::lock_guard<std::mutex> lock(dstr->mtx);
+        dstr->str1->append(dataChunk);
+    }
 
-    std::stringstream ss(*buffer);
+    std::stringstream ss;
+    {
+        // Lock access to copy data for processing.
+        std::lock_guard<std::mutex> lock(dstr->mtx);
+        ss.str(*dstr->str1);
+    }
     std::string line;
-    std::string remaining; // Will be used to reassemble any unprocessed data.
+    std::string remaining;
 
     // Process the buffer line-by-line.
     while (std::getline(ss, line))
     {
-        // In case the line is empty, or only whitespace, skip it.
+        // Skip empty or all-whitespace lines.
         if (line.find_first_not_of(" \t\r\n") == std::string::npos)
             continue;
 
-        // Trim leading spaces.
         TrimLeading(line);
 
-        // Remove prefix "data: " if it exists.
         const std::string dataPrefix = "data: ";
         if (line.compare(0, dataPrefix.length(), dataPrefix) == 0)
         {
             line = line.substr(dataPrefix.length());
         }
 
-        // Remove termination marker "[DONE]" if present.
         size_t donePos = line.find("[DONE]");
         if (donePos != std::string::npos)
         {
             line.erase(donePos);
         }
 
-        // Log the processed line before JSON parsing.
-        LogInfo("Processing line: " + line);
-
         try
         {
-            // Parse the JSON from the line.
             json resp = json::parse(line);
-            // Process the JSON: extract "choices"[0]["delta"]["content"] if available.
             json choices = resp.value("choices", json::array());
             if (!choices.empty())
             {
@@ -73,26 +70,27 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
                 {
                     if (delta["content"].is_string())
                     {
-                        rp->append(delta["content"].get<std::string>());
-                        std::cout << "Updated response: " << *rp << std::endl;
+                        // Lock while updating str2.
+                        std::lock_guard<std::mutex> lock(dstr->mtx);
+                        dstr->str2->append(delta["content"].get<std::string>());
+                        std::cout << "\r" << dstr->str2 << std::flush;
                     }
                 }
             }
         }
         catch (const json::exception& e)
         {
-            LogWarn("JSON parse warning: " + std::string(e.what()));
             remaining += line + "\n";
         }
         catch (const std::exception& e)
         {
-            LogError("General error: " + std::string(e.what()));
         }
     }
 
-    // After processing, update the buffer with any unprocessed remaining data.
-    buffer->clear();
-    buffer->append(remaining);
+    {
+        std::lock_guard<std::mutex> lock(dstr->mtx);
+        *dstr->str1 = remaining;
+    }
 
     return totalSize;
 }

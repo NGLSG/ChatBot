@@ -1237,6 +1237,15 @@ void StringExecutor::_WriteToFile(std::string filename, const std::string& conte
     }
 }
 
+std::string StringExecutor::trim(const std::string& s)
+{
+    const char* whitespace = " \t\n\r";
+    size_t start = s.find_first_not_of(whitespace);
+    if (start == std::string::npos) return "";
+    size_t end = s.find_last_not_of(whitespace);
+    return s.substr(start, end - start + 1);
+}
+
 std::string StringExecutor::AutoExecute(const std::string& text, const std::shared_ptr<ChatBot>& bot)
 {
     return Python(CMD(File(Process(PreProcess(text, bot)))));
@@ -1319,7 +1328,8 @@ std::string StringExecutor::File(const std::string& text)
             }
 
             // 移除匹配的 [File] 内容
-            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "...", std::regex_constants::format_first_only);
+            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "...",
+                                                std::regex_constants::format_first_only);
         }
     }
     catch (const std::exception& e)
@@ -1417,7 +1427,8 @@ std::string StringExecutor::Process(const std::string& text)
             }
 
             // 替换已处理的内容
-            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "...", std::regex_constants::format_first_only);
+            replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "...",
+                                                std::regex_constants::format_first_only);
         }
     }
     catch (const std::exception& e)
@@ -1452,6 +1463,102 @@ std::string StringExecutor::PreProcess(const std::string& text, const std::share
         LogError("Error: {0}", e.what());
     }
     return replacedAnswer;
+}
+
+std::vector<StringExecutor::Code> StringExecutor::GetCodes(const std::string& text)
+{
+    std::vector<Code> codes;
+    // Regex to match the outer [Code] ... [Code] block.
+    static const std::regex codeBlockPattern(R"(\[Code\]([\s\S]*?)\[Code\])");
+
+    std::smatch codeBlockMatch;
+    // Iterator to search through the text string.
+    std::string::const_iterator searchStart(text.cbegin());
+
+    try
+    {
+        while (std::regex_search(searchStart, text.cend(), codeBlockMatch, codeBlockPattern))
+        {
+            std::string innerBlock = codeBlockMatch[1].str();
+            std::istringstream iss(innerBlock);
+            std::string line;
+
+            // Temporary variables to hold current code segment values.
+            Code currentCode;
+            bool inContentBlock = false;
+            std::ostringstream contentBuffer;
+
+            while (std::getline(iss, line))
+            {
+                line = trim(line);
+                if (line == "[Language]")
+                {
+                    // If we already have a segment in progress, finish it.
+                    if (!currentCode.Type.empty() || !currentCode.Content.empty())
+                    {
+                        if (inContentBlock)
+                        {
+                            // flush any active content
+                            currentCode.Content.push_back(contentBuffer.str());
+                            contentBuffer.str("");
+                            inContentBlock = false;
+                        }
+                        codes.push_back(currentCode);
+                        currentCode = Code();
+                    }
+                    // Next non-marker line should be the language.
+                    // We continue; the following line will set language.
+                    continue;
+                }
+                else if (line == "[Content]")
+                {
+                    if (inContentBlock)
+                    {
+                        // End the current content block.
+                        currentCode.Content.push_back(contentBuffer.str());
+                        contentBuffer.str("");
+                        inContentBlock = false;
+                    }
+                    else
+                    {
+                        // Begin a new content block.
+                        inContentBlock = true;
+                    }
+                    continue;
+                }
+                else
+                {
+                    // If currentCode.Type is empty, assume this line is the language for the current segment.
+                    // Otherwise, if we're in a content block, add the line to the content.
+                    if (currentCode.Type.empty())
+                    {
+                        currentCode.Type = line;
+                    }
+                    else if (inContentBlock)
+                    {
+                        contentBuffer << line << "\n";
+                    }
+                }
+            }
+            // At the end of the inner block, if there is an incomplete content block, flush it.
+            if (inContentBlock && !contentBuffer.str().empty())
+            {
+                currentCode.Content.push_back(contentBuffer.str());
+            }
+            if (!currentCode.Type.empty() || !currentCode.Content.empty())
+            {
+                codes.push_back(currentCode);
+            }
+            // Move the iterator past this match.
+            searchStart = codeBlockMatch.suffix().first;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Error during parsing: " << e.what() << std::endl;
+    }
+
+    return codes;
 }
 
 

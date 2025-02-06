@@ -191,7 +191,7 @@ void Application::DisplayInputText(Ref<Chat> chat) const
 {
     try
     {
-        ImVec2 text_size, text_pos;
+        ImVec2 text_pos;
         float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
         int n = static_cast<int>(max_width / fontSize);
 
@@ -209,24 +209,40 @@ void Application::DisplayInputText(Ref<Chat> chat) const
         while (std::getline(stream, line))
         {
             lines.push_back(line);
-            text_size = ImGui::CalcTextSize(line.c_str());
+            ImVec2 text_size = ImGui::CalcTextSize(line.c_str());
             max_line_width = max(max_line_width, text_size.x);
         }
         // 计算输入框的宽度
         input_size.x = min(max_line_width, max_width) + 16;
-        static float orig = fontSize + ImGui::GetStyle().ItemSpacing.y;
+        static float orig = fontSize;
         input_size.y = 0;
-        // 处理每一行
         std::string processed_content;
+
+        bool stop = false;
         for (size_t i = 0; i < lines.size(); ++i)
         {
             line = lines[i];
+            if (line.find("[Code]") != std::string::npos)
+            {
+                if (!stop)
+                    stop = true;
+                else
+                {
+                    stop = false;
+                }
+                processed_content += line + "\n";
+                continue;
+            }
+            if (stop)
+            {
+                processed_content += line + "\n";
+                continue;
+            }
+            if (line.empty())
+            {
+                continue;
+            }
             int width = Utils::WStringSize(line);
-
-
-            input_size.y += orig; // 累加每行的高度
-
-            // 如果当前行宽度超过n，进行换行处理
             int idx = 1;
             while (width >= n)
             {
@@ -234,7 +250,7 @@ void Application::DisplayInputText(Ref<Chat> chat) const
                 width -= n;
                 idx++;
             }
-            input_size.y += (idx - 1) * orig;
+
             processed_content += line; // 合并处理后的行
             if (i < lines.size() - 1)
             {
@@ -242,17 +258,23 @@ void Application::DisplayInputText(Ref<Chat> chat) const
             }
         }
 
+        int enter_count = ranges::count(processed_content, '\n');
+        input_size.y += orig * (enter_count + 1) + ImGui::GetStyle().ItemSpacing.y;
+
         std::vector<char> mutableBuffer(processed_content.begin(), processed_content.end());
 
         // Ensure the buffer is null-terminated.
         mutableBuffer.push_back('\0');
 
+        auto& style = ImGui::GetStyle();
+        float i = style.ScrollbarSize;
+        style.ScrollbarSize = 0.00001;
         ImGui::InputTextMultiline(("##" + std::to_string(chat->timestamp) + std::to_string(chat->flag)).c_str(),
                                   mutableBuffer.data(), mutableBuffer.size(),
                                   input_size,
                                   ImGuiInputTextFlags_ReadOnly |
                                   ImGuiInputTextFlags_AutoSelectAll);
-
+        style.ScrollbarSize = i;
         // 显示时间戳
         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(chat->timestamp).c_str());
     }
@@ -607,6 +629,7 @@ void Application::RenderChatBox()
             {
                 chat_history.clear();
                 bot->Reset();
+                codes.clear();
                 if (configure.claude.enable)
                 {
                     FirstTime = Utils::GetCurrentTimestamp();
@@ -903,7 +926,16 @@ void Application::RenderInputBox()
                     {
                         codes.insert({codetype, {i}});
                     }
+
                     ImGui::SetClipboardText(i.c_str());
+                }
+                auto tcodes = StringExecutor::GetCodes(response);
+                for (auto& code : tcodes)
+                {
+                    for (auto& it : code.Content)
+                    {
+                        codes[code.Type].emplace_back(it);
+                    }
                 }
                 if (vits && vitsData.enable)
                 {
@@ -2285,6 +2317,14 @@ vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
                 record->timestamp = timestamp;
 
                 // 创建一个新的 ChatRecord 对象，并将其添加到 chat_history 中
+                auto tcodes = StringExecutor::GetCodes(content);
+                for (auto& code : tcodes)
+                {
+                    for (auto& it : code.Content)
+                    {
+                        codes[code.Type].emplace_back(it);
+                    }
+                }
                 AddChatRecord(record);
             }
 

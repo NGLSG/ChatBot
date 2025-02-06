@@ -490,7 +490,15 @@ private:
 
     static void _WriteToFile(std::string filename, const std::string& content);
 
+    static std::string trim(const std::string& s);
+
 public:
+    struct Code
+    {
+        std::string Type;
+        std::vector<std::string> Content;
+    };
+
     static std::string AutoExecute(const std::string& text, const std::shared_ptr<ChatBot>& bot);
 
     static std::string CMD(const std::string& text);
@@ -502,6 +510,8 @@ public:
     static std::string Process(const std::string& text);
 
     static std::string PreProcess(const std::string& text, const std::shared_ptr<ChatBot>& bot);
+
+    static std::vector<Code> GetCodes(const std::string& text);
 };
 
 template <typename... Args>
