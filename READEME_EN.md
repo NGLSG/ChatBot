@@ -13,7 +13,7 @@ If you like this project, please give it a ⭐️!
 
 </div>
 
-Demo:![img.png](img/img.png)
+Demo示例:![img.png](img/demo.gif)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Author-Ge%E6%B1%81%E8%8F%8C-yellow">

@@ -23,7 +23,7 @@ _✨基于各种LLM的聊天机器人框架，支持多语言，语音唤醒,语
   <img src="https://img.shields.io/github/forks/NGLSG/ChatBot.svg" alt="forks">
 </p>
 
-Demo示例:![img.png](img/img.png)
+Demo示例:![img.png](img/demo.gif)
 
 # 依赖项
 
