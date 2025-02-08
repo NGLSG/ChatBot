@@ -1,5 +1,8 @@
 #include "ChatBot.h"
 
+#include <llama-context.h>
+#include <llama-sampling.h>
+
 //userp:<string,string>
 struct DString
 {
@@ -201,6 +204,7 @@ std::string Claude::Submit(std::string text, size_t timeStamp, std::string role,
 {
     try
     {
+        std::lock_guard<std::mutex> lock(historyAccessMutex);
         Response[timeStamp] = std::make_tuple("", false);
         cpr::Payload payload{
             {"token", claudeData.slackToken},
@@ -309,18 +313,15 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
 {
     try
     {
+        std::lock_guard<std::mutex> lock(historyAccessMutex);
         convid_ = convid;
         Response[timeStamp] = std::make_tuple("", false);
         json ask;
-        /*构造[
-        {"role":"user",
-          "parts":[{
-            "text": "Write the first line of a story about a magic backpack."}]}, json*/
         ask["role"] = role;
         ask["parts"] = json::array();
         ask["parts"].push_back(json::object());
         ask["parts"][0]["text"] = prompt;
-        if (!Conversation.contains(convid))
+        if (Conversation.find(convid) == Conversation.end())
         {
             Conversation.insert({convid, history});
         }
@@ -374,6 +375,7 @@ void Gemini::Reset()
 
 void Gemini::Load(std::string name)
 {
+    std::lock_guard<std::mutex> lock(fileAccessMutex);
     std::stringstream buffer;
     std::ifstream session_file(ConversationPath + name + suffix);
     if (session_file.is_open())
@@ -419,6 +421,257 @@ void Gemini::Add(std::string name)
     Save(name);
 }
 
+LLama::LLama(const LLamaCreateInfo& data, const std::string& sysr): llamaData(data), sys(sysr)
+{
+    ggml_backend_load_all();
+    llama_log_set([](enum ggml_log_level level, const char* text, void* /* user_data */)
+    {
+        if (level >= GGML_LOG_LEVEL_ERROR)
+        {
+            LogError("{0}", text);
+        }
+    }, nullptr);
+    llama_model_params params = llama_model_default_params();
+    llama_context_params context_params = llama_context_default_params();
+    context_params.n_threads = 8;
+    context_params.n_ctx = llamaData.contextSize;
+    context_params.n_batch = llamaData.maxTokens;
+    context_params.no_perf = false;
+    params.n_gpu_layers = GetGPULayer();
+
+    if (!UFile::Exists(llamaData.model))
+    {
+        LogError("LLama: Model file not found at {0}", llamaData.model);
+        return;
+    }
+
+    model = llama_model_load_from_file(llamaData.model.c_str(), params);
+    ctx = llama_init_from_model(model, context_params);
+    if (model == nullptr || ctx == nullptr)
+    {
+        LogError("Failed to load LLama model!");
+    }
+    vocab = llama_model_get_vocab(model);
+    llama_sampler_chain_params p = llama_sampler_chain_default_params();
+    p.no_perf = true;
+    smpl = llama_sampler_chain_init(p);
+    llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
+    formatted = std::vector<char>(llama_n_ctx(ctx));
+}
+
+std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
+{
+    if (!ctx)
+    {
+        return "Error: LLama context not initialized.";
+    }
+    std::lock_guard<std::mutex> lock(historyAccessMutex);
+    if (!history.contains(convid))
+    {
+        history[convid].messages = std::vector<ChatMessage>();
+        history[convid].messages.push_back({"system", sys});
+        history[convid].prev_len = 0;
+    }
+    LogInfo("LLama: Begin to generate response");
+    Response[timeStamp] = std::make_tuple("", false);
+    const char* tmpl = llama_model_chat_template(model, /* name */ nullptr);
+    history[convid].messages.push_back({role, prompt});
+    int new_len = llama_chat_apply_template(tmpl, history[convid].To().data(),
+                                            history[convid].To().size(), true, formatted.data(), formatted.size());
+    if (new_len < 0)
+    {
+        LogError("LLama: failed to apply the chat template");
+        return "Error: failed to apply the chat template";
+    }
+    if (new_len > (int)formatted.size())
+    {
+        formatted.resize(new_len);
+        new_len = llama_chat_apply_template(tmpl, history[convid].To().data(),
+                                            history[convid].To().size(), true, formatted.data(),
+                                            formatted.size());
+    }
+    prompt = std::string(formatted.begin() + history[convid].prev_len, formatted.begin() + new_len);
+
+    {
+        int n_prompt = -llama_tokenize(vocab, prompt.c_str(), prompt.size(), NULL, 0, true, true);
+        std::vector<llama_token> prompt_tokens(n_prompt);
+        if (llama_tokenize(vocab, prompt.c_str(), prompt.size(), prompt_tokens.data(), prompt_tokens.size(), true,
+                           true) < 0)
+        {
+            LogError("LLama: failed to tokenize the prompt");
+            std::get<0>(Response[timeStamp]) = "Error: failed to tokenize the prompt";
+            return "Error: failed to tokenize the prompt";
+        }
+        llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
+        auto cparms = ctx->cparams;
+        int error = 0;
+        if (batch.n_tokens > cparms.n_batch)
+        {
+            LogError(
+                "LLama: Tokens exceed batch size,please reduce the number of tokens or increase the maxTokens size");
+            std::get<0>(Response[timeStamp]) =
+                "Error: Tokens exceed batch size,please reduce the number of tokens or increase the maxTokens size";
+            error = 1;
+        }
+        if (error == 0)
+        {
+            llama_token new_token_id;
+            while (true)
+            {
+                int n_ctx = llama_n_ctx(ctx);
+                int n_ctx_used = llama_get_kv_cache_used_cells(ctx);
+                if (n_ctx_used + batch.n_tokens > n_ctx)
+                {
+                    LogError("LLama: context size exceeded,please open new session or reset");
+                    std::get<0>(Response[timeStamp]) = "Error: context size exceeded,please open new session or reset";
+                    error = 3;
+                    break;
+                }
+
+                if (llama_decode(ctx, batch))
+                {
+                    LogError("LLama: failed to decode");
+                    std::get<0>(Response[timeStamp]) = "Error: failed to decode";
+                    error = 2;
+                    break;
+                }
+
+                new_token_id = llama_sampler_sample(smpl, ctx, -1);
+
+                if (llama_vocab_is_eog(vocab, new_token_id))
+                {
+                    break;
+                }
+
+                char buf[256];
+                int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
+                if (n < 0)
+                {
+                    LogError("LLama: failed to convert token to piece");
+                    std::get<0>(Response[timeStamp]) = "Error: failed to convert token to piece";
+                    error = 4;
+                    break;
+                }
+                std::string piece(buf, n);
+                std::get<0>(Response[timeStamp]) += piece;
+
+                batch = llama_batch_get_one(&new_token_id, 1);
+            }
+        }
+        if (error == 0)
+        {
+            history[convid].messages.push_back({"assistant", std::get<0>(Response[timeStamp])});
+            history[convid].prev_len = llama_chat_apply_template(tmpl, history[convid].To().data(),
+                                                                 history[convid].To().size(), false,
+                                                                 nullptr, 0);
+            if (history[convid].prev_len < 0)
+            {
+                LogError("LLama: failed to apply the chat template");
+                return "Error: failed to apply the chat template";
+            }
+        }
+    }
+
+    std::get<1>(Response[timeStamp]) = true;
+
+
+    return std::get<0>(Response[timeStamp]);
+}
+
+void LLama::Reset()
+{
+    history[convid_].messages.clear();
+    history[convid_].messages.push_back({"system", sys.c_str()});
+    history[convid_].prev_len = 0;
+    Del(convid_);
+    Save(convid_);
+}
+
+void LLama::Load(std::string name)
+{
+    try
+    {
+        std::lock_guard<std::mutex> lock(fileAccessMutex);
+        std::stringstream buffer;
+        std::ifstream session_file(ConversationPath + name + suffix);
+        if (session_file.is_open())
+        {
+            buffer << session_file.rdbuf();
+            json j = json::parse(buffer.str());
+            if (j.is_array())
+            {
+                for (auto& it : j)
+                {
+                    if (it.is_object())
+                    {
+                        history[name].messages.push_back({
+                            it["role"].get<std::string>().c_str(),
+                            it["content"].get<std::string>().c_str()
+                        });
+                    }
+                }
+            }
+        }
+        else
+        {
+            LogError("ChatBot Error: Unable to load session " + name + ".");
+        }
+    }
+    catch (std::exception& e)
+    {
+        LogError(e.what());
+        history[name].messages.clear();
+        history[name].messages.push_back({"system", sys.c_str()});
+    }
+    convid_ = name;
+    LogInfo("Bot: 加载 {0} 成功", name);
+}
+
+void LLama::Save(std::string name)
+{
+    json j;
+    for (auto& m : history[name].messages)
+    {
+        j.push_back({
+            {"role", m.role},
+            {"content", m.content}
+        });
+    }
+    std::ofstream session_file(ConversationPath + name + suffix);
+    if (session_file.is_open())
+    {
+        session_file << j.dump();
+        session_file.close();
+        LogInfo("Bot : Save {0} successfully", name);
+    }
+    else
+    {
+        LogError("ChatBot Error: Unable to save session {0},{1}", name, ".");
+    }
+}
+
+void LLama::Del(std::string name)
+{
+    if (remove((ConversationPath + name + suffix).c_str()) != 0)
+    {
+        LogError("ChatBot Error: Unable to delete session {0},{1}", name, ".");
+    }
+    LogInfo("Bot : 删除 {0} 成功", name);
+}
+
+void LLama::Add(std::string name)
+{
+    history[name].messages = std::vector<ChatMessage>();
+    history[name].messages.push_back({"system", sys.c_str()});
+    history[name].prev_len = 0;
+    Save(name);
+}
+
+map<long long, string> LLama::GetHistory()
+{
+    return map<long long, string>();
+}
+
 std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
 {
     try
@@ -426,8 +679,10 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
         json ask;
         ask["content"] = prompt;
         ask["role"] = role;
-        if (!Conversation.contains(convid_))
+        convid_ = convid;
+        if (Conversation.find(convid) == Conversation.end())
         {
+            std::lock_guard<std::mutex> lock(historyAccessMutex);
             history.push_back(defaultJson);
             //history.push_back(defaultJson2);
             Conversation.insert({convid_, history});
@@ -466,6 +721,7 @@ void ChatGPT::Reset()
 
 void ChatGPT::Load(std::string name)
 {
+    std::lock_guard<std::mutex> lock(fileAccessMutex);
     std::stringstream buffer;
     std::ifstream session_file(ConversationPath + name + suffix);
     if (session_file.is_open())

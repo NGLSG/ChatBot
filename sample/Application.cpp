@@ -1,6 +1,9 @@
 ﻿#include "Application.h"
 
+#include "Downloader.h"
 #include "SystemRole.h"
+#define IMSPINNER_DEMO
+#include "ImGuiSpinners.h"
 
 std::vector<std::string> scommands;
 bool cpshow = false;
@@ -192,11 +195,11 @@ void Application::DisplayInputText(Ref<Chat> chat) const
     try
     {
         ImVec2 text_pos;
-        float max_width = ImGui::GetWindowContentRegionMax().x * 0.9f;
+        float max_width = ImGui::GetWindowContentRegionMax().x * 0.85f;
         int n = static_cast<int>(max_width / fontSize);
 
         n = max(n, 1);
-        max_width = min(max_width, fontSize * n);
+        max_width = min(max_width, fontSize * n) + fontSize / 2;
 
         ImVec2 input_size = ImVec2(0, 0);
         std::vector<std::string> lines;
@@ -217,7 +220,112 @@ void Application::DisplayInputText(Ref<Chat> chat) const
         static float orig = fontSize;
         input_size.y = 0;
         std::string processed_content;
+        auto isChinese = [](uint32_t code_point) -> bool
+        {
+            return (code_point >= 0x4E00 && code_point <= 0x9FFF) ||
+                (code_point >= 0x3400 && code_point <= 0x4DBF) ||
+                (code_point >= 0x20000 && code_point <= 0x2A6DF) ||
+                (code_point >= 0x2A700 && code_point <= 0x2B73F) ||
+                (code_point >= 0x2B740 && code_point <= 0x2B81F) ||
+                (code_point >= 0x2B820 && code_point <= 0x2CEAF) ||
+                (code_point >= 0xF900 && code_point <= 0xFAFF) ||
+                (code_point >= 0x2F800 && code_point <= 0x2FA1F);
+        };
+        auto processLine = [&](const std::string& line, int n)
+        {
+            std::string processed;
+            int current_width = 0;
+            size_t pos = 0;
+            while (pos < line.size())
+            {
+                // 解析UTF-8字符长度和码点
+                unsigned char c = static_cast<unsigned char>(line[pos]);
+                int char_len = 1;
+                if ((c & 0x80) == 0)
+                {
+                    char_len = 1;
+                }
+                else if ((c & 0xE0) == 0xC0)
+                {
+                    char_len = 2;
+                }
+                else if ((c & 0xF0) == 0xE0)
+                {
+                    char_len = 3;
+                }
+                else if ((c & 0xF8) == 0xF0)
+                {
+                    char_len = 4;
+                }
+                else
+                {
+                    // 无效字符，按单字节处理
+                    char_len = 1;
+                }
 
+                // 提取码点
+                uint32_t code_point = 0;
+                bool valid = true;
+                for (int j = 0; j < char_len; ++j)
+                {
+                    if (pos + j >= line.size())
+                    {
+                        valid = false;
+                        break;
+                    }
+                    unsigned char ch = static_cast<unsigned char>(line[pos + j]);
+                    if (j == 0)
+                    {
+                        switch (char_len)
+                        {
+                        case 1: code_point = ch;
+                            break;
+                        case 2: code_point = ch & 0x1F;
+                            break;
+                        case 3: code_point = ch & 0x0F;
+                            break;
+                        case 4: code_point = ch & 0x07;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        if ((ch & 0xC0) != 0x80)
+                        {
+                            valid = false;
+                            break;
+                        }
+                        code_point = (code_point << 6) | (ch & 0x3F);
+                    }
+                }
+
+                int char_width = 1;
+                if (valid && isChinese(code_point))
+                {
+                    char_width = 2;
+                }
+
+                // 处理换行
+                if (current_width + char_width > n)
+                {
+                    processed += '\n';
+                    current_width = 0;
+                }
+                else
+                {
+                    for (int j = 0; j < char_len; ++j)
+                    {
+                        if (pos + j < line.size())
+                        {
+                            processed += line[pos + j];
+                        }
+                    }
+                    pos += char_len;
+                    current_width += char_width;
+                }
+            }
+            return processed;
+        };
         bool stop = false;
         for (size_t i = 0; i < lines.size(); ++i)
         {
@@ -242,14 +350,15 @@ void Application::DisplayInputText(Ref<Chat> chat) const
             {
                 continue;
             }
-            int width = Utils::WStringSize(line);
+            /*int width = Utils::WStringSize(line);
             int idx = 1;
             while (width >= n)
             {
                 line = Utils::WStringInsert(line, n * idx, "\n");
                 width -= n;
                 idx++;
-            }
+            }*/
+            line = processLine(line, (n - 1) * 2);
 
             processed_content += line; // 合并处理后的行
             if (i < lines.size() - 1)
@@ -258,7 +367,7 @@ void Application::DisplayInputText(Ref<Chat> chat) const
             }
         }
 
-        int enter_count = ranges::count(processed_content, '\n');
+        int enter_count = std::count(processed_content.begin(), processed_content.end(), '\n');
         input_size.y += orig * (enter_count + 1) + ImGui::GetStyle().ItemSpacing.y;
 
         std::vector<char> mutableBuffer(processed_content.begin(), processed_content.end());
@@ -330,87 +439,136 @@ void Application::InlineCommand(const std::string& cmd, const std::string& args,
 
 void Application::CreateBot()
 {
-    OnlySetting = false;
-    auto isMissingKey = [](const std::string& key)
+    loadingBot = true;
+    std::thread([&]()
     {
-        return key.empty();
-    };
-
-    if ((configure.openAi.enable && isMissingKey(configure.openAi.api_key)) ||
-        (configure.claude.enable && isMissingKey(configure.claude.slackToken)) ||
-        (configure.gemini.enable && isMissingKey(configure.gemini._apiKey)) ||
-        (configure.grok.enable && isMissingKey(configure.grok.api_key)))
-    {
-        OnlySetting = true;
-        state = State::NO_BOT_KEY;
-    }
-
-    if (!configure.openAi.enable && !configure.claude.enable &&
-        !configure.gemini.enable && !configure.grok.enable)
-    {
-        bool hasCustomGPT = false;
-        for (const auto& [name, cconfig] : configure.customGPTs)
+        OnlySetting = false;
+        auto isMissingKey = [](const std::string& key)
         {
-            if (cconfig.enable)
-            {
-                hasCustomGPT = true;
-                break;
-            }
-        }
-        if (!hasCustomGPT)
+            return key.empty();
+        };
+
+        if ((configure.openAi.enable && isMissingKey(configure.openAi.api_key)) ||
+            (configure.claude.enable && isMissingKey(configure.claude.slackToken)) ||
+            (configure.gemini.enable && isMissingKey(configure.gemini._apiKey)) ||
+            (configure.grok.enable && isMissingKey(configure.grok.api_key)))
         {
             OnlySetting = true;
             state = State::NO_BOT_KEY;
-            bot = CreateRef<GPTLike>(GPTLikeCreateInfo());
         }
-    }
 
-    for (const auto& [name, cconfig] : configure.customGPTs)
-    {
-        if (cconfig.enable)
+        if (!configure.openAi.enable && !configure.claude.enable &&
+            !configure.gemini.enable && !configure.grok.enable)
         {
-            if (isMissingKey(cconfig.api_key))
+            bool hasCustomGPT = false;
+            for (const auto& [name, cconfig] : configure.customGPTs)
+            {
+                if (cconfig.enable)
+                {
+                    hasCustomGPT = true;
+                    break;
+                }
+            }
+            if (!hasCustomGPT)
             {
                 OnlySetting = true;
                 state = State::NO_BOT_KEY;
-            }
-            else if (!cconfig.model.empty())
-            {
-                OnlySetting = false;
-                state = State::OK;
+                bot = CreateRef<GPTLike>(GPTLikeCreateInfo());
             }
         }
-    }
 
-    if (configure.claude.enable)
-    {
-        bot = CreateRef<Claude>(configure.claude);
-        GetClaudeHistory();
-    }
-    else if (configure.openAi.enable)
-    {
-        bot = CreateRef<ChatGPT>(configure.openAi, SYSTEMROLE + SYSTEMROLE_EX);
-    }
-    else if (configure.gemini.enable)
-    {
-        bot = CreateRef<Gemini>(configure.gemini);
-        ConversationPath /= "Gemini/";
-    }
-    else if (configure.grok.enable)
-    {
-        bot = CreateRef<Grok>(configure.grok, SYSTEMROLE + SYSTEMROLE_EX);
-    }
-    else
-    {
         for (const auto& [name, cconfig] : configure.customGPTs)
         {
             if (cconfig.enable)
             {
-                bot = CreateRef<GPTLike>(cconfig, SYSTEMROLE + SYSTEMROLE_EX);
-                break; // use the first available custom GPT
+                if (!cconfig.useLocalModel)
+                {
+                    if (isMissingKey(cconfig.api_key))
+                    {
+                        OnlySetting = true;
+                        state = State::NO_BOT_KEY;
+                    }
+                    else if (!cconfig.model.empty())
+                    {
+                        OnlySetting = false;
+                        state = State::OK;
+                    }
+                }
+                else
+                {
+                    if (!UFile::Exists(cconfig.llamaData.model))
+                    {
+                        OnlySetting = true;
+                        state = State::NO_BOT_KEY;
+                    }
+                }
             }
         }
-    }
+
+        if (configure.claude.enable)
+        {
+            bot = CreateRef<Claude>(configure.claude);
+            GetClaudeHistory();
+        }
+        else if (configure.openAi.enable)
+        {
+            bot = CreateRef<ChatGPT>(configure.openAi, SYSTEMROLE + SYSTEMROLE_EX);
+        }
+        else if (configure.gemini.enable)
+        {
+            bot = CreateRef<Gemini>(configure.gemini);
+            ConversationPath /= "Gemini/";
+        }
+        else if (configure.grok.enable)
+        {
+            bot = CreateRef<Grok>(configure.grok, SYSTEMROLE + SYSTEMROLE_EX);
+        }
+        else
+        {
+            for (const auto& [name, cconfig] : configure.customGPTs)
+            {
+                if (cconfig.enable)
+                {
+                    if (!cconfig.useLocalModel)
+                        bot = CreateRef<GPTLike>(cconfig, SYSTEMROLE + SYSTEMROLE_EX);
+                    else
+                        bot = CreateRef<LLama>(cconfig.llamaData, SYSTEMROLE + SYSTEMROLE_EX);
+                    break; // use the first available custom GPT
+                }
+            }
+        }
+        conversations.clear();
+        for (const auto& entry : std::filesystem::directory_iterator(ConversationPath))
+        {
+            if (entry.is_regular_file())
+            {
+                const auto& file_path = entry.path();
+                std::string file_name = file_path.stem().string();
+                if (!file_name.empty() && UFile::EndsWith(file_path.string(), ".dat"))
+                {
+                    conversations.emplace_back(file_name);
+                }
+                if (!conversations.size() > 0)
+                {
+                    bot->Add(convid);
+                    conversations.emplace_back(convid);
+                }
+            }
+        }
+        if (!configure.claude.enable)
+        {
+            if (conversations.empty())
+            {
+                bot->Add(convid);
+                save(convid, true);
+                conversations.emplace_back(convid);
+            }
+            convid = conversations[0];
+        }
+        bot->Load(convid);
+        load(convid);
+        loadingBot = false;
+    }).detach();
 }
 
 void Application::RenderCodeBox()
@@ -497,6 +655,75 @@ void Application::RenderPopupBox()
     }
 }
 
+void Application::RenderDownloadBox()
+{
+    UniversalStyle();
+    ImGui::Begin("Downloader", nullptr,
+                 ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+    for (auto& downloader : downloaders)
+    {
+        if (downloader != nullptr && downloader->GetStatus() != UInitializing)
+        {
+            std::string dA = downloader->GetBasicInfo().url;
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(32.f / 256.f, 126.f / 256.f, 177.f / 256.f, 1.0f));
+            ImGui::Text(downloader->GetBasicInfo().files[0].c_str());
+            ImGui::PopStyleColor();
+            ImGui::ProgressBar(downloader->GetProgress(), ImVec2(400, 32));
+            ImGui::SameLine();
+            ImGui::PushID(reinterpret_cast<const char*>(&downloader));
+            ImSpinner::SpinnerFilledArcFade(reinterpret_cast<const char*>(&downloader), 16,
+                                            ImColor(1.f, .2f, .2f, 1.0f), 6, 6);
+            ImGui::PopID();
+            if (downloader->IsRunning())
+            {
+                ImGui::SameLine();
+
+                if (ImGui::ImageButton((dA + std::to_string(TextureCache["pause"])).c_str(), TextureCache["pause"],
+                                       ImVec2(32, 32)))
+                {
+                    downloader->Pause();
+                }
+            }
+            if (downloader->GetStatus() == UPaused)
+            {
+                ImGui::SameLine();
+                if (ImGui::ImageButton((dA + std::to_string(TextureCache["play"])).c_str(), TextureCache["play"],
+                                       ImVec2(32, 32)))
+                {
+                    downloader->Resume();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::ImageButton((dA + std::to_string(TextureCache["del"])).c_str(), TextureCache["del"],
+                                   ImVec2(32, 32)))
+            {
+                std::thread([downloader]()
+                {
+                    std::this_thread::sleep_for(std::chrono::seconds(1)); //延时析构
+                    downloader->Stop();
+                }).detach();
+                std::erase(downloaders, downloader);
+            }
+        }
+    }
+    for (auto& downloader : downloaders)
+    {
+        if (downloader == nullptr)
+        {
+            std::erase(downloaders, downloader);
+        }
+        else if (downloader->GetStatus() == UFinished)
+        {
+            downloader->Stop();
+            std::erase(downloaders, downloader);
+        }
+    }
+    Downloading = !downloaders.empty();
+    ImGui::PopStyleVar();
+    ImGui::End();
+}
+
 void Application::RenderChatBox()
 {
     UniversalStyle();
@@ -524,8 +751,34 @@ void Application::RenderChatBox()
         {
             DisplayInputText(userAsk);
         }
-        if (botAnswer && !botAnswer->content.empty())
+        if (botAnswer)
         {
+            static int count = 0; // 静态变量，用于记录动画状态
+            static float timeAccumulator = 0.0f; // 累积时间
+            float deltaTime = ImGui::GetIO().DeltaTime;
+            timeAccumulator += deltaTime;
+            if (botAnswer->content.empty())
+            {
+                if (timeAccumulator >= 0.2f)
+                {
+                    count = (count + 1) % 3; // 循环动画状态
+                    timeAccumulator -= 0.2f; // 重置时间累积器
+                }
+
+                // 根据当前状态显示不同的加载动画
+                switch (count)
+                {
+                case 0:
+                    botAnswer->content = ".";
+                    break;
+                case 1:
+                    botAnswer->content = "..";
+                    break;
+                case 2:
+                    botAnswer->content = "...";
+                    break;
+                }
+            }
             // Modify the style of the multi-line input field
             new_chat = botAnswer->newMessage;
             botAnswer->newMessage = false;
@@ -568,7 +821,7 @@ void Application::RenderChatBox()
             if (!botAnswer->image.empty())
             {
                 static bool wait = false;
-                if (!SDCache.contains(botAnswer->image))
+                if (SDCache.find(botAnswer->image) == SDCache.end())
                 {
                     // 如果没有加载过该纹理
                     if (!wait)
@@ -605,92 +858,110 @@ void Application::RenderChatBox()
     }
     ImGui::EndChild();
 
-    // 显示菜单栏
-    if (ImGui::BeginMenuBar())
+    if (loadingBot)
     {
-        if (ImGui::BeginMenu(reinterpret_cast<const char*>(u8"选项")))
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetCursorPos(center);
+        font->Scale = 2;
+
+
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"正在加载"));
+        ImGui::SameLine();
+        ImSpinner::SpinnerRotateDots("##loading", 16, 3, ImVec4(0.1f, 0.1f, 0.15f, 1.0f), 6, 4);
+
+
+        font->Scale = 1;
+    }
+
+    // 显示菜单栏
+    if (!loadingBot)
+    {
+        if (ImGui::BeginMenuBar())
         {
-            if (ImGui::Button(reinterpret_cast<const char*>(u8"保存"), ImVec2(200, 30)))
+            if (ImGui::BeginMenu(reinterpret_cast<const char*>(u8"选项")))
             {
-                bot->Save(convid);
-                save(convid);
-            }
-            if (ImGui::Button(reinterpret_cast<const char*>(u8"新建"), ImVec2(200, 30)))
-            {
-                // 显示输入框
-                show_input_box = true;
-            }
-            if (ImGui::Button(reinterpret_cast<const char*>(u8"清空记录"), ImVec2(200, 30)))
-            {
-                chat_history.clear();
-                save(convid);
-            }
-            if (ImGui::Button(reinterpret_cast<const char*>(u8"重置会话"), ImVec2(200, 30)))
-            {
-                chat_history.clear();
-                bot->Reset();
-                codes.clear();
-                if (configure.claude.enable)
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"保存"), ImVec2(200, 30)))
                 {
-                    FirstTime = Utils::GetCurrentTimestamp();
+                    bot->Save(convid);
+                    save(convid);
                 }
-                save(convid);
-            }
-            if (ImGui::Button(reinterpret_cast<const char*>(u8"删除当前会话"), ImVec2(200, 30)) &&
-                conversations.size() > 1)
-            {
-                bot->Del(convid);
-                del(convid);
-                bot->Load(convid);
-                load(convid);
-            }
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu(reinterpret_cast<const char*>(u8"会话")))
-        {
-            ImGuiStyle& item_style = ImGui::GetStyle();
-            item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-            if (!configure.claude.enable)
-            {
-                for (int i = 0; i < conversations.size(); i++)
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"新建"), ImVec2(200, 30)))
                 {
-                    const bool is_selected = (SelectIndices["conversation"] == i);
-                    ImGui::PushID("conversation");
-                    if (ImGui::MenuItem(reinterpret_cast<const char*>(conversations[i].c_str()), nullptr,
-                                        is_selected))
+                    // 显示输入框
+                    show_input_box = true;
+                }
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"清空记录"), ImVec2(200, 30)))
+                {
+                    chat_history.clear();
+                    save(convid);
+                }
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"重置会话"), ImVec2(200, 30)))
+                {
+                    chat_history.clear();
+                    bot->Reset();
+                    codes.clear();
+                    if (configure.claude.enable)
                     {
-                        if (SelectIndices["conversation"] != i)
+                        FirstTime = Utils::GetCurrentTimestamp();
+                    }
+                    save(convid);
+                }
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"删除当前会话"), ImVec2(200, 30)) &&
+                    conversations.size() > 1)
+                {
+                    bot->Del(convid);
+                    del(convid);
+                    bot->Load(convid);
+                    load(convid);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(reinterpret_cast<const char*>(u8"会话")))
+            {
+                ImGuiStyle& item_style = ImGui::GetStyle();
+                item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
+                if (!configure.claude.enable)
+                {
+                    for (int i = 0; i < conversations.size(); i++)
+                    {
+                        const bool is_selected = (SelectIndices["conversation"] == i);
+                        ImGui::PushID("conversation");
+                        if (ImGui::MenuItem(reinterpret_cast<const char*>(conversations[i].c_str()), nullptr,
+                                            is_selected))
                         {
-                            SelectIndices["conversation"] = i;
-                            convid = conversations[SelectIndices["conversation"]];
-                            bot->Load(convid);
-                            load(convid);
+                            if (SelectIndices["conversation"] != i)
+                            {
+                                SelectIndices["conversation"] = i;
+                                convid = conversations[SelectIndices["conversation"]];
+                                bot->Load(convid);
+                                load(convid);
+                            }
+                        }
+                        ImGui::PopID();
+                    }
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu(reinterpret_cast<const char*>(u8"模式")))
+            {
+                ImGuiStyle& item_style = ImGui::GetStyle();
+                item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
+                for (int i = 0; i < roles.size(); i++)
+                {
+                    const bool is_selected = (SelectIndices["role"] == i);
+                    if (ImGui::MenuItem(reinterpret_cast<const char*>(roles[i].c_str()), nullptr, is_selected))
+                    {
+                        if (SelectIndices["role"] != i)
+                        {
+                            SelectIndices["role"] = i;
+                            role = roles[SelectIndices["role"]];
                         }
                     }
-                    ImGui::PopID();
                 }
+                ImGui::EndMenu();
             }
-            ImGui::EndMenu();
+            ImGui::EndMenuBar();
         }
-        if (ImGui::BeginMenu(reinterpret_cast<const char*>(u8"模式")))
-        {
-            ImGuiStyle& item_style = ImGui::GetStyle();
-            item_style.Colors[ImGuiCol_Text] = ImVec4(0.2f, 0.2f, 0.2f, 1.0f);
-            for (int i = 0; i < roles.size(); i++)
-            {
-                const bool is_selected = (SelectIndices["role"] == i);
-                if (ImGui::MenuItem(reinterpret_cast<const char*>(roles[i].c_str()), nullptr, is_selected))
-                {
-                    if (SelectIndices["role"] != i)
-                    {
-                        SelectIndices["role"] = i;
-                        role = roles[SelectIndices["role"]];
-                    }
-                }
-            }
-            ImGui::EndMenu();
-        }
-        ImGui::EndMenuBar();
     }
     ImGui::End();
 }
@@ -762,10 +1033,11 @@ void Application::RenderInputBox()
                             botR->timestamp = Utils::GetCurrentTimestamp() + 1;
                             std::lock_guard<std::mutex> lock(chat_history_mutex);
                             AddChatRecord(botR);
-                            bot->SubmitAsync(last_input, botR->timestamp);
+                            bot->SubmitAsync(last_input, botR->timestamp, role, convid);
                             while (!bot->Finished(botR->timestamp))
                             {
                                 botR->content = bot->GetResponse(botR->timestamp);
+                                botR->newMessage = true;
                                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
                             }
                             botR->content = bot->GetResponse(botR->timestamp);
@@ -865,10 +1137,11 @@ void Application::RenderInputBox()
                     botR->timestamp = Utils::GetCurrentTimestamp() + 1;
                     std::lock_guard<std::mutex> lock(chat_history_mutex);
                     AddChatRecord(botR);
-                    bot->SubmitAsync(last_input, botR->timestamp);
+                    bot->SubmitAsync(last_input, botR->timestamp, role, convid);
                     while (!bot->Finished(botR->timestamp))
                     {
                         botR->content = bot->GetResponse(botR->timestamp);
+                        botR->newMessage = true;
                         std::this_thread::sleep_for(std::chrono::milliseconds(16));
                     }
                     botR->content = bot->GetResponse(botR->timestamp);
@@ -918,7 +1191,7 @@ void Application::RenderInputBox()
                     }
                     if (!is_valid_text(codetype))
                         codetype = "Unknown";
-                    if (codes.contains(codetype))
+                    if (codes.find(codetype) != codes.end())
                     {
                         codes[codetype].emplace_back(i);
                     }
@@ -1217,9 +1490,6 @@ void Application::RenderConfigBox()
         }
         else if (configure.claude.enable)
         {
-            /*            ImGui::InputText(reinterpret_cast<const char *>(u8"ChatGLM的位置"),
-                                         configure.openAi.modelPath.data(),
-                                         TEXT_BUFFER);*/
             static bool showPassword = false, clicked = false;
             static double lastInputTime = 0.0;
             double currentTime = ImGui::GetTime();
@@ -1376,61 +1646,84 @@ void Application::RenderConfigBox()
                 static bool showPassword = false, clicked = false;
                 static double lastInputTime = 0.0;
                 double currentTime = ImGui::GetTime();
-                strcpy_s(GetBufferByName("api").buffer, cdata.api_key.c_str());
-                strcpy_s(GetBufferByName("apiHost").buffer, cdata.apiHost.c_str());
-                strcpy_s(GetBufferByName("apiPath").buffer, cdata.apiPath.c_str());
-                strcpy_s(GetBufferByName("model").buffer, cdata.model.c_str());
-                if (currentTime - lastInputTime > 0.5)
+                ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用本地模型"), &cdata.useLocalModel);
+                if (!cdata.useLocalModel)
                 {
-                    showPassword = false;
-                }
-                if (showPassword || clicked)
-                {
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
-                                         GetBufferByName("api").buffer,
-                                         sizeof(input_buffer)))
+                    strcpy_s(GetBufferByName("api").buffer, cdata.api_key.c_str());
+                    strcpy_s(GetBufferByName("apiHost").buffer, cdata.apiHost.c_str());
+                    strcpy_s(GetBufferByName("apiPath").buffer, cdata.apiPath.c_str());
+                    strcpy_s(GetBufferByName("model").buffer, cdata.model.c_str());
+                    if (currentTime - lastInputTime > 0.5)
                     {
-                        cdata.api_key = GetBufferByName("api").buffer;
+                        showPassword = false;
+                    }
+                    if (showPassword || clicked)
+                    {
+                        if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
+                                             GetBufferByName("api").buffer,
+                                             sizeof(input_buffer)))
+                        {
+                            cdata.api_key = GetBufferByName("api").buffer;
+                        }
+                    }
+                    else
+                    {
+                        if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
+                                             GetBufferByName("api").buffer,
+                                             sizeof(input_buffer),
+                                             ImGuiInputTextFlags_Password))
+                        {
+                            cdata.api_key = GetBufferByName("api").buffer;
+                            showPassword = true;
+                            lastInputTime = ImGui::GetTime();
+                        }
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
+                                           ImVec2(16, 16),
+                                           ImVec2(0, 0),
+                                           ImVec2(1, 1),
+                                           ImVec4(0, 0, 0, 0),
+                                           ImVec4(1, 1, 1, 1)))
+                    {
+                        clicked = !clicked;
+                    }
+                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 主机"), GetBufferByName("apiHost").buffer,
+                                         TEXT_BUFFER))
+                    {
+                        cdata.apiHost = GetBufferByName("apiHost").buffer;
+                    }
+                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 路径"), GetBufferByName("apiPath").buffer,
+                                         TEXT_BUFFER))
+                    {
+                        cdata.apiPath = GetBufferByName("apiPath").buffer;
+                    }
+                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
+                                         TEXT_BUFFER))
+                    {
+                        cdata.model = GetBufferByName("model").buffer;
                     }
                 }
                 else
                 {
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
-                                         GetBufferByName("api").buffer,
-                                         sizeof(input_buffer),
-                                         ImGuiInputTextFlags_Password))
+                    strcpy_s(GetBufferByName("model").buffer, cdata.llamaData.model.c_str());
+                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
+                                         TEXT_BUFFER))
                     {
-                        cdata.api_key = GetBufferByName("api").buffer;
-                        showPassword = true;
-                        lastInputTime = ImGui::GetTime();
+                        cdata.llamaData.model = GetBufferByName("model").buffer;
+                    }
+                    ImGui::InputInt(reinterpret_cast<const char*>(u8"上下文大小"), &cdata.llamaData.contextSize);
+                    if (cdata.llamaData.contextSize < 512)
+                    {
+                        cdata.llamaData.contextSize = 512;
+                    }
+
+                    ImGui::InputInt(reinterpret_cast<const char*>(u8"最大生成长度"), &cdata.llamaData.maxTokens);
+                    if (cdata.llamaData.maxTokens < 256)
+                    {
+                        cdata.llamaData.maxTokens = 256;
                     }
                 }
-                ImGui::SameLine();
-                if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
-                                       ImVec2(16, 16),
-                                       ImVec2(0, 0),
-                                       ImVec2(1, 1),
-                                       ImVec4(0, 0, 0, 0),
-                                       ImVec4(1, 1, 1, 1)))
-                {
-                    clicked = !clicked;
-                }
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 主机"), GetBufferByName("apiHost").buffer,
-                                     TEXT_BUFFER))
-                {
-                    cdata.apiHost = GetBufferByName("apiHost").buffer;
-                }
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 路径"), GetBufferByName("apiPath").buffer,
-                                     TEXT_BUFFER))
-                {
-                    cdata.apiPath = GetBufferByName("apiPath").buffer;
-                }
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
-                                     TEXT_BUFFER))
-                {
-                    cdata.model = GetBufferByName("model").buffer;
-                }
-
                 if (ImGui::Button(reinterpret_cast<const char*>(u8"删除此API"), ImVec2(120, 30)))
                 {
                     cdata.enable = false;
@@ -1890,15 +2183,35 @@ void Application::RenderConfigBox()
             no_key = false;
         }
         static bool showPopup = false;
+        static bool showPopup2 = false;
         if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"需要配置LLM服务的API Key,否则此应用无法正常使用"), NULL,
                                    ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::Text(reinterpret_cast<const char*>(u8"您配置任意一项LLM服务的API Key,或者安装本地模型 以正常启用本程序。"));
-            if (ImGui::Button(reinterpret_cast<const char*>(u8"确定"), ImVec2(120, 0)))
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"配置API"), ImVec2(120, 0)))
             {
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::SameLine();
             if (ImGui::Button(reinterpret_cast<const char*>(u8"安装本地模型"), ImVec2(120, 0)))
+            {
+                ImGui::CloseCurrentPopup();
+                showPopup2 = true;
+            }
+            ImGui::EndPopup();
+        }
+        if (showPopup2)
+        {
+            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"推理方式"));
+            showPopup2 = false;
+        }
+        if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"推理方式"), NULL,
+                                   ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Text(reinterpret_cast<const char*>(u8"选择使用的推理方式："));
+            ImGui::Text(reinterpret_cast<const char*>(u8"1.使用Ollama进行推理需要额外安装Ollama并下载模型"));
+            ImGui::Text(reinterpret_cast<const char*>(u8"2.使用本程序推理只需要下载模型"));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"使用Ollama"), ImVec2(120, 0)))
             {
                 if (Utils::CheckCMDExist("ollama"))
                 {
@@ -1910,9 +2223,10 @@ void Application::RenderConfigBox()
                     configure.grok.enable = false;
                     configure.customGPTs.insert({"qwen2.5:3b", GPTLikeCreateInfo()});
                     configure.customGPTs["qwen2.5:3b"].enable = true;
+                    configure.customGPTs["qwen2.5:3b"].useLocalModel = false;
                     configure.customGPTs["qwen2.5:3b"].apiHost = "http://localhost:11434";
                     configure.customGPTs["qwen2.5:3b"].apiPath = "/v1/chat/completions";
-                    configure.customGPTs["qwen2.5:3b"].api_key = "123456";
+                    configure.customGPTs["qwen2.5:3b"].api_key = "null";
                     configure.customGPTs["qwen2.5:3b"].model = "qwen2.5:3b";
                     Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
                 }
@@ -1921,6 +2235,23 @@ void Application::RenderConfigBox()
                     Utils::OpenURL(OllamaLink);
                     LogWarn("ollama not found, please install it first");
                 }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"本程序推理"), ImVec2(120, 0)))
+            {
+                downloaders.emplace_back(Utils::UDownloadAsync({
+                    DefaultModelInstallLink, model + "DeepSeek_R1_1_5b.gguf"
+                }));
+                Downloading = true;
+
+                configure.customGPTs.insert({"DeepSeek_R1_1_5b", GPTLikeCreateInfo()});
+                configure.customGPTs["DeepSeek_R1_1_5b"].enable = true;
+                configure.customGPTs["DeepSeek_R1_1_5b"].useLocalModel = true;
+                configure.customGPTs["DeepSeek_R1_1_5b"].llamaData.model = model + "DeepSeek_R1_1_5b.gguf";
+                configure.customGPTs["DeepSeek_R1_1_5b"].llamaData.contextSize = 10000;
+                configure.customGPTs["DeepSeek_R1_1_5b"].llamaData.maxTokens = 4096;
+
+                Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
                 ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
@@ -1951,14 +2282,22 @@ void Application::RenderUI()
     ImGui::DockSpaceOverViewport();
     RuntimeDetector();
     ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+    if (Downloading)
+    {
+        RenderDownloadBox();
+    }
     if (!OnlySetting)
     {
-        RenderInputBox();
-        RenderPopupBox();
-        RenderConfigBox();
+        if (!loadingBot)
+        {
+            RenderInputBox();
+            RenderPopupBox();
+            RenderConfigBox();
+
+            RenderCodeBox();
+            RenderConversationBox();
+        }
         RenderChatBox();
-        RenderCodeBox();
-        RenderConversationBox();
         FileChooser();
     }
     else
@@ -2062,8 +2401,9 @@ int Application::Renderer()
     config.OversampleV = 1;
     config.PixelSnapH = true;
     config.GlyphExtraSpacing = ImVec2(0.0f, 1.0f);
-    ImFont* font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
-                                                io.Fonts->GetGlyphRangesChineseFull());
+    font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
+                                        io.Fonts->GetGlyphRangesChineseFull());
+
     IM_ASSERT(font != NULL);
     io.DisplayFramebufferScale = ImVec2(0.8f, 0.8f);
     (void)io;
@@ -2115,11 +2455,13 @@ int Application::Renderer()
             ImGui::NewFrame();
 
             RenderUI();
+            ImSpinner::demoSpinners();
+
             // 在Lua中调用ImGui函数
             for (auto& [name, script] : PluginsScript1)
             {
                 // 检查是否在禁止插件列表中
-                if (std::ranges::find(forbidLuaPlugins, name) != forbidLuaPlugins.end())
+                if (std::find(forbidLuaPlugins.begin(), forbidLuaPlugins.end(), name) != forbidLuaPlugins.end())
                 {
                     continue;
                 }
@@ -2268,11 +2610,12 @@ void Application::AddChatRecord(Ref<Chat> data)
 
 void Application::DeleteAllBotChat()
 {
-    std::erase_if(chat_history,
-                  [](const Ref<Chat> c)
-                  {
-                      return c->flag == 1;
-                  });
+    auto new_end = std::remove_if(chat_history.begin(), chat_history.end(),
+                                  [](const Ref<Chat>& c)
+                                  {
+                                      return c->flag == 1;
+                                  });
+    chat_history.erase(new_end, chat_history.end());
 }
 
 vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
@@ -2349,7 +2692,7 @@ void Application::del(std::string name)
     {
         LogError("Bot Error: Unable to delete session {0},{1}", name, ".");
     }
-    conversations.erase(ranges::find(conversations, name));
+    conversations.erase(std::find(conversations.begin(), conversations.end(), name));
     SelectIndices["conversation"] = 0;
     convid = conversations[SelectIndices["conversation"]];
 
@@ -2482,35 +2825,7 @@ bool Application::Initialize()
     {
         UDirectory::Create(ConversationPath.string());
     }
-    for (const auto& entry : std::filesystem::directory_iterator(ConversationPath))
-    {
-        if (entry.is_regular_file())
-        {
-            const auto& file_path = entry.path();
-            std::string file_name = file_path.stem().string();
-            if (!file_name.empty() && UFile::EndsWith(file_path.string(), ".dat"))
-            {
-                conversations.emplace_back(file_name);
-            }
-            if (!conversations.size() > 0)
-            {
-                bot->Add(convid);
-                conversations.emplace_back(convid);
-            }
-        }
-    }
-    if (!configure.claude.enable)
-    {
-        if (conversations.empty())
-        {
-            bot->Add(convid);
-            save(convid, true);
-            conversations.emplace_back(convid);
-        }
-        convid = conversations[0];
-    }
-    bot->Load(convid);
-    load(convid);
+
     whisper = true;
     mwhisper = true;
 

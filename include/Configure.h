@@ -12,6 +12,13 @@ struct TranslateData
     std::string proxy = "";
 };
 
+struct LLamaCreateInfo
+{
+    std::string model = "";
+    int contextSize = 32000; //32k
+    int maxTokens = 4096;
+};
+
 struct OpenAIBotCreateInfo
 {
     bool enable = true;
@@ -27,10 +34,12 @@ struct OpenAIBotCreateInfo
 struct GPTLikeCreateInfo
 {
     bool enable;
+    bool useLocalModel = false;
     std::string api_key;
     std::string model = ""; //Must be set
     std::string apiHost = "";
     std::string apiPath = "";
+    LLamaCreateInfo llamaData;
 
     GPTLikeCreateInfo()
     {
@@ -45,6 +54,8 @@ struct GPTLikeCreateInfo
         this->model = data.model;
         this->apiHost = data.apiHost;
         this->apiPath = data.apiPath;
+        this->llamaData = data.llamaData;
+        this->useLocalModel = data.useLocalModel;
 
         return *this;
     }
@@ -69,7 +80,7 @@ struct StableDiffusionData
         "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, bad feet";
     int steps = 50;
     int denoising_strength = 0;
-    int width = 5112;
+    int width = 512;
     int height = 512;
     float cfg_scale = 7;
 };
@@ -141,6 +152,27 @@ struct Configure
 namespace YAML
 {
     template <>
+    struct convert<LLamaCreateInfo>
+    {
+        static Node encode(const LLamaCreateInfo& data)
+        {
+            Node node;
+            node["model"] = data.model;
+            node["contextSize"] = data.contextSize;
+            node["maxTokens"] = data.maxTokens;
+            return node;
+        }
+
+        static bool decode(const Node& node, LLamaCreateInfo& data)
+        {
+            data.model = node["model"].as<std::string>();
+            data.contextSize = node["contextSize"].as<int>();
+            data.maxTokens = node["maxTokens"].as<int>();
+            return true;
+        }
+    };
+
+    template <>
     struct convert<GPTLikeCreateInfo>
     {
         static Node encode(const GPTLikeCreateInfo& data)
@@ -151,6 +183,8 @@ namespace YAML
             node["model"] = data.model;
             node["apiHost"] = data.apiHost;
             node["apiPath"] = data.apiPath;
+            node["useLocalModel"] = data.useLocalModel;
+            node["llamaData"] = data.llamaData;
             return node;
         }
 
@@ -163,6 +197,10 @@ namespace YAML
                 data.apiHost = node["apiHost"].as<std::string>();
             if (node["apiPath"])
                 data.apiPath = node["apiPath"].as<std::string>();
+            if (node["useLocalModel"])
+                data.useLocalModel = node["useLocalModel"].as<bool>();
+            if (node["llamaData"])
+                data.llamaData = node["llamaData"].as<LLamaCreateInfo>();
             return true;
         }
     };

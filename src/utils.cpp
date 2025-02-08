@@ -2,6 +2,7 @@
 
 #include "../sample/Application.h"
 #include "ChatBot.h"
+#include "Downloader.h"
 bool NoRecord = false;
 std::mutex mtx;
 float DownloadProgress;
@@ -35,7 +36,7 @@ bool UDirectory::Create(const std::string& dirname)
     }
     catch (std::filesystem::filesystem_error& e)
     {
-        LogError(std::format("creating directory: {0}" , e.what()));
+        LogError(fmt::format("creating directory: {0}" , e.what()));
         return false;
     }
 }
@@ -479,87 +480,16 @@ bool Utils::UDownload(const std::pair<std::string, std::string>& task, int num_t
 {
     try
     {
-        // 获取文件大小
-        auto head = cpr::Head(cpr::Url{task.first}, cpr::Redirect{true});
-        if (head.status_code != 200)
+        Downloader downloader(task.first, num_threads, task.second);
+        downloader.Start();
+        while (downloader.IsRunning())
         {
-            LogError("Downloading Error: Failed to get file size: " + head.error.message);
-            return false;
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            LogInfo("\rDownloading {0}: {1}% {2} {3}", task.second, downloader.GetProgress(),
+                    downloader.GetSpeed().downloadSpeed.content, downloader.GetSpeed().downloadSpeed.unit);
+            std::cout << std::flush;
         }
-        int file_size = stoi(head.header["Content-Length"]);
-        FileSize = file_size;
-        // 判断是否支持分块下载
-        bool support_range =
-            head.header.find("Accept-Ranges") != head.header.end() && head.header["Accept-Ranges"] == "bytes";
-        if (!support_range)
-        {
-            LogWarn("Downloading Warning: The server does not support range requests, cannot do"
-                "wnload in multiple threads.");
-            num_threads = 1;
-        }
-
-        // 下载文件
-        std::string file_path = task.second;
-        std::ofstream file(file_path, std::ios::binary | std::ios::out);
-        if (!file.is_open())
-        {
-            LogError("Downloading Error: Failed to open file " + file_path);
-            return false;
-        }
-
-        std::vector<int> progress(num_threads, 0);
-        std::vector<std::thread> threads(num_threads);
-        int block_size = ceil((double)file_size / num_threads);
-
-        for (int i = 0; i < num_threads; i++)
-        {
-            int start = i * block_size;
-            int end = min((i + 1) * block_size - 1, file_size - 1);
-            threads[i] = std::thread(DownloadThread, task.first, file_path, start, end, i, std::ref(progress));
-        }
-
-        // 显示进度条
-        ProgressBar progressBar(file_size);
-        LogInfo("Downloading {0} to {1} size:{2}", task.first, file_path, ProgressBar::formatSize(file_size));
-        auto start_time = std::chrono::high_resolution_clock::now();
-        while (true)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            int total_progress = 0;
-            for (int i = 0; i < num_threads; i++)
-            {
-                total_progress += progress[i];
-            }
-            auto current_time = std::chrono::high_resolution_clock::now();
-            double elapsed_time =
-                std::chrono::duration_cast<std::chrono::milliseconds>(current_time - start_time).count() / 1000.0;
-            double speed = total_progress / elapsed_time;
-            double remaining_time = (file_size - total_progress) / speed;
-            RemainingTime = remaining_time;
-            DownloadSpeed = speed;
-            DownloadedSize = total_progress;
-            DownloadProgress = total_progress / (double)file_size;
-            progressBar.update(total_progress, "Downloaded " + ProgressBar::formatSize(total_progress) + " of " +
-                               ProgressBar::formatSize(file_size) + " (" +
-                               ProgressBar::formatTime(remaining_time) + " left)");
-            if (total_progress == file_size)
-            {
-                break;
-            }
-        }
-        progressBar.end();
-        for (int i = 0; i < num_threads; i++)
-        {
-            threads[i].join();
-        }
-        if (!CheckFileSize(file_path, file_size))
-        {
-            LogFatal("Downloading Error: Failed to download file {0}", task.first);
-            return false;
-        }
-
-        LogInfo("Downloaded {0} to {1} successful!", task.first, file_path);
-        return true;
+        return downloader.IsFinished();
     }
     catch (const std::exception& e)
     {
@@ -568,35 +498,18 @@ bool Utils::UDownload(const std::pair<std::string, std::string>& task, int num_t
     }
 }
 
-bool Utils::DownloadThread(const std::string& url, const std::string& file_path, int start, int end, int id,
-                           std::vector<int>& progress)
+Ref<Downloader> Utils::UDownloadAsync(const std::pair<std::string, std::string>& task, int num_threads)
 {
-    // 设置请求头
-    cpr::Header headers = {{"Range", "bytes=" + std::to_string(start) + "-" + std::to_string(end)}};
-
-    // 发送请求
-    int retry = 0;
-    while (retry < 3)
+    Ref<Downloader> downloader = CreateRef<Downloader>(task.first, num_threads, task.second);
+    std::thread([downloader]()
     {
-        auto response = cpr::Get(cpr::Url{url}, headers, cpr::VerifySsl{false}, cpr::Redirect{true});
-        if (response.status_code == 206)
+        downloader->ForceStart();
+        while (downloader->IsRunning())
         {
-            std::ofstream file(file_path, std::ios::binary | std::ios::out | std::ios::in);
-            if (!file.is_open())
-            {
-                LogError("Downloading Error: Failed to open file " + file_path);
-                return false;
-            }
-            file.seekp(start);
-            file.write(response.text.c_str(), response.text.length());
-            progress[id] = response.text.length();
-            return true;
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
-        retry++;
-    }
-
-    LogError("Downloading Error: Failed to download file {0} in thread {1}", url, std::to_string(id));
-    return false;
+    }).detach();
+    return downloader;
 }
 
 bool Utils::CheckFileSize(const std::string& file_path, int expected_size)
@@ -1246,9 +1159,27 @@ std::string StringExecutor::trim(const std::string& s)
     return s.substr(start, end - start + 1);
 }
 
-std::string StringExecutor::AutoExecute(const std::string& text, const std::shared_ptr<ChatBot>& bot)
+//res,erasePart
+std::pair<std::string, std::string> StringExecutor::EraseInRange(const std::string& str1, const std::string& str2,
+                                                                 const std::string& text)
 {
-    return Python(CMD(File(Process(PreProcess(text, bot)))));
+    std::regex pattern(str1 + R"([\x01-\xFF]*?)" + str2);
+    std::smatch match;
+    std::string res = text;
+    std::string erasePart;
+    if (std::regex_search(text, match, pattern))
+    {
+        erasePart = match[0].str();
+        res = std::regex_replace(text, pattern, "");
+    }
+    return {res, erasePart};
+}
+
+std::string StringExecutor::AutoExecute(std::string text, const std::shared_ptr<ChatBot>& bot)
+{
+    auto [res, part] = EraseInRange("<think>", "</think>", text);
+
+    return part + "\n" + Python(CMD(File(Process(PreProcess(res, bot)))));
 }
 
 std::string StringExecutor::CMD(const std::string& text)
@@ -1272,8 +1203,8 @@ std::string StringExecutor::CMD(const std::string& text)
     for (const auto& command : commands)
     {
         std::string processedCommand = _Markdown(command);
-        std::string result = Utils::exec(processedCommand);
-        replacedAnswer = std::regex_replace(replacedAnswer, pattern, result,
+        Utils::AsyncExecuteShell(processedCommand, {});
+        replacedAnswer = std::regex_replace(replacedAnswer, pattern, "...",
                                             std::regex_constants::format_first_only);
     }
 
@@ -1367,7 +1298,7 @@ std::string StringExecutor::Python(const std::string& text)
         for (const auto& pythonMatch : pythonMatches)
         {
             std::string processedPy = _Markdown(pythonMatch);
-            std::string pyPath = tmpPythonPath + std::format("temp_{0}.py", num++);
+            std::string pyPath = tmpPythonPath + fmt::format("temp_{0}.py", num++);
             _WriteToFile(pyPath, processedPy);
             auto res = Application::ExecutePython(pyPath);
             replacedAnswer = std::regex_replace(replacedAnswer, pattern, res,

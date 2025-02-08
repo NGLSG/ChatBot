@@ -40,6 +40,7 @@ extern double RemainingTime;
 extern std::string FileName;
 
 #endif
+class Downloader;
 
 class UFile
 {
@@ -146,9 +147,6 @@ private:
                           const PaStreamCallbackTimeInfo* timeInfo,
                           PaStreamCallbackFlags statusFlags,
                           void* userData);
-
-    static bool DownloadThread(const std::string& url, const std::string& file_path, int start, int end, int id,
-                               std::vector<int>& progress);
 
     static bool CheckFileSize(const std::string& file_path, int expected_size);
 
@@ -288,7 +286,7 @@ public:
 
     // 下载文件
     static bool UDownload(const std::pair<std::string, std::string>& task, int num_threads = 8);
-
+    static Ref<Downloader> UDownloadAsync(const std::pair<std::string, std::string>& task, int num_threads = 8);
     static std::future<bool> UDownloads(const std::map<std::string, std::string>& tasks, int num_threads = 8);
 
     static bool Decompress(std::string file, std::string path = "");
@@ -499,7 +497,10 @@ public:
         std::vector<std::string> Content;
     };
 
-    static std::string AutoExecute(const std::string& text, const std::shared_ptr<ChatBot>& bot);
+    static std::pair<std::string, std::string> EraseInRange(const std::string& str1, const std::string& str2,
+                                                            const std::string& text);
+
+    static std::string AutoExecute(std::string text, const std::shared_ptr<ChatBot>& bot);
 
     static std::string CMD(const std::string& text);
 

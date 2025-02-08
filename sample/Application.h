@@ -24,7 +24,7 @@
 #include "sol/sol.hpp"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char*>(u8"CyberGirl v1.6.2");
+const std::string VERSION = reinterpret_cast<const char*>(u8"CyberGirl v1.6.3");
 extern std::vector<std::string> scommands;
 extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
@@ -46,6 +46,8 @@ class Application
 {
 private:
     inline static const std::string OllamaLink = "https://ollama.com/download";
+    inline static const std::string DefaultModelInstallLink =
+        "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf?download=true";
 #ifdef _WIN32
     inline static const std::string VitsConvertUrl =
         "https://github.com/NGLSG/MoeGoe/releases/download/1.1/VitsConvertor-win64.tar.gz";
@@ -116,6 +118,7 @@ private:
     {
         int flag = 0; //0=user;1=bot
         size_t timestamp;
+        std::string thinkContent;
         std::string content = "...";
         std::string image;
         bool newMessage = true;
@@ -150,6 +153,8 @@ private:
     State state = State::OK;
     Configure configure;
     LConfigure lConfigure;
+    bool loadingBot;
+    ImFont* font;
     int Rnum = 0;
     int token;
 
@@ -227,7 +232,9 @@ private:
         {"message", 0},
         {"add", 0},
         {"send", 0},
-        {"avatar", 0}
+        {"avatar", 0},
+        {"pause", 0},
+        {"play", 0}
     };
     map<string, int> SelectIndices = {
         {"Live2D", 0},
@@ -246,6 +253,8 @@ private:
     bool whisper = false;
     bool mwhisper = false;
     bool AppRunning = true;
+    bool Downloading = false;
+    std::vector<Ref<Downloader>> downloaders;
     long long FirstTime = 0;
     float fontSize = 16;
     std::unordered_map<std::string, std::shared_ptr<Script>> PluginsScript1;
@@ -331,7 +340,7 @@ private:
 
     //渲染弹窗
     void RenderPopupBox();
-
+    void RenderDownloadBox();
     void RenderCodeBox();
 
     void RenderConversationBox();
@@ -385,8 +394,6 @@ private:
         return a->timestamp < b->timestamp;
     }
 
-    Billing billing;
-
 public:
     inline static bool IsPythonInstalled()
     {
@@ -416,7 +423,7 @@ public:
     {
         if (IsPythonInstalled())
             return Utils::ExecuteShell(PythonHome + PythonExecute, pyPath, args...);
-        return std::format("Wrong there is no python executable in your path {0}", PythonHome);
+        return fmt::format("Wrong there is no python executable in your path {0}", PythonHome);
     }
 
     static std::string GetPythonPackage()
