@@ -254,8 +254,16 @@ public:
 
     ~LLama()
     {
-        llama_model_free(model);
-        llama_free(ctx);
+        try
+        {
+            if (model)
+                llama_model_free(model);
+            if (ctx)
+                llama_free(ctx);
+        }
+        catch (...)
+        {
+        }
     }
 
     std::string Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid) override;

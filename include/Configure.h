@@ -137,6 +137,8 @@ struct Live2D
 
 struct Configure
 {
+    std::string MicroPhoneID = "default";
+    std::string OutDeviceID = "default";
     OpenAIBotCreateInfo openAi;
     TranslateData baiDuTranslator;
     VITSData vits;
@@ -505,6 +507,8 @@ namespace YAML
         static Node encode(const Configure& config)
         {
             Node node;
+            node["MicroPhoneID"] = config.MicroPhoneID;
+            node["OutDeviceID"] = config.OutDeviceID;
             node["openAi"] = config.openAi;
             node["claude"] = config.claude;
             node["gemini"] = config.gemini;
@@ -523,6 +527,14 @@ namespace YAML
             if (!node["openAi"] || !node["baiDuTranslator"] || !node["vits"])
             {
                 return false;
+            }
+            if (node["MicroPhoneID"])
+            {
+                config.MicroPhoneID = node["MicroPhoneID"].as<std::string>();
+            }
+            if (node["OutDeviceID"])
+            {
+                config.OutDeviceID = node["OutDeviceID"].as<std::string>();
             }
 
             config.openAi = node["openAi"].as<OpenAIBotCreateInfo>();

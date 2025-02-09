@@ -288,7 +288,8 @@ public:
     static bool UDownload(const std::pair<std::string, std::string>& task, int num_threads = 8);
     static Ref<Downloader> UDownloadAsync(const std::pair<std::string, std::string>& task, int num_threads = 8);
     static std::future<bool> UDownloads(const std::map<std::string, std::string>& tasks, int num_threads = 8);
-
+    static std::vector<Ref<Downloader>> UDownloadsAsync(const std::map<std::string, std::string>& tasks,
+                                                        int num_threads = 8);
     static bool Decompress(std::string file, std::string path = "");
 
     static void OpenURL(const std::string& url);
@@ -349,6 +350,31 @@ public:
         return node;
     }
 
+    static std::vector<std::string> GetMicrophoneDevices()
+    {
+        std::vector<std::string> Devices;
+        if (SDL_Init(SDL_INIT_AUDIO) != 0)
+        {
+            LogError("SDL_Init Error: {0}", SDL_GetError());
+            return Devices;
+        }
+        int count = SDL_GetNumAudioDevices(1);
+        if (count < 0)
+        {
+            LogError("SDL_GetNumAudioDevices Error: {0}", SDL_GetError());
+        }
+        else
+        {
+            for (int i = 0; i < count; i++)
+            {
+                const char* deviceName = SDL_GetAudioDeviceName(i, 1);
+                Devices.push_back(deviceName);
+            }
+        }
+        SDL_Quit();
+        return Devices;
+    }
+
     static size_t write_callback(char* ptr, size_t size, size_t nmemb, void* userdata);
 
     static std::vector<std::string> GetDirectories(const std::string& path);
@@ -370,103 +396,19 @@ public:
 
     static std::string ReadFile(const std::string& filename);
 
-    static std::vector<std::string> JsonArrayToStringVector(const json& array)
-    {
-        std::vector<std::string> result;
-        for (json::const_iterator it = array.begin(); it != array.end(); ++it)
-        {
-            if (it->is_string())
-            {
-                result.push_back(it->get<std::string>());
-            }
-        }
-        return result;
-    }
+    static std::vector<std::string> JsonArrayToStringVector(const json& array);
 
-    static std::vector<std::string> JsonDictToStringVector(const json& array)
-    {
-        std::vector<std::string> keys;
-        try
-        {
-            // 遍历JSON对象，将所有键的名字存储在vector中
-            for (auto it = array.begin(); it != array.end(); ++it)
-            {
-                keys.push_back(it.key());
-            }
-        }
-        catch (const std::exception& e)
-        {
-            // 解析异常处理
-            std::cerr << "Error: " << e.what() << std::endl;
-        }
-
-        return keys;
-    }
+    static std::vector<std::string> JsonDictToStringVector(const json& array);
 
     // 获取文件夹下所有指定后缀的文件
     static std::vector<std::string> GetFilesWithExt(const std::string& folder,
-                                                    const std::string& ext = ".txt")
-    {
-        std::vector<std::string> files = UFile::GetFilesInDirectory(folder);
-
-        std::vector<std::string> result;
-
-        // 找到所有匹配的文件
-        for (const auto& file : files)
-        {
-            if (UFile::EndsWith(file, ext))
-            {
-                result.push_back(file);
-            }
-        }
-
-        return result;
-    }
+                                                    const std::string& ext = ".txt");
 
     // 如果vector为空,返回默认值。否则返回第一个元素。
     static std::string GetDefaultIfEmpty(const std::vector<std::string>& vec,
-                                         const std::string& defaultValue)
-    {
-        if (vec.empty())
-        {
-            return defaultValue;
-        }
-        else
-        {
-            return vec[0];
-        }
-    }
+                                         const std::string& defaultValue);
 
-    static void OpenFileManager(const std::string& path)
-    {
-        std::string command;
-
-#ifdef _WIN32
-        // Windows
-        std::string winPath = path;
-        std::replace(winPath.begin(), winPath.end(), '/', '\\');
-        command = "explorer.exe  /select,\"" + winPath + "\"";
-#elif defined(__APPLE__)
-        // macOS
-    command = "open \"" + path + "\"";
-#elif defined(__linux__)
-    // Linux
-    command = "xdg-open \"" + path + "\"";
-#else
-    // Unsupported platform
-    std::cerr << "Error: Unsupported platform. Cannot open file manager." << std::endl;
-    return;
-#endif
-
-        // Execute the command to open the file manager
-        int result = std::system(command.c_str());
-
-        if (result != 0)
-        {
-            // Failed to open the file manager
-            std::cerr << "Error: Failed to open file manager." << std::endl;
-        }
-    }
+    static void OpenFileManager(const std::string& path);
 
     static std::vector<unsigned char> Str2VUChar(const std::string& str)
     {
@@ -512,7 +454,7 @@ public:
 
     static std::string PreProcess(const std::string& text, const std::shared_ptr<ChatBot>& bot);
 
-    static std::vector<Code> GetCodes(const std::string& text);
+    static std::vector<Code> GetCodes(std::string text);
 };
 
 template <typename... Args>
@@ -527,7 +469,6 @@ std::string Utils::ExecuteShell(const std::string& cmd, Args... args)
     {
         command << " " << arg;
     }
-
     std::string result;
     FILE* pipe = popen(command.str().c_str(), "r");
     if (!pipe)

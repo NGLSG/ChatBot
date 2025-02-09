@@ -1,4 +1,5 @@
-﻿#include "utils.h"
+﻿#define NOMINMAX
+#include "utils.h"
 
 #include "../sample/Application.h"
 #include "ChatBot.h"
@@ -11,6 +12,7 @@ int DownloadedSize;
 double DownloadSpeed;
 double RemainingTime;
 std::string FileName;
+
 
 bool UFile::Exists(const std::string& filename)
 {
@@ -474,6 +476,16 @@ std::future<bool> Utils::UDownloads(const std::map<std::string, std::string>& ta
         }
         return success;
     });
+}
+
+std::vector<Ref<Downloader>> Utils::UDownloadsAsync(const std::map<std::string, std::string>& tasks, int num_threads)
+{
+    std::vector<Ref<Downloader>> downloaders;
+    for (const auto& url_file_pair : tasks)
+    {
+        downloaders.push_back(UDownloadAsync(url_file_pair, num_threads));
+    }
+    return downloaders;
 }
 
 bool Utils::UDownload(const std::pair<std::string, std::string>& task, int num_threads)
@@ -1065,6 +1077,100 @@ std::string Utils::ReadFile(const std::string& filename)
     return buffer.str();
 }
 
+std::vector<std::string> Utils::JsonArrayToStringVector(const json& array)
+{
+    std::vector<std::string> result;
+    for (json::const_iterator it = array.begin(); it != array.end(); ++it)
+    {
+        if (it->is_string())
+        {
+            result.push_back(it->get<std::string>());
+        }
+    }
+    return result;
+}
+
+std::vector<std::string> Utils::JsonDictToStringVector(const json& array)
+{
+    std::vector<std::string> keys;
+    try
+    {
+        // 遍历JSON对象，将所有键的名字存储在vector中
+        for (auto it = array.begin(); it != array.end(); ++it)
+        {
+            keys.push_back(it.key());
+        }
+    }
+    catch (const std::exception& e)
+    {
+        // 解析异常处理
+        std::cerr << "Error: " << e.what() << std::endl;
+    }
+
+    return keys;
+}
+
+std::vector<std::string> Utils::GetFilesWithExt(const std::string& folder, const std::string& ext)
+{
+    std::vector<std::string> files = UFile::GetFilesInDirectory(folder);
+
+    std::vector<std::string> result;
+
+    // 找到所有匹配的文件
+    for (const auto& file : files)
+    {
+        if (UFile::EndsWith(file, ext))
+        {
+            result.push_back(file);
+        }
+    }
+
+    return result;
+}
+
+std::string Utils::GetDefaultIfEmpty(const std::vector<std::string>& vec, const std::string& defaultValue)
+{
+    if (vec.empty())
+    {
+        return defaultValue;
+    }
+    else
+    {
+        return vec[0];
+    }
+}
+
+void Utils::OpenFileManager(const std::string& path)
+{
+    std::string command;
+
+#ifdef _WIN32
+    // Windows
+    std::string winPath = path;
+    std::replace(winPath.begin(), winPath.end(), '/', '\\');
+    command = "explorer.exe  /select,\"" + winPath + "\"";
+#elif defined(__APPLE__)
+        // macOS
+    command = "open \"" + path + "\"";
+#elif defined(__linux__)
+    // Linux
+    command = "xdg-open \"" + path + "\"";
+#else
+    // Unsupported platform
+    std::cerr << "Error: Unsupported platform. Cannot open file manager." << std::endl;
+    return;
+#endif
+
+    // Execute the command to open the file manager
+    int result = std::system(command.c_str());
+
+    if (result != 0)
+    {
+        // Failed to open the file manager
+        std::cerr << "Error: Failed to open file manager." << std::endl;
+    }
+}
+
 std::string Utils::GetPlatform()
 {
 #if defined(_WIN32) || defined(_WIN64)
@@ -1396,22 +1502,37 @@ std::string StringExecutor::PreProcess(const std::string& text, const std::share
     return replacedAnswer;
 }
 
-std::vector<StringExecutor::Code> StringExecutor::GetCodes(const std::string& text)
+std::vector<StringExecutor::Code> StringExecutor::GetCodes(std::string text)
 {
     std::vector<Code> codes;
     // Regex to match the outer [Code] ... [Code] block.
-    static const std::regex codeBlockPattern(R"(\[Code\]([\s\S]*?)\[Code\])");
+    static const std::regex codeBlockPattern(R"(\[Code\]([\x01-\xFF]*?)\[Code\])", std::regex::optimize);
 
     std::smatch codeBlockMatch;
+    auto [subText, erasePart] = EraseInRange("<think>", "</think>", text);
+    text = subText;
     // Iterator to search through the text string.
     std::string::const_iterator searchStart(text.cbegin());
+    auto removeSubstring = [](const std::string& str, const std::string& toRemove)
+    {
+        std::string result = str;
+        size_t pos = 0;
 
+        // 查找并去除指定的子字符串
+        while ((pos = result.find(toRemove)) != std::string::npos)
+        {
+            result.erase(pos, toRemove.length());
+        }
+
+        return result;
+    };
     try
     {
         while (std::regex_search(searchStart, text.cend(), codeBlockMatch, codeBlockPattern))
         {
-            std::string innerBlock = codeBlockMatch[1].str();
-            std::istringstream iss(innerBlock);
+            std::string codeBlock(codeBlockMatch[1].first, codeBlockMatch[1].second);
+            std::istringstream iss(codeBlock);
+
             std::string line;
 
             // Temporary variables to hold current code segment values.
@@ -1424,12 +1545,10 @@ std::vector<StringExecutor::Code> StringExecutor::GetCodes(const std::string& te
                 line = trim(line);
                 if (line == "[Language]")
                 {
-                    // If we already have a segment in progress, finish it.
                     if (!currentCode.Type.empty() || !currentCode.Content.empty())
                     {
                         if (inContentBlock)
                         {
-                            // flush any active content
                             currentCode.Content.push_back(contentBuffer.str());
                             contentBuffer.str("");
                             inContentBlock = false;
@@ -1437,33 +1556,27 @@ std::vector<StringExecutor::Code> StringExecutor::GetCodes(const std::string& te
                         codes.push_back(currentCode);
                         currentCode = Code();
                     }
-                    // Next non-marker line should be the language.
-                    // We continue; the following line will set language.
                     continue;
                 }
                 else if (line == "[Content]")
                 {
                     if (inContentBlock)
                     {
-                        // End the current content block.
                         currentCode.Content.push_back(contentBuffer.str());
                         contentBuffer.str("");
                         inContentBlock = false;
                     }
                     else
                     {
-                        // Begin a new content block.
                         inContentBlock = true;
                     }
                     continue;
                 }
                 else
                 {
-                    // If currentCode.Type is empty, assume this line is the language for the current segment.
-                    // Otherwise, if we're in a content block, add the line to the content.
                     if (currentCode.Type.empty())
                     {
-                        currentCode.Type = line;
+                        currentCode.Type = removeSubstring(line, "[Language]");
                     }
                     else if (inContentBlock)
                     {

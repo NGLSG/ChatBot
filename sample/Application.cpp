@@ -20,6 +20,7 @@ Application::Application(const Configure& configure, bool setting)
 
         voiceToText = CreateRef<VoiceToText>(configure.openAi);
         listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
+        listener->ChangeDevice(configure.MicroPhoneID);
         stableDiffusion = CreateRef<StableDiffusion>(configure.stableDiffusion);
         vitsData = configure.vits;
         whisperData = configure.whisper;
@@ -60,6 +61,8 @@ Application::Application(const Configure& configure, bool setting)
         text_buffers.emplace_back("apiPath");
         text_buffers.emplace_back("apiHost");
         text_buffers.emplace_back("search");
+        text_buffers.emplace_back("outDevice");
+        text_buffers.emplace_back("inputDevice");
     }
     catch (exception& e)
     {
@@ -327,10 +330,21 @@ void Application::DisplayInputText(Ref<Chat> chat) const
             return processed;
         };
         bool stop = false;
+        bool inThink = false;
         for (size_t i = 0; i < lines.size(); ++i)
         {
             line = lines[i];
-            if (line.find("[Code]") != std::string::npos)
+            if (line.find("<think>") != std::string::npos)
+            {
+                inThink = true;
+                processed_content += line + "\n";
+            }
+            if (line.find("</think>") != std::string::npos)
+            {
+                inThink = false;
+                processed_content += line + "\n";
+            }
+            if (!inThink && line.find("[Code]") != std::string::npos)
             {
                 if (!stop)
                     stop = true;
@@ -663,7 +677,7 @@ void Application::RenderDownloadBox()
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
     for (auto& downloader : downloaders)
     {
-        if (downloader != nullptr && downloader->GetStatus() != UInitializing)
+        if (downloader != nullptr && downloader->GetStatus() != UInitializing && downloader->GetStatus() != UFinished)
         {
             std::string dA = downloader->GetBasicInfo().url;
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(32.f / 256.f, 126.f / 256.f, 177.f / 256.f, 1.0f));
@@ -673,7 +687,7 @@ void Application::RenderDownloadBox()
             ImGui::SameLine();
             ImGui::PushID(reinterpret_cast<const char*>(&downloader));
             ImSpinner::SpinnerFilledArcFade(reinterpret_cast<const char*>(&downloader), 16,
-                                            ImColor(1.f, .2f, .2f, 1.0f), 6, 6);
+                                            ImColor(.2f, .2f, .2f, 1.0f), 6, 6);
             ImGui::PopID();
             if (downloader->IsRunning())
             {
@@ -703,23 +717,19 @@ void Application::RenderDownloadBox()
                     std::this_thread::sleep_for(std::chrono::seconds(1)); //延时析构
                     downloader->Stop();
                 }).detach();
-                std::erase(downloaders, downloader);
             }
         }
     }
+    Downloading = false;
     for (auto& downloader : downloaders)
     {
-        if (downloader == nullptr)
+        if (downloader != nullptr && downloader->GetStatus() != UFinished)
         {
-            std::erase(downloaders, downloader);
-        }
-        else if (downloader->GetStatus() == UFinished)
-        {
-            downloader->Stop();
-            std::erase(downloaders, downloader);
+            Downloading = true;
+            break;
         }
     }
-    Downloading = !downloaders.empty();
+
     ImGui::PopStyleVar();
     ImGui::End();
 }
@@ -730,152 +740,121 @@ void Application::RenderChatBox()
     // 创建一个子窗口
     ImGui::Begin(reinterpret_cast<const char*>(u8"对话"), NULL,
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav);
-
-    ImGui::BeginChild("Chat Box Content", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing()), false,
-                      ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoSavedSettings);
-    std::sort(chat_history.begin(), chat_history.end(), compareByTimestamp);
-    bool new_chat = false;
-    // 显示聊天记录
-    for (auto& chat : chat_history)
+    if (!loadingBot)
     {
-        Ref<Chat> userAsk;
-        Ref<Chat> botAnswer;
-        if (!chat)
-            continue;
-        if (chat->flag == 0)
-            userAsk = chat;
-        else
-            botAnswer = chat;
-
-        if (userAsk && !userAsk->content.empty())
+        ImGui::BeginChild("Chat Box Content", ImVec2(0, -ImGui::GetTextLineHeightWithSpacing()), false,
+                          ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NoSavedSettings);
+        std::sort(chat_history.begin(), chat_history.end(), compareByTimestamp);
+        bool new_chat = false;
+        // 显示聊天记录
+        for (auto& chat : chat_history)
         {
-            DisplayInputText(userAsk);
-        }
-        if (botAnswer)
-        {
-            static int count = 0; // 静态变量，用于记录动画状态
-            static float timeAccumulator = 0.0f; // 累积时间
-            float deltaTime = ImGui::GetIO().DeltaTime;
-            timeAccumulator += deltaTime;
-            if (botAnswer->content.empty())
-            {
-                if (timeAccumulator >= 0.2f)
-                {
-                    count = (count + 1) % 3; // 循环动画状态
-                    timeAccumulator -= 0.2f; // 重置时间累积器
-                }
+            Ref<Chat> userAsk;
+            Ref<Chat> botAnswer;
+            if (!chat)
+                continue;
+            if (chat->flag == 0)
+                userAsk = chat;
+            else
+                botAnswer = chat;
 
-                // 根据当前状态显示不同的加载动画
-                switch (count)
-                {
-                case 0:
-                    botAnswer->content = ".";
-                    break;
-                case 1:
-                    botAnswer->content = "..";
-                    break;
-                case 2:
-                    botAnswer->content = "...";
-                    break;
-                }
-            }
-            // Modify the style of the multi-line input field
-            new_chat = botAnswer->newMessage;
-            botAnswer->newMessage = false;
-            float rounding = 4.0f;
-            ImVec4 bg_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-            ImVec4 text_color = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-            ImVec4 cursor_color = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-            ImVec4 selection_color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, rounding);
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, bg_color);
-            ImGui::PushStyleColor(ImGuiCol_Text, text_color);
-            ImGui::PushStyleColor(ImGuiCol_FrameBgActive, selection_color);
-            ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, selection_color);
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, bg_color);
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, text_color);
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
-            ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
-            ImGui::PushID(("Avatar" + std::to_string(botAnswer->timestamp)).c_str());
-            if (ImGui::ImageButton("##" + TextureCache["avatar"], TextureCache["avatar"],
-                                   ImVec2(24, 24)))
+            if (userAsk && !userAsk->content.empty())
             {
-                fileBrowser = true;
-                title = reinterpret_cast<const char*>(u8"图片选择");
-                typeFilters = {".png", ".jpg"};
-                PathOnConfirm = [this]()
-                {
-                    LogInfo(BrowserPath.c_str());
-                    TextureCache["avatar"] = LoadTexture(BrowserPath);
-                    UFile::UCopyFile(Resources + "avatar.png", Resources + "avatar.png.bak");
-                    std::remove((Resources + "avatar.png").c_str());
-                    std::remove((Resources + "avatar.png.meta").c_str());
-                    UFile::UCopyFile(BrowserPath, Resources + "avatar.png");
-                };
+                DisplayInputText(userAsk);
             }
-            ImGui::PopID();
-
-            ImGui::SameLine();
-            DisplayInputText(botAnswer);
-            // 加载纹理的线程
-            if (!botAnswer->image.empty())
+            if (botAnswer)
             {
-                static bool wait = false;
-                if (SDCache.find(botAnswer->image) == SDCache.end())
+                // Modify the style of the multi-line input field
+                new_chat = botAnswer->newMessage;
+                botAnswer->newMessage = false;
+                float rounding = 4.0f;
+                ImVec4 bg_color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                ImVec4 text_color = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+                ImVec4 cursor_color = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+                ImVec4 selection_color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, rounding);
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, bg_color);
+                ImGui::PushStyleColor(ImGuiCol_Text, text_color);
+                ImGui::PushStyleColor(ImGuiCol_FrameBgActive, selection_color);
+                ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, selection_color);
+                ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, bg_color);
+                ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, text_color);
+                ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
+                ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
+                ImGui::PushID(("Avatar" + std::to_string(botAnswer->timestamp)).c_str());
+                if (ImGui::ImageButton("##" + TextureCache["avatar"], TextureCache["avatar"],
+                                       ImVec2(24, 24)))
                 {
-                    // 如果没有加载过该纹理
-                    if (!wait)
+                    fileBrowser = true;
+                    title = reinterpret_cast<const char*>(u8"图片选择");
+                    typeFilters = {".png", ".jpg"};
+                    PathOnConfirm = [this]()
                     {
-                        wait = true;
-                        LogInfo("开始加载图片: {0}", Resources + "Images/" + botAnswer->image);
-                        auto t = LoadTexture(Resources + "Images/" + botAnswer->image);
-                        SDCache[botAnswer->image] = t;
-                        wait = false;
+                        LogInfo(BrowserPath.c_str());
+                        TextureCache["avatar"] = LoadTexture(BrowserPath);
+                        UFile::UCopyFile(Resources + "avatar.png", Resources + "avatar.png.bak");
+                        std::remove((Resources + "avatar.png").c_str());
+                        std::remove((Resources + "avatar.png.meta").c_str());
+                        UFile::UCopyFile(BrowserPath, Resources + "avatar.png");
+                    };
+                }
+                ImGui::PopID();
+
+                ImGui::SameLine();
+                if (botAnswer->content.empty())
+                {
+                    if (new_chat)
+                    {
+                        ImGui::SameLine();
+                        ImGui::PushID(reinterpret_cast<const char*>(&botAnswer));
+                        ImSpinner::SpinnerFilledArcFade(reinterpret_cast<const char*>(&botAnswer), 8,
+                                                        ImColor(.8f, .8f, .8f, 1.0f), 6, 6);
+                        ImGui::PopID();
                     }
                 }
                 else
+                    DisplayInputText(botAnswer);
+                // 加载纹理的线程
+                if (!botAnswer->image.empty())
                 {
-                    // 如果纹理已加载,显示
-                    if (ImGui::ImageButton("##" + SDCache[botAnswer->image], (SDCache[botAnswer->image]),
-                                           ImVec2(256, 256)))
+                    static bool wait = false;
+                    if (SDCache.find(botAnswer->image) == SDCache.end())
                     {
-                        Utils::OpenFileManager(Utils::GetAbsolutePath(Resources + "Images/" + botAnswer->image));
+                        // 如果没有加载过该纹理
+                        if (!wait)
+                        {
+                            wait = true;
+                            LogInfo("开始加载图片: {0}", Resources + "Images/" + botAnswer->image);
+                            auto t = LoadTexture(Resources + "Images/" + botAnswer->image);
+                            SDCache[botAnswer->image] = t;
+                            wait = false;
+                        }
+                    }
+                    else
+                    {
+                        // 如果纹理已加载,显示
+                        if (ImGui::ImageButton("##" + SDCache[botAnswer->image], (SDCache[botAnswer->image]),
+                                               ImVec2(256, 256)))
+                        {
+                            Utils::OpenFileManager(Utils::GetAbsolutePath(Resources + "Images/" + botAnswer->image));
+                        }
                     }
                 }
+
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(8);
             }
-
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor(8);
         }
-    }
-    // 滚动到底部
-    if (new_chat)
-    {
-        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetStyle().ItemSpacing.x - 20)
+        // 滚动到底部
+        if (new_chat)
         {
-            ImGui::SetScrollHereY(1.0f);
+            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetStyle().ItemSpacing.x - 20)
+            {
+                ImGui::SetScrollHereY(1.0f);
+            }
         }
-    }
-    ImGui::EndChild();
+        ImGui::EndChild();
 
-    if (loadingBot)
-    {
-        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-        ImGui::SetCursorPos(center);
-        font->Scale = 2;
-
-
-        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"正在加载"));
-        ImGui::SameLine();
-        ImSpinner::SpinnerRotateDots("##loading", 16, 3, ImVec4(0.1f, 0.1f, 0.15f, 1.0f), 6, 4);
-
-
-        font->Scale = 1;
-    }
-
-    // 显示菜单栏
-    if (!loadingBot)
-    {
         if (ImGui::BeginMenuBar())
         {
             if (ImGui::BeginMenu(reinterpret_cast<const char*>(u8"选项")))
@@ -963,6 +942,22 @@ void Application::RenderChatBox()
             ImGui::EndMenuBar();
         }
     }
+
+    if (loadingBot)
+    {
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetCursorPos(center);
+        font->Scale = 2;
+
+
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"正在加载"));
+        ImGui::SameLine();
+        ImSpinner::SpinnerRotateDots("##loading", 8, 3, ImVec4(0.1f, 0.1f, 0.15f, 1.0f), 6, 4);
+
+
+        font->Scale = 1;
+    }
+
     ImGui::End();
 }
 
@@ -1307,9 +1302,32 @@ void Application::RenderConfigBox()
 
     ImGui::Begin(reinterpret_cast<const char*>(u8"配置"), NULL,
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground);
+    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"音频设置")))
+    {
+        static std::vector<std::string> devices = Utils::GetMicrophoneDevices();
+        if (ImGui::BeginCombo("##输入设备", configure.MicroPhoneID.c_str()))
+        {
+            for (const auto& device : devices)
+            {
+                bool is_selected = (configure.MicroPhoneID == device);
+                if (ImGui::Selectable(device.c_str(), is_selected))
+                {
+                    configure.MicroPhoneID = device;
+                    if (listener)
+                        listener->ChangeDevice(configure.MicroPhoneID);
+                    Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+                }
+                if (is_selected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+    }
 
     // 显示 ChatBot 配置
-    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"对话功能")))
+    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"LLM功能")))
     {
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用Claude (实验性功能)"), &configure.claude.enable);
         if (configure.claude.enable)
@@ -1481,7 +1499,8 @@ void Application::RenderConfigBox()
                 }
                 else
                 {
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"远程接入点"), GetBufferByName("endPoint").buffer,
+                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"远程接入点"),
+                                         GetBufferByName("endPoint").buffer,
                                          TEXT_BUFFER))
                     {
                         configure.openAi._endPoint = GetBufferByName("endPoint").buffer;
@@ -1688,12 +1707,14 @@ void Application::RenderConfigBox()
                     {
                         clicked = !clicked;
                     }
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 主机"), GetBufferByName("apiHost").buffer,
+                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 主机"),
+                                         GetBufferByName("apiHost").buffer,
                                          TEXT_BUFFER))
                     {
                         cdata.apiHost = GetBufferByName("apiHost").buffer;
                     }
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 路径"), GetBufferByName("apiPath").buffer,
+                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 路径"),
+                                         GetBufferByName("apiPath").buffer,
                                          TEXT_BUFFER))
                     {
                         cdata.apiPath = GetBufferByName("apiPath").buffer;
@@ -1728,7 +1749,6 @@ void Application::RenderConfigBox()
                 {
                     cdata.enable = false;
                     configure.customGPTs.erase(name);
-                    continue;
                 }
             }
         }
@@ -1889,7 +1909,8 @@ void Application::RenderConfigBox()
                 if (vitsModels.size() > 0 && vitsModels[SelectIndices["vits"]] != "empty")
                 {
                     // 获取.pth和.json文件
-                    std::vector<std::string> pth_files = Utils::GetFilesWithExt(vitsModels[SelectIndices["vits"]] + "/",
+                    std::vector<std::string> pth_files = Utils::GetFilesWithExt(
+                        vitsModels[SelectIndices["vits"]] + "/",
                         ".pth");
                     std::vector<std::string> json_files = Utils::GetFilesWithExt(
                         vitsModels[SelectIndices["vits"]] + "/",
@@ -2221,6 +2242,10 @@ void Application::RenderConfigBox()
                     configure.gemini.enable = false;
                     configure.claude.enable = false;
                     configure.grok.enable = false;
+                    for (auto& [name,cdata] : configure.customGPTs)
+                    {
+                        cdata.enable = false;
+                    }
                     configure.customGPTs.insert({"qwen2.5:3b", GPTLikeCreateInfo()});
                     configure.customGPTs["qwen2.5:3b"].enable = true;
                     configure.customGPTs["qwen2.5:3b"].useLocalModel = false;
@@ -2239,10 +2264,12 @@ void Application::RenderConfigBox()
             ImGui::SameLine();
             if (ImGui::Button(reinterpret_cast<const char*>(u8"本程序推理"), ImVec2(120, 0)))
             {
-                downloaders.emplace_back(Utils::UDownloadAsync({
-                    DefaultModelInstallLink, model + "DeepSeek_R1_1_5b.gguf"
-                }));
-                Downloading = true;
+                Installer({
+                              DefaultModelInstallLink, model + "DeepSeek_R1_1_5b.gguf"
+                          }, [&](Downloader*)
+                          {
+                              CreateBot();
+                          });
 
                 configure.customGPTs.insert({"DeepSeek_R1_1_5b", GPTLikeCreateInfo()});
                 configure.customGPTs["DeepSeek_R1_1_5b"].enable = true;
@@ -2286,14 +2313,13 @@ void Application::RenderUI()
     {
         RenderDownloadBox();
     }
-    if (!OnlySetting)
+    if (!OnlySetting && !Downloading)
     {
         if (!loadingBot)
         {
             RenderInputBox();
             RenderPopupBox();
             RenderConfigBox();
-
             RenderCodeBox();
             RenderConversationBox();
         }
@@ -2455,13 +2481,12 @@ int Application::Renderer()
             ImGui::NewFrame();
 
             RenderUI();
-            ImSpinner::demoSpinners();
 
             // 在Lua中调用ImGui函数
             for (auto& [name, script] : PluginsScript1)
             {
                 // 检查是否在禁止插件列表中
-                if (std::find(forbidLuaPlugins.begin(), forbidLuaPlugins.end(), name) != forbidLuaPlugins.end())
+                if (ranges::find(forbidLuaPlugins, name) != forbidLuaPlugins.end())
                 {
                     continue;
                 }
@@ -2544,13 +2569,15 @@ std::string Application::WhisperConvertor(const std::string& file)
 
 void Application::WhisperModelDownload(const std::string& model)
 {
-    std::map<std::string, std::string> tasks = {
-        {
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + model,
-            this->model + WhisperPath + model
-        }
+    std::pair<std::string, std::string> tasks =
+    {
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + model,
+        this->model + WhisperPath + model
     };
-    whisper = Installer(tasks);
+    Installer(tasks, [&](Downloader* downloader)
+    {
+        whisper = downloader->IsFinished();
+    });
     //return whisper;
 }
 
@@ -2562,10 +2589,12 @@ void Application::WhisperExeInstaller()
     }
     else
     {
-        std::map<std::string, std::string> tasks = {
-            {whisperUrl, bin + WhisperPath + "Whisper.zip"}
-        };
-        whisper = Installer(tasks) && Utils::Decompress(bin + WhisperPath + "Whisper.zip");
+        std::pair tasks =
+            {whisperUrl, bin + WhisperPath + "Whisper.zip"};
+        Installer(tasks, [&](Downloader* d)
+        {
+            whisper = d->IsFinished() && Utils::Decompress(bin + WhisperPath + "Whisper.zip");
+        });
     }
     //return whisper;
 }
@@ -2578,28 +2607,22 @@ void Application::VitsExeInstaller()
     }
     else
     {
-        std::map<std::string, std::string> tasks = {
-            {VitsConvertUrl, bin + VitsConvertor + vitsFile}
-        };
-        vits = Installer(tasks) && Utils::Decompress(bin + VitsConvertor + vitsFile);
+        std::pair tasks = {VitsConvertUrl, bin + VitsConvertor + vitsFile};
+        Installer(tasks, [&](Downloader* d)
+        {
+            vits = d->IsFinished() && Utils::Decompress(bin + VitsConvertor + vitsFile);
+        });
     }
     //return vits;
 }
 
-bool Application::Installer(std::map<std::string, std::string> tasks)
+void Application::Installer(std::pair<std::string, std::string> task,
+                            std::function<void(Downloader*)> callback)
 {
-    std::future<bool> download_future = Utils::UDownloads(tasks);
-    bool success = download_future.get();
-    if (success)
-    {
-        LogInfo("Application: Download completed successfully.");
-        return true;
-    }
-    else
-    {
-        LogError("Application Error: Download failed.");
-        return false;
-    }
+    auto ds = Utils::UDownloadAsync(task);
+    Downloading = true;
+    downloaders.emplace_back(ds);
+    ds->AddCallback(callback);
 }
 
 
@@ -2660,12 +2683,15 @@ vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
                 record->timestamp = timestamp;
 
                 // 创建一个新的 ChatRecord 对象，并将其添加到 chat_history 中
-                auto tcodes = StringExecutor::GetCodes(content);
-                for (auto& code : tcodes)
+                if (flag == 1)
                 {
-                    for (auto& it : code.Content)
+                    auto tcodes = StringExecutor::GetCodes(content);
+                    for (auto& code : tcodes)
                     {
-                        codes[code.Type].emplace_back(it);
+                        for (auto& it : code.Content)
+                        {
+                            codes[code.Type].emplace_back(it);
+                        }
                     }
                 }
                 AddChatRecord(record);
@@ -2761,63 +2787,65 @@ bool Application::Initialize()
         {
             LogInfo("下载Python...");
             const std::string pythonZip = PythonHome + "python.zip";
-            const std::string getPipPython = PythonHome + "get-pip.py";
-            bool success = Installer({
+            Installer(
                 {PythonLink, pythonZip}
-            });
-            if (success)
-            {
-                Utils::Decompress(pythonZip, PythonHome);
-                auto file = Utils::GetFilesWithExt(PythonHome, "._pth").front();
-                std::fstream fs(file, std::ios::out | std::ios::in);
-                if (!fs.is_open())
+                , [=](Downloader* d)
                 {
-                    LogError("Error: Failed to open file : {0}", file);
-                    return false;
-                }
+                    if (d->IsFinished())
+                    {
+                        Utils::Decompress(pythonZip, PythonHome);
+                        auto file = Utils::GetFilesWithExt(PythonHome, "._pth").front();
+                        std::fstream fs(file, std::ios::out | std::ios::in);
+                        if (!fs.is_open())
+                        {
+                            LogError("Error: Failed to open file : {0}", file);
+                            return;
+                        }
 
-                // Read the file content into a vector of strings
-                std::vector<std::string> lines;
-                std::string line;
-                while (std::getline(fs, line))
-                {
-                    lines.push_back(line);
-                }
+                        std::vector<std::string> lines;
+                        std::string line;
+                        while (std::getline(fs, line))
+                        {
+                            lines.push_back(line);
+                        }
+                        if (!lines.empty())
+                        {
+                            lines.back() = "import site";
+                        }
 
-                // Modify the last line
-                if (!lines.empty())
-                {
-                    lines.back() = "import site";
-                }
+                        fs.clear();
+                        fs.seekp(0, std::ios::beg);
+                        for (const auto& l : lines)
+                        {
+                            fs << l << std::endl;
+                        }
 
-                // Move the file pointer to the beginning of the file
-                fs.clear();
-                fs.seekp(0, std::ios::beg);
-
-                // Write the modified content back to the file
-                for (const auto& l : lines)
-                {
-                    fs << l << std::endl;
-                }
-
-                fs.close();
-
-
-                success = Installer({
-                    {PythonGetPip, getPipPython}
+                        fs.close();
+                    }
+                    else
+                    {
+                        LogError("Python 安装失败");
+                    }
                 });
-                if (success)
+        }
+    }
+    if (!IsPipInstalled())
+    {
+        const std::string getPipPython = PythonHome + "get-pip.py";
+        Installer(
+            {PythonGetPip, getPipPython}, [&](Downloader* d)
+            {
+                if (d->IsFinished())
                 {
                     Utils::ExecuteShell(
-                        Utils::GetAbsolutePath(PythonHome + PythonExecute), Utils::GetAbsolutePath(getPipPython));
+                        Utils::GetAbsolutePath(
+                            PythonHome + PythonExecute),
+                        Utils::GetAbsolutePath(PythonHome + "get-pip.py"));
+                    LogInfo("Python 安装成功");
+                    SYSTEMROLE = InitSys();
+                    CreateBot();
                 }
-                LogInfo("Python 安装成功");
-            }
-            else
-            {
-                LogError("Python 安装失败");
-            }
-        }
+            });
     }
 
     bool success = true;

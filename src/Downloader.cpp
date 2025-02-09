@@ -105,7 +105,7 @@ WebSpeed Downloader::GetSpeed() const
 
 Downloader::~Downloader()
 {
-    Stop();
+    LogInfo("Downloader destroyed.");
     status = UQuit;
     if (curl)
     {
@@ -193,6 +193,10 @@ UrlStatus Downloader::GetStatus() const
 
 void Downloader::Stop()
 {
+    if (status == UFinished)
+    {
+        return;
+    }
     if (downloadThread.joinable())
     {
         status = UStopped;
@@ -354,6 +358,10 @@ void Downloader::DownloadSingle(int retries)
     }
     file.close();
     status = UFinished;
+    if (finishCallback)
+    {
+        finishCallback(this);
+    }
 }
 
 bool Downloader::DownloadMulti()
@@ -398,6 +406,11 @@ bool Downloader::DownloadMulti()
 
     file.close();
     status = UFinished;
+    status = UFinished;
+    if (finishCallback)
+    {
+        finishCallback(this);
+    }
     return true;
 }
 

@@ -8,6 +8,7 @@ struct DString
 {
     std::string* str1;
     std::string* str2;
+    std::string* response;
     std::mutex mtx;
 };
 
@@ -25,7 +26,7 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
     DString* dstr = static_cast<DString*>(userp);
     size_t totalSize = size * nmemb;
     std::string dataChunk(static_cast<char*>(contents), totalSize);
-
+    dstr->response->append(dataChunk);
     {
         // Lock while appending to str1.
         std::lock_guard<std::mutex> lock(dstr->mtx);
@@ -76,7 +77,7 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
                         // Lock while updating str2.
                         std::lock_guard<std::mutex> lock(dstr->mtx);
                         dstr->str2->append(delta["content"].get<std::string>());
-                        std::cout << "\r" << dstr->str2 << std::flush;
+                        std::cout << "\r" << *dstr->str2 << std::flush;
                     }
                 }
             }
@@ -167,6 +168,7 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                     DString dstr;
                     dstr.str1 = new string();
                     dstr.str2 = &std::get<0>(Response[ts]);
+                    dstr.response = new string();
                     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dstr);
                     if (!chat_data_.useWebProxy && !chat_data_.proxy.empty())
                     {
@@ -181,6 +183,45 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                     }
                     curl_easy_cleanup(curl);
                     curl_slist_free_all(headers);
+                    std::stringstream stream(*dstr.response);
+                    std::string line;
+                    std::string full_response;
+                    while (std::getline(stream, line))
+                    {
+                        if (line.empty())
+                        {
+                            continue;
+                        }
+                        // Remove "data: "
+                        line = line.substr(6);
+                        if (line == "[DONE]")
+                        {
+                            break;
+                        }
+                        json resp = json::parse(line);
+                        json choices = resp.value("choices", json::array());
+                        if (choices.empty())
+                        {
+                            continue;
+                        }
+                        json delta = choices[0].value("delta", json::object());
+                        if (delta.empty())
+                        {
+                            continue;
+                        }
+                        if (delta.count("role"))
+                        {
+                        }
+                        if (delta.count("content"))
+                        {
+                            if (delta["content"].is_string())
+                            {
+                                std::string content = delta["content"].get<std::string>();
+                                full_response += content;
+                            }
+                        }
+                    }
+                    std::get<0>(Response[ts]) = full_response;
                     return std::get<0>(Response[ts]);
                 }
             }

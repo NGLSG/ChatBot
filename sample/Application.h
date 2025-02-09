@@ -47,7 +47,7 @@ class Application
 private:
     inline static const std::string OllamaLink = "https://ollama.com/download";
     inline static const std::string DefaultModelInstallLink =
-        "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf?download=true";
+        "https://hf-mirror.com/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf?download=true";
 #ifdef _WIN32
     inline static const std::string VitsConvertUrl =
         "https://github.com/NGLSG/MoeGoe/releases/download/1.1/VitsConvertor-win64.tar.gz";
@@ -401,13 +401,7 @@ public:
         {
             try
             {
-                std::string output = GetPythonVersion();
-                if (!output.empty())
-                {
-                    std::cout << "Python is installed: " << output;
-                    PyInstalled = true;
-                    return true;
-                }
+                return UFile::Exists(PythonHome + PythonExecute);
             }
             catch (const std::runtime_error& e)
             {
@@ -416,6 +410,23 @@ public:
             return false;
         }
         return true;
+    }
+
+    static bool IsPipInstalled()
+    {
+        if (IsPythonInstalled())
+        {
+            try
+            {
+                return UFile::Exists(PythonHome + "Scripts/pip.exe");
+            }
+            catch (const std::runtime_error& e)
+            {
+                std::cerr << e.what() << std::endl;
+            }
+            return false;
+        }
+        return false;
     }
 
     template <typename... Args>
@@ -437,7 +448,9 @@ public:
 
     static std::string GetPythonVersion()
     {
-        return Utils::ExecuteShell(PythonHome + PythonExecute, "--version");
+        if (IsPythonInstalled())
+            return Utils::ExecuteShell(PythonHome + PythonExecute, "--version");
+        return "";
     }
 
     static std::string GetPythonHome()
@@ -453,7 +466,8 @@ public:
 
     void VitsExeInstaller();
 
-    bool Installer(std::map<std::string, std::string> tasks);
+    void Installer(std::pair<std::string, std::string> task,
+                   std::function<void(Downloader*)> callback = nullptr);
 
     explicit Application(const Configure& configure, bool setting = false);
 

@@ -1,7 +1,9 @@
 #ifndef SYSTEMROLE_H
 #define SYSTEMROLE_H
 #include <string>
-const std::string SYSTEMROLE = fmt::format(R"(
+static inline std::string InitSys()
+{
+    return fmt::format(R"(
 
 系统角色：操作系统输出和聊天机器人
 目标：获取用户输入并返回适用于当前操作系统的shell/bash/cmd命令，供进一步处理。
@@ -56,6 +58,8 @@ const std::string SYSTEMROLE = fmt::format(R"(
 
 )", Utils::GetPlatform(), Application::GetPythonVersion(), Application::GetPythonHome(),
                                            Application::GetPythonPackage());
+}
+static inline std::string SYSTEMROLE = InitSys();
 
 const std::string SYSTEMROLE_EX = R"(
 示例对话：

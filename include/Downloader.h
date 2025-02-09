@@ -6,6 +6,7 @@
 #define DOWNLOADER_H
 
 #include <atomic>
+#include <functional>
 #include <mutex>
 #include <curl/curl.h>
 #include <string>
@@ -95,6 +96,12 @@ public:
     ~Downloader();
 
     void ForceStart();
+
+    void AddCallback(std::function<void(Downloader*)> callback = nullptr)
+    {
+        finishCallback = callback;
+    }
+
     void Start();
 
     void Pause();
@@ -146,6 +153,7 @@ private:
 
     std::atomic<CURL*> curl;
     std::vector<CURL*> multiCurl;
+    std::function<void(Downloader*)> finishCallback;
     BasicInfo basicInfo;
     std::thread downloadThread;
     uint8_t numThreads;
