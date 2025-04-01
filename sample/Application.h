@@ -131,6 +131,12 @@ private:
         Chat* parent = nullptr; // 父节点指针
         int currentVersionIndex = 0; // 当前激活的子节点索引
 
+        void addChild(Ref<Chat> child)
+        {
+            child->parent = this;
+            children.push_back(child);
+        }
+
         // 选择当前激活的分支
         bool selectBranch(int index)
         {
@@ -323,7 +329,7 @@ private:
             botR->flag = 1;
             botR->timestamp = Utils::GetCurrentTimestamp() + 1;
             std::lock_guard<std::mutex> lock(chat_history_mutex);
-            chat_history.back()->children.emplace_back(botR);
+            chat_history.back()->addChild(botR);
             AddChatRecord(botR);
             bot->SubmitAsync(last_input, botR->timestamp, role, convid);
             botR->talking = true;

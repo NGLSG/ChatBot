@@ -1240,7 +1240,7 @@ void StringExecutor::_WriteToFile(std::string filename, const std::string& conte
     static std::regex space_pattern(" ");
 
     // 替换换行符为指定字符串
-    filename = std::regex_replace(filename, newline_pattern, "...");
+    filename = std::regex_replace(filename, newline_pattern, "[Write to " + filename + "]");
     // 移除所有空格
     filename = std::regex_replace(filename, space_pattern, "");
 
@@ -1319,7 +1319,7 @@ std::string StringExecutor::AutoExecute(std::string text, const std::shared_ptr<
 {
     auto [res, part] = EraseInRange("<think>", "</think>", text);
 
-    return part + "\n" + Python(CMDWithOutput(CMD(File(Process(PreProcess(res, bot))))));
+    return part + "\n" + Python(Draw(CMDWithOutput(CMD(File(Process(PreProcess(res, bot)))))));
 }
 
 std::string StringExecutor::CMD(const std::string& text)
@@ -1384,41 +1384,62 @@ std::string StringExecutor::CMDWithOutput(const std::string& text)
 
 std::string StringExecutor::Draw(const std::string& text)
 {
-    static std::regex pattern1(R"(\[Draw\]([\x01-\xFF]*?)\[Draw\])");
-    static std::regex pattern2(R"(\[Positive\]([\x01-\xFF]*?)\[Positive\])");
+    // 修改正则表达式，使用非贪婪匹配并支持多行模式
+    static std::regex pattern1(R"(\[Draw\]([\s\S]*?)\[Draw\])");
+    static std::regex pattern2(R"(\[Positive\]([\s\S]*?)\[Positive\])");
+    static std::regex pattern3(R"(\[Negative\]([\s\S]*?)\[Negative\])");
+
     std::string replacedAnswer = text;
     if (!drawCallback)
         return replacedAnswer;
+
     try
     {
         smatch match;
         auto draw_begin = std::sregex_iterator(text.begin(), text.end(), pattern1);
         auto draw_end = std::sregex_iterator();
+
+        // 遍历所有匹配的[Draw]...[Draw]块
         for (std::sregex_iterator i = draw_begin; i != draw_end; ++i)
         {
             match = *i;
             std::string drawBlock = match[1].str();
 
+            // 初始化正负面提示词
             std::string positive;
             std::string negative;
-            if (std::regex_search(drawBlock, match, pattern2))
+
+            // 提取正面提示词
+            smatch positiveMatch;
+            if (std::regex_search(drawBlock, positiveMatch, pattern2))
             {
-                positive = match[1].str();
-            }
-            if (std::regex_search(drawBlock, match, pattern1))
-            {
-                negative = match[1].str();
+                positive = positiveMatch[1].str(); // 捕获正面内容
             }
 
-            drawCallback(positive, Utils::GetCurrentTimestamp(), false, negative);
+            // 提取负面提示词
+            smatch negativeMatch;
+            if (std::regex_search(drawBlock, negativeMatch, pattern3))
+            {
+                negative = negativeMatch[1].str(); // 捕获负面内容
+            }
+
+            // 调用回调函数处理提取的内容
+            if (drawCallback)
+            {
+                drawCallback(positive, Utils::GetCurrentTimestamp(), false, negative);
+            }
         }
     }
     catch (std::exception& e)
     {
         LogError("Error: {0}", e.what());
     }
-    replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "[Fin]",
+
+    // 替换已处理的[Draw]块
+    replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "[Drawing]",
                                         std::regex_constants::format_first_only);
+
+    return replacedAnswer; // 添加返回语句，之前的代码缺少返回值
 }
 
 std::string StringExecutor::File(const std::string& text)

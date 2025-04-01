@@ -197,14 +197,17 @@ void Application::_Draw(Ref<std::string> prompt, long long ts, bool callFromBot,
             Chat img;
             img.flag = 1;
             img.timestamp = Utils::GetCurrentTimestamp();
-            img.content = "Finished!";
+            img.content = "[Draw Finished]";
             img.image = uid;
 
             // 使用互斥锁保护共享资源 chat_history
             std::lock_guard<std::mutex> lock(chat_mutex);
             auto chat = CreateRef<Chat>(img);
-            chat_history.back()->children.emplace_back(chat);
+            if (!chat_history.empty() && chat_history.back())
+                chat_history.back()->addChild(chat);
             chat_history.emplace_back(chat);
+            save(convid);
+            bot->Save(convid);
         }
     }
     else
@@ -215,8 +218,11 @@ void Application::_Draw(Ref<std::string> prompt, long long ts, bool callFromBot,
         img.content = reinterpret_cast<const char*>(u8"抱歉,我不能为您生成图片,因为您的api地址为空");
         std::lock_guard<std::mutex> lock(chat_mutex);
         auto chat = CreateRef<Chat>(img);
-        chat_history.back()->children.emplace_back(chat);
+        if (!chat_history.empty() && chat_history.back())
+            chat_history.back()->addChild(chat);
         chat_history.emplace_back(chat);
+        save(convid);
+        bot->Save(convid);
     }
 }
 
@@ -578,6 +584,122 @@ void Application::DisplayInputText(Ref<Chat> chat, bool edit)
                 ImGui::PopID();
 
                 ImGui::SameLine();
+                ImGui::PushID(("del_button_" + std::to_string(chat->timestamp)).c_str());
+                if (ImGui::ImageButton(("del_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["del"],
+                                       ImVec2(16, 16)))
+                {
+                    // 查找要删除的聊天记录在历史中的位置
+                    auto it = ranges::find(chat_history, chat);
+                    if (it != chat_history.end())
+                    {
+                        // 检查节点是否有历史记录
+                        if (!chat->history.empty())
+                        {
+                            // 如果有历史记录，则只删除当前版本对应的内容和子节点
+
+                            // 删除当前版本对应的子节点
+                            if (chat->currentVersionIndex < chat->children.size())
+                            {
+                                auto childIt = chat->children.begin() + chat->currentVersionIndex;
+                                if (childIt != chat->children.end())
+                                {
+                                    chat->children.erase(childIt);
+                                }
+                            }
+
+                            // 处理历史记录删除和索引调整
+                            if (!chat->history.empty())
+                            {
+                                // 获取当前索引
+                                int currentIndex = chat->currentVersionIndex;
+
+                                // 删除当前版本的历史记录
+                                if (currentIndex < chat->history.size())
+                                {
+                                    chat->history.erase(chat->history.begin() + currentIndex);
+                                }
+
+                                // 索引调整规则：如果删除的是第一个版本(index=0)，索引不变，否则索引前移一位
+                                if (currentIndex > 0)
+                                {
+                                    chat->currentVersionIndex--;
+                                }
+                                // 若删除的是第一个版本，且还有剩余历史记录，索引保持为0
+                                else if (chat->history.empty())
+                                {
+                                    chat->currentVersionIndex = 0;
+                                }
+
+                                // 更新内容为当前索引对应的历史记录内容
+                                if (!chat->history.empty() && chat->currentVersionIndex < chat->history.size())
+                                {
+                                    chat->content = chat->history[chat->currentVersionIndex];
+                                }
+                                // 如果没有历史记录了，则重置内容
+                                else if (chat->history.empty())
+                                {
+                                    chat->content = "..."; // 默认内容
+                                }
+                            }
+                        }
+                        // 如果没有历史记录，则按照原来的逻辑删除节点
+                        else
+                        {
+                            // 如果该聊天节点有父节点（不是根节点）
+                            if (chat->parent != nullptr)
+                            {
+                                // 从父节点的子节点列表中移除
+                                auto& siblings = chat->parent->children;
+                                auto nodeIt = ranges::find(siblings, chat);
+                                if (nodeIt != siblings.end())
+                                {
+                                    siblings.erase(nodeIt);
+                                }
+                            }
+                            // 如果是根节点，直接从聊天历史中删除
+                            else
+                            {
+                                chat_history.erase(it);
+                            }
+
+                            // 处理子节点，将其提升到当前节点的位置
+                            if (!chat->children.empty())
+                            {
+                                if (chat->parent != nullptr)
+                                {
+                                    // 将所有子节点添加到父节点
+                                    for (auto& child : chat->children)
+                                    {
+                                        child->parent = chat->parent;
+                                        chat->parent->children.push_back(child);
+                                    }
+                                }
+                                else
+                                {
+                                    // 如果是根节点，将子节点提升为根节点
+                                    for (auto& child : chat->children)
+                                    {
+                                        child->parent = nullptr;
+                                        chat_history.push_back(child);
+                                    }
+                                }
+                            }
+                        }
+
+                        // 重建聊天历史（更新UI和数据结构）
+                        RebuildChatHistory();
+                    }
+                    else
+                    {
+                        // 如果在历史记录中找不到该聊天节点，记录错误
+                        LogError("聊天记录未在历史中找到！");
+                    }
+                    save(convid);
+                    bot->Save(convid);
+                }
+                ImGui::PopID();
+
+                ImGui::SameLine();
                 ImGui::PushID(("left_button_" + std::to_string(chat->timestamp)).c_str());
                 if (ImGui::ImageButton(("left_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["left"],
                                        ImVec2(16, 16)))
@@ -807,7 +929,7 @@ void Application::CreateBot()
             convid = conversations[0];
         }
         bot->Load(convid);
-        load(convid);
+        chat_history = load(convid);
         loadingBot = false;
     }).detach();
 }
@@ -1242,7 +1364,8 @@ void Application::RenderInputBox()
                         user->timestamp = Utils::GetCurrentTimestamp();
                         user->content = last_input;
                         user->history.emplace_back(user->content);
-                        chat_history.back()->children.emplace_back(user);
+                        if (!chat_history.empty() && chat_history.back())
+                            chat_history.back()->addChild(user);
                         AddChatRecord(user);
 
                         Rnum -= 1;
@@ -1349,7 +1472,12 @@ void Application::RenderInputBox()
 
         user->content = last_input;
         user->history.emplace_back(user->content);
-        chat_history.back()->children.emplace_back(user);
+        if (!chat_history.empty() && chat_history.back())
+            chat_history.back()->addChild(user);
+        if (is_valid_text(user->content))
+        {
+            AddChatRecord(user);
+        }
         /*if (ContainsCommand(last_input, cmd, args))
         {
             InlineCommand(cmd, args, user->timestamp);
@@ -1365,10 +1493,7 @@ void Application::RenderInputBox()
             AddSubmit();
         }
         //}
-        if (is_valid_text(user->content))
-        {
-            AddChatRecord(user);
-        }
+
         input_text.clear();
         save(convid);
         bot->Save(convid);
@@ -2932,8 +3057,10 @@ vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
                 {
                     // 递归函数，用于加载节点及其所有子节点
                     std::function<Ref<Chat>(const YAML::Node&, Chat*)> deserializeChat =
-                    [&deserializeChat,this](const YAML::Node& node, Chat* parentChat) -> Ref<Chat> {
-                        if (!node.IsMap()) {
+                        [&deserializeChat,this](const YAML::Node& node, Chat* parentChat) -> Ref<Chat>
+                    {
+                        if (!node.IsMap())
+                        {
                             return nullptr;
                         }
 
@@ -2944,32 +3071,39 @@ vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
                         chat->parent = parentChat;
 
                         // 加载基本信息
-                        if (node["flag"]) {
+                        if (node["flag"])
+                        {
                             chat->flag = node["flag"].as<int>();
                         }
 
-                        if (node["timestamp"]) {
+                        if (node["timestamp"])
+                        {
                             chat->timestamp = node["timestamp"].as<size_t>();
                         }
 
-                        if (node["content"]) {
+                        if (node["content"])
+                        {
                             chat->content = node["content"].as<std::string>();
                         }
 
                         // 加载可选的图片路径
-                        if (node["image"]) {
+                        if (node["image"])
+                        {
                             chat->image = node["image"].as<std::string>();
                         }
 
                         // 加载历史版本记录
-                        if (node["history"] && node["history"].IsSequence()) {
-                            for (const auto& version : node["history"]) {
-                                 chat->history.emplace_back(version.as<std::string>());
+                        if (node["history"] && node["history"].IsSequence())
+                        {
+                            for (const auto& version : node["history"])
+                            {
+                                chat->history.emplace_back(version.as<std::string>());
                             }
                         }
 
                         // 加载当前版本索引
-                        if (node["current_version_index"]) {
+                        if (node["current_version_index"])
+                        {
                             chat->currentVersionIndex = node["current_version_index"].as<int>();
                         }
 
@@ -2979,20 +3113,26 @@ vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
                         chat->talking = false;
 
                         // 加载子节点
-                        if (node["children"] && node["children"].IsSequence()) {
-                            for (const auto& childNode : node["children"]) {
+                        if (node["children"] && node["children"].IsSequence())
+                        {
+                            for (const auto& childNode : node["children"])
+                            {
                                 auto childChat = deserializeChat(childNode, chat.get());
-                                if (childChat) {
+                                if (childChat)
+                                {
                                     chat->children.push_back(childChat);
                                 }
                             }
                         }
 
                         // 如果是机器人回复，提取代码片段
-                        if (chat->flag == 1) {
+                        if (chat->flag == 1)
+                        {
                             auto tcodes = StringExecutor::GetCodes(chat->content);
-                            for (auto& code : tcodes) {
-                                for (auto& it : code.Content) {
+                            for (auto& code : tcodes)
+                            {
+                                for (auto& it : code.Content)
+                                {
                                     codes[code.Type].emplace_back(it);
                                 }
                             }
@@ -3002,9 +3142,11 @@ vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
                     };
 
                     // 加载顶级聊天记录
-                    for (const auto& chatNode : rootNode["chat_history"]) {
+                    for (const auto& chatNode : rootNode["chat_history"])
+                    {
                         auto chat = deserializeChat(chatNode, nullptr);
-                        if (chat) {
+                        if (chat)
+                        {
                             chat_history.push_back(chat);
                         }
                     }
@@ -3013,15 +3155,18 @@ vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
                 session_file.close();
                 LogInfo("Application : 已成功加载对话 {0}", name);
             }
-            catch (const YAML::Exception& e) {
+            catch (const YAML::Exception& e)
+            {
                 LogError("Application Error: YAML解析错误: {0}", e.what());
             }
         }
-        else {
+        else
+        {
             LogError("Application Error: 无法打开对话文件 {0}", name);
         }
     }
-    else {
+    else
+    {
         LogError("Application Error: 对话文件不存在 {0}", name);
     }
 
@@ -3055,7 +3200,8 @@ void Application::save(std::string name, bool out)
 
         // 递归函数，用于保存节点及其所有子节点
         std::function<void(const Ref<Chat>&, YAML::Node&)> serializeChat =
-        [&serializeChat](const Ref<Chat>& chat, YAML::Node& parentNode) {
+            [&serializeChat](const Ref<Chat>& chat, YAML::Node& parentNode)
+        {
             // 创建当前节点的YAML映射
             YAML::Node chatNode(YAML::NodeType::Map);
 
@@ -3065,14 +3211,17 @@ void Application::save(std::string name, bool out)
             chatNode["content"] = chat->content;
 
             // 只保存非空的图片路径
-            if (!chat->image.empty()) {
+            if (!chat->image.empty())
+            {
                 chatNode["image"] = chat->image;
             }
 
             // 保存历史版本记录
-            if (!chat->history.empty()) {
+            if (!chat->history.empty())
+            {
                 YAML::Node historyNode(YAML::NodeType::Sequence);
-                for (const auto& version : chat->history) {
+                for (const auto& version : chat->history)
+                {
                     historyNode.push_back(version);
                 }
                 chatNode["history"] = historyNode;
@@ -3082,11 +3231,13 @@ void Application::save(std::string name, bool out)
             chatNode["current_version_index"] = chat->currentVersionIndex;
 
             // 保存子节点
-            if (!chat->children.empty()) {
+            if (!chat->children.empty())
+            {
                 YAML::Node childrenNode(YAML::NodeType::Sequence);
 
                 // 遍历并递归保存所有子节点
-                for (const auto& child : chat->children) {
+                for (const auto& child : chat->children)
+                {
                     YAML::Node childNode;
                     serializeChat(child, childNode);
                     childrenNode.push_back(childNode);
@@ -3100,7 +3251,12 @@ void Application::save(std::string name, bool out)
         };
 
         // 保存顶层聊天记录节点
-        for (const auto& chat : chat_history) {
+        for (const auto& chat : chat_history)
+        {
+            if (!chat)
+            {
+                continue;
+            }
             YAML::Node chatNode;
             serializeChat(chat, chatNode);
             chatHistoryNode.push_back(chatNode);
@@ -3112,12 +3268,15 @@ void Application::save(std::string name, bool out)
         session_file << rootNode;
 
         session_file.close();
-        if (out) {
+        if (out)
+        {
             LogInfo("Application : 已成功保存对话 {0}", name);
         }
     }
-    else {
-        if (out) {
+    else
+    {
+        if (out)
+        {
             LogError("Application Error: 无法保存对话 {0}", name);
         }
     }
