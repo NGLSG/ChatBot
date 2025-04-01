@@ -4,14 +4,35 @@
 #include "SystemRole.h"
 #define IMSPINNER_DEMO
 #include "ImGuiSpinners.h"
-
+#include "imgui_markdown.h"
 std::vector<std::string> scommands;
 bool cpshow = false;
+ImGui::MarkdownConfig mdConfig;
+ImFont* H1 = NULL;
+ImFont* H2 = NULL;
+ImFont* H3 = NULL;
+Application* s_instance = nullptr;
+
+ImGui::MarkdownImageData ImageCallback(ImGui::MarkdownLinkCallbackData data)
+{
+    return s_instance->md_ImageCallback(data);
+}
+
+void LinkCallback(ImGui::MarkdownLinkCallbackData data)
+{
+    s_instance->md_LinkCallback(data);
+}
 
 Application::Application(const Configure& configure, bool setting)
 {
     try
     {
+        if (s_instance)
+        {
+            LogError("Application instance already exists!");
+            return;
+        }
+        s_instance = this;
         scommands = commands;
         this->configure = configure;
         OnlySetting = setting;
@@ -20,7 +41,8 @@ Application::Application(const Configure& configure, bool setting)
 
         voiceToText = CreateRef<VoiceToText>(configure.openAi);
         listener = CreateRef<Listener>(sampleRate, framesPerBuffer);
-        listener->ChangeDevice(configure.MicroPhoneID);
+
+
         stableDiffusion = CreateRef<StableDiffusion>(configure.stableDiffusion);
         vitsData = configure.vits;
         whisperData = configure.whisper;
@@ -37,6 +59,7 @@ Application::Application(const Configure& configure, bool setting)
         if (whisperData.enable && whisper && mwhisper)
         {
             listener->listen();
+            listener->ChangeDevice(configure.MicroPhoneID);
         }
         if (vitsData.enable && vits && vitsModel)
         {
@@ -143,11 +166,11 @@ void Application::VitsListener()
     }).detach();
 }
 
-void Application::Draw(Ref<std::string> prompt, long long ts, bool callFromBot)
+void Application::_Draw(Ref<std::string> prompt, long long ts, bool callFromBot, const std::string& negative)
 {
     if (is_valid_text(configure.stableDiffusion.apiPath))
     {
-        std::string uid = stableDiffusion->Text2Img(*prompt);
+        std::string uid = stableDiffusion->Text2Img(*prompt, negative);
 
         if (callFromBot)
         {
@@ -179,7 +202,9 @@ void Application::Draw(Ref<std::string> prompt, long long ts, bool callFromBot)
 
             // 使用互斥锁保护共享资源 chat_history
             std::lock_guard<std::mutex> lock(chat_mutex);
-            chat_history.emplace_back(CreateRef<Chat>(img));
+            auto chat = CreateRef<Chat>(img);
+            chat_history.back()->children.emplace_back(chat);
+            chat_history.emplace_back(chat);
         }
     }
     else
@@ -189,15 +214,16 @@ void Application::Draw(Ref<std::string> prompt, long long ts, bool callFromBot)
         img.timestamp = Utils::GetCurrentTimestamp() + 10;
         img.content = reinterpret_cast<const char*>(u8"抱歉,我不能为您生成图片,因为您的api地址为空");
         std::lock_guard<std::mutex> lock(chat_mutex);
-        chat_history.emplace_back(CreateRef<Chat>(img));
+        auto chat = CreateRef<Chat>(img);
+        chat_history.back()->children.emplace_back(chat);
+        chat_history.emplace_back(chat);
     }
 }
 
-void Application::DisplayInputText(Ref<Chat> chat) const
+void Application::DisplayInputText(Ref<Chat> chat, bool edit)
 {
     try
     {
-        ImVec2 text_pos;
         float max_width = ImGui::GetWindowContentRegionMax().x * 0.85f;
         int n = static_cast<int>(max_width / fontSize);
 
@@ -383,23 +409,224 @@ void Application::DisplayInputText(Ref<Chat> chat) const
 
         int enter_count = std::count(processed_content.begin(), processed_content.end(), '\n');
         input_size.y += orig * (enter_count + 1) + ImGui::GetStyle().ItemSpacing.y;
+        input_size.x = max(input_size.x, 32);
+        input_size.y = max(input_size.y, 16);
 
         std::vector<char> mutableBuffer(processed_content.begin(), processed_content.end());
-
-        // Ensure the buffer is null-terminated.
         mutableBuffer.push_back('\0');
 
         auto& style = ImGui::GetStyle();
         float i = style.ScrollbarSize;
         style.ScrollbarSize = 0.00001;
-        ImGui::InputTextMultiline(("##" + std::to_string(chat->timestamp) + std::to_string(chat->flag)).c_str(),
-                                  mutableBuffer.data(), mutableBuffer.size(),
-                                  input_size,
-                                  ImGuiInputTextFlags_ReadOnly |
-                                  ImGuiInputTextFlags_AutoSelectAll);
+        static std::string lastContent = "";
+        if (edit)
+        {
+            // 编辑状态下的多行输入
+            strcpy_s(input_buffer, mutableBuffer.data());
+            last_input = input_buffer;
+            if (ImGui::InputTextMultiline(
+                ("##" + std::to_string(chat->timestamp) + std::to_string(chat->flag)).c_str(),
+                input_buffer,
+                sizeof(input_buffer),
+                input_size,
+                ImGuiInputTextFlags_AllowTabInput
+            ))
+            {
+                chat->content = last_input = input_text = input_buffer;
+                if (chat->content.empty())
+                {
+                    chat->content = " ";
+                }
+                input_text.clear();
+            }
+            bool isFocused = ImGui::IsItemFocused();
+
+            // 处理回车键输入
+            if (isFocused && ImGui::IsKeyPressed(ImGuiKey_Enter))
+            {
+                input_text += "\n";
+            }
+
+            // 显示时间戳
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(chat->timestamp).c_str());
+
+            // 所有按钮统一放在对话下方一排
+            ImGui::BeginGroup(); // 开始一个组，使所有按钮在同一行
+
+            // 发送按钮
+            ImGui::PushID(("send_button_" + std::to_string(chat->timestamp)).c_str());
+            if (ImGui::ImageButton(("send_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["send"],
+                                   ImVec2(16, 16)))
+            {
+                auto it = ranges::find(chat_history, chat);
+                chat->content = last_input;
+                chat->history.emplace_back(chat->content);
+                chat->reedit = false;
+                chat->currentVersionIndex++;
+                // 如果找到了目标 chat
+                if (it != chat_history.end())
+                {
+                    // 删除目标 chat 之后的所有元素（不包括目标 chat 本身）
+                    chat_history.erase(std::next(it), chat_history.end());
+                }
+                bot->Save(convid);
+                save(convid);
+
+                AddSubmit();
+            }
+            ImGui::PopID();
+            ImGui::SameLine();
+
+            // 取消按钮
+            ImGui::PushID(("cancel_button_" + std::to_string(chat->timestamp)).c_str());
+            if (ImGui::ImageButton(("cancel_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["cancel"],
+                                   ImVec2(16, 16)))
+            {
+                chat->reedit = false;
+                chat->content = lastContent;
+            }
+            ImGui::PopID();
+            ImGui::SameLine();
+
+            ImGui::EndGroup(); // 结束按钮组
+        }
+        else
+        {
+            /*
+            // 获取当前光标屏幕位置，用于绘制背景
+            ImVec2 screenPos = ImGui::GetCursorScreenPos();
+
+            // 获取绘制列表用于绘制背景
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+            // 根据消息类型选择背景颜色
+            ImU32 bgColor;
+            if (chat->flag == 0)
+            {
+                // 用户消息背景色（浅蓝色）
+                bgColor = ImGui::ColorConvertFloat4ToU32(ImVec4(0.2f, 0.3f, 0.4f, 0.2f));
+            }
+            else
+            {
+                // AI消息背景色（浅灰色）
+                bgColor = ImGui::ColorConvertFloat4ToU32(ImVec4(0.3f, 0.3f, 0.3f, 0.2f));
+            }
+
+            // 设置圆角半径
+            float cornerRadius = 5.0f;
+
+            // 绘制圆角矩形背景
+            drawList->AddRectFilled(
+                ImVec2(screenPos.x, screenPos.y), // 左上角（添加边距）
+                ImVec2(screenPos.x + input_size.x, screenPos.y + input_size.y), // 右下角（完全匹配input_size）
+                bgColor,
+                cornerRadius
+            );
+
+            // 添加边框效果
+            ImU32 borderColor = ImGui::ColorConvertFloat4ToU32(ImVec4(0.5f, 0.5f, 0.5f, 0.3f));
+            drawList->AddRect(
+                ImVec2(screenPos.x, screenPos.y),
+                ImVec2(screenPos.x + input_size.x, screenPos.y + input_size.y),
+                borderColor,
+                cornerRadius,
+                0,
+                1.0f
+            );
+
+            // 渲染Markdown内容
+            ImGui::BeginChild(("md_" + std::to_string(chat->timestamp)).c_str(), input_size, false);
+            RenderMarkdown(mutableBuffer, input_size); // 渲染Markdown内容
+            ImGui::EndChild();*/
+            ImGui::InputTextMultiline(
+                ("##" + std::to_string(chat->timestamp) + std::to_string(chat->flag)).c_str(),
+                mutableBuffer.data(),
+                mutableBuffer.size(),
+                input_size,
+                ImGuiInputTextFlags_ReadOnly
+            );
+
+            // 显示时间戳
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(chat->timestamp).c_str());
+
+            // 所有按钮统一放在对话下方一排
+            ImGui::BeginGroup(); // 开始一个组，使所有按钮在同一行
+
+            // 复制按钮 - 始终显示
+            ImGui::PushID(("copy_button_" + std::to_string(chat->timestamp)).c_str());
+            if (ImGui::ImageButton(("copy_button_" + std::to_string(chat->timestamp)).c_str(),
+                                   TextureCache["copy"],
+                                   ImVec2(16, 16)))
+            {
+                // 将当前聊天内容复制到系统剪贴板
+                ImGui::SetClipboardText(chat->content.c_str());
+            }
+            ImGui::PopID();
+
+            // 根据聊天类型显示不同按钮
+            if (chat->flag == 0)
+            {
+                // 用户消息 - 添加编辑按钮
+                ImGui::SameLine();
+                ImGui::PushID(("edit_button_" + std::to_string(chat->timestamp)).c_str());
+                if (ImGui::ImageButton(("edit_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["edit"],
+                                       ImVec2(16, 16)))
+                {
+                    chat->reedit = true;
+                    lastContent = chat->content;
+                }
+                ImGui::PopID();
+
+                ImGui::SameLine();
+                ImGui::PushID(("left_button_" + std::to_string(chat->timestamp)).c_str());
+                if (ImGui::ImageButton(("left_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["left"],
+                                       ImVec2(16, 16)))
+                {
+                    if (chat->currentVersionIndex > 0)
+                    {
+                        chat->currentVersionIndex--;
+                        chat->selectBranch(chat->currentVersionIndex);
+                        RebuildChatHistory();
+                    }
+                }
+                ImGui::PopID();
+
+                ImGui::SameLine();
+                ImGui::Text(" %d/%d", chat->currentVersionIndex + 1, chat->children.size());
+
+                ImGui::SameLine();
+                ImGui::PushID(("right_button_" + std::to_string(chat->timestamp)).c_str());
+                if (ImGui::ImageButton(("right_button_" + std::to_string(chat->timestamp)).c_str(),
+                                       TextureCache["right"],
+                                       ImVec2(16, 16)))
+                {
+                    if (chat->currentVersionIndex < chat->children.size() - 1)
+                    {
+                        chat->currentVersionIndex++;
+                        chat->selectBranch(chat->currentVersionIndex);
+                        RebuildChatHistory();
+                    }
+                }
+                ImGui::PopID();
+            }
+
+            if (chat->flag == 1 && chat->talking)
+            {
+                // AI回复中 - 添加停止按钮
+                ImGui::SameLine();
+                ImGui::PushID(("stop_button_" + std::to_string(chat->timestamp)).c_str());
+                if (ImGui::ImageButton(("stop_button_" + std::to_string(chat->timestamp)).c_str(),
+                                       TextureCache["pause"],
+                                       ImVec2(16, 16)))
+                {
+                    bot->ForceStop();
+                }
+                ImGui::PopID();
+            }
+
+            ImGui::EndGroup(); // 结束按钮组
+        }
         style.ScrollbarSize = i;
-        // 显示时间戳
-        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), Utils::Stamp2Time(chat->timestamp).c_str());
     }
     catch (...)
     {
@@ -760,7 +987,7 @@ void Application::RenderChatBox()
 
             if (userAsk && !userAsk->content.empty())
             {
-                DisplayInputText(userAsk);
+                DisplayInputText(userAsk, userAsk->reedit);
             }
             if (botAnswer)
             {
@@ -963,7 +1190,6 @@ void Application::RenderChatBox()
 
 void Application::RenderInputBox()
 {
-    static std::vector<std::shared_future<std::string>> submit_futures;
     if (listener && listener->IsRecorded())
     {
         int focused = glfwGetWindowAttrib(window, GLFW_FOCUSED);
@@ -1015,13 +1241,15 @@ void Application::RenderInputBox()
                         Ref<Chat> user = CreateRef<Chat>();
                         user->timestamp = Utils::GetCurrentTimestamp();
                         user->content = last_input;
+                        user->history.emplace_back(user->content);
+                        chat_history.back()->children.emplace_back(user);
                         AddChatRecord(user);
 
                         Rnum -= 1;
 
                         std::remove(("recorded" + std::to_string(Rnum) + ".wav").c_str());
                         LogInfo("whisper: 删除录音{0}", "recorded" + std::to_string(Rnum) + ".wav");
-                        std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]()
+                        /*std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]()
                         {
                             Ref<Chat> botR = CreateRef<Chat>();
                             botR->flag = 1;
@@ -1042,7 +1270,8 @@ void Application::RenderInputBox()
                         {
                             std::lock_guard<std::mutex> lock(submit_futures_mutex);
                             submit_futures.push_back(std::move(submit_future));
-                        }
+                        }*/
+                        AddSubmit();
                     }
                 };
 
@@ -1107,45 +1336,35 @@ void Application::RenderInputBox()
         input_text.clear();
     }
 
-    if ((strlen(last_input.c_str()) > 0 && ImGui::IsKeyPressed(ImGuiKey_Enter) && (!ImGui::GetIO().KeyCtrl)))
+    // 保存输入框的聚焦状态
+    bool input_focused = ImGui::IsItemFocused();
+
+    // 只有当输入框被聚焦且满足提交条件时才能提交
+    if (input_focused && (strlen(last_input.c_str()) > 0 && ImGui::IsKeyPressed(ImGuiKey_Enter) && (!ImGui::GetIO().
+        KeyCtrl)))
     {
         Ref<Chat> user = CreateRef<Chat>();
         std::string cmd, args;
         user->timestamp = Utils::GetCurrentTimestamp();
 
         user->content = last_input;
-        if (ContainsCommand(last_input, cmd, args))
+        user->history.emplace_back(user->content);
+        chat_history.back()->children.emplace_back(user);
+        /*if (ContainsCommand(last_input, cmd, args))
         {
             InlineCommand(cmd, args, user->timestamp);
         }
         else
+        {*/
+        if (is_valid_text(last_input))
         {
-            if (is_valid_text(last_input))
-            {
-                // 使用last_input作为键
-                if (whisperData.enable)
-                    listener->ResetRecorded();
-                std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]()
-                {
-                    Ref<Chat> botR = CreateRef<Chat>();
-                    botR->flag = 1;
-                    botR->timestamp = Utils::GetCurrentTimestamp() + 1;
-                    std::lock_guard<std::mutex> lock(chat_history_mutex);
-                    AddChatRecord(botR);
-                    bot->SubmitAsync(last_input, botR->timestamp, role, convid);
-                    while (!bot->Finished(botR->timestamp))
-                    {
-                        botR->content = bot->GetResponse(botR->timestamp);
-                        botR->newMessage = true;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(16));
-                    }
-                    botR->content = bot->GetResponse(botR->timestamp);
-                    botR->content = StringExecutor::AutoExecute(botR->content, bot);
-                    return botR->content;
-                }).share();
-                submit_futures.push_back(std::move(submit_future));
-            }
+            // 使用last_input作为键
+            if (whisperData.enable)
+                listener->ResetRecorded();
+
+            AddSubmit();
         }
+        //}
         if (is_valid_text(user->content))
         {
             AddChatRecord(user);
@@ -1154,8 +1373,8 @@ void Application::RenderInputBox()
         save(convid);
         bot->Save(convid);
     }
-    else if ((ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyCtrl) ||
-        (ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyShift))
+    else if (input_focused && ((ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyCtrl) ||
+        (ImGui::IsKeyPressed(ImGuiKey_Enter) && ImGui::GetIO().KeyShift)))
     {
         input_text += "\n";
     }
@@ -1252,7 +1471,7 @@ void Application::RenderConversationBox()
         // 消息文本
         ImGui::SameLine();
         ImGui::PushID(conversation.c_str());
-        if (ImGui::Button(conversation.c_str(), ImVec2(100, 30)))
+        if (ImGui::Button(conversation.c_str(), ImVec2(100, 32)))
         {
             convid = conversation;
             bot->Load(convid);
@@ -1262,7 +1481,7 @@ void Application::RenderConversationBox()
         // 删除按钮
         ImGui::SameLine();
         ImGui::PushID(conversation.c_str());
-        if (ImGui::ImageButton("##" + TextureCache["del"], TextureCache["del"], ImVec2(16, 16)) &&
+        if (ImGui::ImageButton("##" + TextureCache["del"], TextureCache["del"], ImVec2(24, 24)) &&
             conversations.size() > 1)
         {
             convid = conversation;
@@ -1313,7 +1532,7 @@ void Application::RenderConfigBox()
                 if (ImGui::Selectable(device.c_str(), is_selected))
                 {
                     configure.MicroPhoneID = device;
-                    if (listener)
+                    if (listener && whisper)
                         listener->ChangeDevice(configure.MicroPhoneID);
                     Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
                 }
@@ -2380,6 +2599,13 @@ void Application::FileChooser()
 
 int Application::Renderer()
 {
+#ifdef _WIN32
+    HWND hwnd = GetConsoleWindow();
+    if (hwnd != NULL)
+    {
+        ShowWindow(hwnd, SW_HIDE);
+    }
+#endif
     // 初始化GLFW
     if (!glfwInit())
     {
@@ -2429,6 +2655,12 @@ int Application::Renderer()
     config.GlyphExtraSpacing = ImVec2(0.0f, 1.0f);
     font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
                                         io.Fonts->GetGlyphRangesChineseFull());
+    H1 = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
+                                      io.Fonts->GetGlyphRangesChineseFull());
+    H2 = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
+                                      io.Fonts->GetGlyphRangesChineseFull());
+    H3 = mdConfig.headingFormats[1].font;
+
 
     IM_ASSERT(font != NULL);
     io.DisplayFramebufferScale = ImVec2(0.8f, 0.8f);
@@ -2520,6 +2752,45 @@ int Application::Renderer()
     ImGui::DestroyContext();
     glfwTerminate();
     return 0;
+}
+
+ImGui::MarkdownImageData Application::md_ImageCallback(ImGui::MarkdownLinkCallbackData data)
+{
+    // 获取图片路径
+    std::string imagePath(data.link, data.linkLength);
+
+    // 加载图片纹理（这里应调用您的LoadTexture函数）
+    GLuint textureID = LoadTexture(imagePath);
+
+    // 创建并设置图片数据
+    ImGui::MarkdownImageData imageData;
+    imageData.isValid = textureID != 0; // 图片有效性取决于纹理是否加载成功
+    imageData.useLinkCallback = false; // 不使用链接回调
+    imageData.user_texture_id = textureID; // 设置纹理ID
+
+    // 设置默认图片尺寸
+    imageData.size = ImVec2(100.0f, 100.0f);
+
+    // 自适应调整图片大小，确保不超过可用区域
+    ImVec2 contentSize = ImGui::GetContentRegionAvail();
+    if (imageData.size.x > contentSize.x)
+    {
+        float ratio = imageData.size.y / imageData.size.x;
+        imageData.size.x = contentSize.x;
+        imageData.size.y = contentSize.x * ratio;
+    }
+
+    return imageData;
+}
+
+void Application::md_LinkCallback(ImGui::MarkdownLinkCallbackData data)
+{
+    std::string url(data.link, data.linkLength);
+    if (!data.isImage)
+    {
+        // 打开链接（Windows平台）
+        ShellExecuteA(NULL, "open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+    }
 }
 
 bool Application::CheckFileExistence(const std::string& filePath, const std::string& fileType,
@@ -2648,67 +2919,112 @@ vector<std::shared_ptr<Application::Chat>> Application::load(std::string name)
         std::ifstream session_file(ConversationPath.string() + name + ".yaml");
         session_file.imbue(std::locale("en_US.UTF-8"));
         chat_history.clear();
+
         if (session_file.is_open())
         {
-            // 从文件中读取 YAML 节点
-            YAML::Node node = YAML::Load(session_file);
-
-            // 将 YAML 节点映射到 chat_history
-            for (const auto& record_node : node)
+            try
             {
-                // 从 YAML 映射节点中读取 ChatRecord 对象的成员变量
-                Ref<Chat> record = CreateRef<Chat>();
-                int flag = record_node["flag"].as<int>();
-                if (record_node["newmsg"])
-                {
-                    record->newMessage = record_node["newmsg"].as<bool>();
-                }
-                long long timestamp;
-                std::string content;
+                // 从文件中读取YAML根节点
+                YAML::Node rootNode = YAML::Load(session_file);
 
-                if (flag == 0)
+                // 检查是否包含聊天历史节点
+                if (rootNode["chat_history"])
                 {
-                    timestamp = record_node["user"]["timestamp"].as<long long>();
-                    content = record_node["user"]["content"].as<std::string>();
-                }
-                else
-                {
-                    timestamp = record_node["bot"]["timestamp"].as<long long>();
-                    content = record_node["bot"]["content"].as<std::string>();
-                    record->image = record_node["bot"]["image"].as<std::string>();
-                }
+                    // 递归函数，用于加载节点及其所有子节点
+                    std::function<Ref<Chat>(const YAML::Node&, Chat*)> deserializeChat =
+                    [&deserializeChat,this](const YAML::Node& node, Chat* parentChat) -> Ref<Chat> {
+                        if (!node.IsMap()) {
+                            return nullptr;
+                        }
 
-                record->flag = flag;
-                record->content = content;
-                record->timestamp = timestamp;
+                        // 创建新的聊天记录对象
+                        Ref<Chat> chat = CreateRef<Chat>();
 
-                // 创建一个新的 ChatRecord 对象，并将其添加到 chat_history 中
-                if (flag == 1)
-                {
-                    auto tcodes = StringExecutor::GetCodes(content);
-                    for (auto& code : tcodes)
-                    {
-                        for (auto& it : code.Content)
-                        {
-                            codes[code.Type].emplace_back(it);
+                        // 设置父节点
+                        chat->parent = parentChat;
+
+                        // 加载基本信息
+                        if (node["flag"]) {
+                            chat->flag = node["flag"].as<int>();
+                        }
+
+                        if (node["timestamp"]) {
+                            chat->timestamp = node["timestamp"].as<size_t>();
+                        }
+
+                        if (node["content"]) {
+                            chat->content = node["content"].as<std::string>();
+                        }
+
+                        // 加载可选的图片路径
+                        if (node["image"]) {
+                            chat->image = node["image"].as<std::string>();
+                        }
+
+                        // 加载历史版本记录
+                        if (node["history"] && node["history"].IsSequence()) {
+                            for (const auto& version : node["history"]) {
+                                 chat->history.emplace_back(version.as<std::string>());
+                            }
+                        }
+
+                        // 加载当前版本索引
+                        if (node["current_version_index"]) {
+                            chat->currentVersionIndex = node["current_version_index"].as<int>();
+                        }
+
+                        // 重置运行时状态
+                        chat->reedit = false;
+                        chat->newMessage = true;
+                        chat->talking = false;
+
+                        // 加载子节点
+                        if (node["children"] && node["children"].IsSequence()) {
+                            for (const auto& childNode : node["children"]) {
+                                auto childChat = deserializeChat(childNode, chat.get());
+                                if (childChat) {
+                                    chat->children.push_back(childChat);
+                                }
+                            }
+                        }
+
+                        // 如果是机器人回复，提取代码片段
+                        if (chat->flag == 1) {
+                            auto tcodes = StringExecutor::GetCodes(chat->content);
+                            for (auto& code : tcodes) {
+                                for (auto& it : code.Content) {
+                                    codes[code.Type].emplace_back(it);
+                                }
+                            }
+                        }
+
+                        return chat;
+                    };
+
+                    // 加载顶级聊天记录
+                    for (const auto& chatNode : rootNode["chat_history"]) {
+                        auto chat = deserializeChat(chatNode, nullptr);
+                        if (chat) {
+                            chat_history.push_back(chat);
                         }
                     }
                 }
-                AddChatRecord(record);
-            }
 
-            session_file.close();
-            LogInfo("Application : Load {0} successfully", name);
+                session_file.close();
+                LogInfo("Application : 已成功加载对话 {0}", name);
+            }
+            catch (const YAML::Exception& e) {
+                LogError("Application Error: YAML解析错误: {0}", e.what());
+            }
         }
-        else
-        {
-            LogError("Application Error: Unable to load session {0},{1}", name, ".");
+        else {
+            LogError("Application Error: 无法打开对话文件 {0}", name);
         }
     }
-    else
-    {
-        LogError("Application Error: Unable to load session {0},{1}", name, ".");
+    else {
+        LogError("Application Error: 对话文件不存在 {0}", name);
     }
+
     return chat_history;
 }
 
@@ -2731,47 +3047,82 @@ void Application::save(std::string name, bool out)
     session_file.imbue(std::locale("en_US.UTF-8"));
     if (session_file.is_open())
     {
-        // 创建 YAML 节点
-        YAML::Node node;
+        // 创建 YAML 根节点
+        YAML::Node rootNode;
 
-        // 将 chat_history 映射到 YAML 节点
-        for (const auto& record : chat_history)
-        {
-            // 创建一个新的 YAML 映射节点
-            YAML::Node record_node(YAML::NodeType::Map);
+        // 保存所有聊天记录
+        YAML::Node chatHistoryNode(YAML::NodeType::Sequence);
 
-            // 将 ChatRecord 对象的成员变量映射到 YAML 映射节点中
-            record_node["flag"] = record->flag;
-            record_node["newmsg"] = record->newMessage;
-            if (record->flag == 0)
-            {
-                record_node["user"]["timestamp"] = record->timestamp;
-                record_node["user"]["content"] = record->content;
-            }
-            else
-            {
-                record_node["bot"]["timestamp"] = record->timestamp;
-                record_node["bot"]["content"] = record->content;
-                record_node["bot"]["image"] = record->image;
+        // 递归函数，用于保存节点及其所有子节点
+        std::function<void(const Ref<Chat>&, YAML::Node&)> serializeChat =
+        [&serializeChat](const Ref<Chat>& chat, YAML::Node& parentNode) {
+            // 创建当前节点的YAML映射
+            YAML::Node chatNode(YAML::NodeType::Map);
+
+            // 保存基本信息
+            chatNode["flag"] = chat->flag;
+            chatNode["timestamp"] = chat->timestamp;
+            chatNode["content"] = chat->content;
+
+            // 只保存非空的图片路径
+            if (!chat->image.empty()) {
+                chatNode["image"] = chat->image;
             }
 
-            // 将 YAML 映射节点添加到主节点中
-            node.push_back(record_node);
+            // 保存历史版本记录
+            if (!chat->history.empty()) {
+                YAML::Node historyNode(YAML::NodeType::Sequence);
+                for (const auto& version : chat->history) {
+                    historyNode.push_back(version);
+                }
+                chatNode["history"] = historyNode;
+            }
+
+            // 保存当前版本索引
+            chatNode["current_version_index"] = chat->currentVersionIndex;
+
+            // 保存子节点
+            if (!chat->children.empty()) {
+                YAML::Node childrenNode(YAML::NodeType::Sequence);
+
+                // 遍历并递归保存所有子节点
+                for (const auto& child : chat->children) {
+                    YAML::Node childNode;
+                    serializeChat(child, childNode);
+                    childrenNode.push_back(childNode);
+                }
+
+                chatNode["children"] = childrenNode;
+            }
+
+            // 将节点添加到父节点
+            parentNode = chatNode;
+        };
+
+        // 保存顶层聊天记录节点
+        for (const auto& chat : chat_history) {
+            YAML::Node chatNode;
+            serializeChat(chat, chatNode);
+            chatHistoryNode.push_back(chatNode);
         }
 
+        rootNode["chat_history"] = chatHistoryNode;
+
         // 将 YAML 节点写入文件
-        session_file << node;
+        session_file << rootNode;
 
         session_file.close();
-        if (out)
-            LogInfo("Application : Save {0} successfully", name);
+        if (out) {
+            LogInfo("Application : 已成功保存对话 {0}", name);
+        }
     }
-    else
-    {
-        if (out)
-            LogError("Application Error: Unable to save session {0},{1}", name, ".");
+    else {
+        if (out) {
+            LogError("Application Error: 无法保存对话 {0}", name);
+        }
     }
 }
+
 
 bool Application::Initialize()
 {
@@ -2937,7 +3288,125 @@ bool Application::Initialize()
             success = false;
         }
     }
+    if (is_valid_text(configure.stableDiffusion.apiPath))
+    {
+        StringExecutor::AddDrawCallback([this](const std::string& _p, long long ts, bool fromBot, const std::string& _n)
+        {
+            Draw(_p, ts, fromBot, _n);
+        });
+    }
 
+    mdConfig.linkCallback = LinkCallback;
+    mdConfig.imageCallback = ImageCallback;
+
+    mdConfig.linkIcon = "[链接]"; // 链接前缀
+    mdConfig.headingFormats[0] = ImGui::MarkdownHeadingFormat{H1, true}; // H1
+    mdConfig.headingFormats[1] = ImGui::MarkdownHeadingFormat{H2, true}; // H2
+    mdConfig.headingFormats[2] = ImGui::MarkdownHeadingFormat{H3, false}; // H3
+    mdConfig.formatCallback = [](const ImGui::MarkdownFormatInfo& markdownFormatInfo_, bool start_)
+    {
+        // 根据不同的格式类型应用不同样式
+        switch (markdownFormatInfo_.type)
+        {
+        case ImGui::MarkdownFormatType::NORMAL_TEXT:
+            // 普通文本，不需要特殊处理
+            break;
+
+        case ImGui::MarkdownFormatType::HEADING:
+            {
+                // 处理标题格式
+                if (start_)
+                {
+                    // 标题开始
+                    int level = markdownFormatInfo_.level;
+
+                    // 根据标题级别设置不同的样式
+                    if (level == 1)
+                    {
+                        // 一级标题：添加空间并使用突出颜色
+                        ImGui::Dummy(ImVec2(0.0f, 5.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                    }
+                    else if (level == 2)
+                    {
+                        // 二级标题：添加适当空间并使用不同颜色
+                        ImGui::Dummy(ImVec2(0.0f, 4.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.9f, 1.0f));
+                    }
+                    else
+                    {
+                        // 三级标题：添加少量空间
+                        ImGui::Dummy(ImVec2(0.0f, 3.0f));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+                    }
+                }
+                else
+                {
+                    // 标题结束
+                    ImGui::PopStyleColor();
+
+                    // 在标题后添加额外空间
+                    int level = markdownFormatInfo_.level;
+                    ImGui::Dummy(ImVec2(0.0f, 5.0f - level + 1)); // 根据级别调整空间大小
+                }
+                break;
+            }
+
+        case ImGui::MarkdownFormatType::UNORDERED_LIST:
+            {
+                // 无序列表的处理
+                if (start_)
+                {
+                    // 列表项开始：添加缩进和少量垂直空间
+                    ImGui::Dummy(ImVec2(0.0f, 2.0f));
+                    ImGui::Indent(10.0f);
+                }
+                else
+                {
+                    // 列表项结束：取消缩进并添加空间
+                    ImGui::Unindent(10.0f);
+                    ImGui::Dummy(ImVec2(0.0f, 2.0f));
+                }
+                break;
+            }
+
+        case ImGui::MarkdownFormatType::EMPHASIS:
+            {
+                // 强调文本（通常是斜体）
+                if (start_)
+                {
+                    // 开始强调：使用不同颜色表示
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.9f, 0.7f, 1.0f));
+                }
+                else
+                {
+                    // 结束强调：恢复颜色
+                    ImGui::PopStyleColor();
+                }
+                break;
+            }
+
+        case ImGui::MarkdownFormatType::LINK:
+            {
+                // 链接文本
+                if (start_)
+                {
+                    // 链接开始：使用蓝色表示链接
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.5f, 0.9f, 1.0f));
+                }
+                else
+                {
+                    // 链接结束：恢复颜色
+                    ImGui::PopStyleColor();
+                }
+                break;
+            }
+
+        default:
+            // 其他未处理的类型
+            break;
+        }
+    };
     LogInfo("Successful initialization!");
     return success;
 }
@@ -2995,6 +3464,97 @@ ShowConfirmationDialog(const char* title, const char* content, bool& mstate,
             ImGui::EndPopup();
         }
     }
+}
+
+void Application::RenderMarkdown(vector<char>& markdown, ImVec2 input_size)
+{
+    // 添加左侧间距
+    ImGui::Indent(4.0f);
+
+    // 创建互相同步的双层滚动区域
+
+    // 创建唯一ID，避免ImGui控件ID冲突
+    ImGuiID id = ImGui::GetID("md_selection_layer");
+    std::string childId = "md_content_" + std::to_string(id);
+
+    // 获取滚动状态，用于同步两个层的滚动位置
+    static float lastScrollY = 0.0f;
+    float currentScrollY = 0.0f;
+    bool scrollFromMarkdown = false;
+    bool scrollFromInput = false;
+
+    // 第一步：渲染底层Markdown内容
+    {
+        // 记录渲染前的光标位置
+        ImVec2 pos = ImGui::GetCursorPos();
+
+        // 创建子窗口，允许滚动但禁止输入
+        if (ImGui::BeginChild(childId.c_str(), input_size, false, ImGuiWindowFlags_NoInputs))
+        {
+            // 渲染Markdown格式的内容
+            ImGui::Markdown(markdown.data(), markdown.size(), mdConfig);
+
+            // 检测Markdown层是否被滚动
+            currentScrollY = ImGui::GetScrollY();
+            if (ImGui::IsWindowHovered() && fabsf(currentScrollY - lastScrollY) > 1.0f)
+            {
+                scrollFromMarkdown = true;
+                lastScrollY = currentScrollY;
+            }
+
+            ImGui::EndChild();
+        }
+
+        // 将光标重置回原始位置，准备渲染第二层
+        ImGui::SetCursorPos(pos);
+    }
+
+    // 第二步：渲染透明输入框，用于文本选择
+    {
+        // 设置样式，使输入框内容不可见但保留选择高亮效果
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 0.0f)); // 文本颜色设为透明
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f)); // 背景颜色设为透明
+        ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, ImVec4(0.2f, 0.4f, 0.8f, 0.3f)); // 文本选择背景设为蓝色半透明
+
+        // 创建透明多行文本输入框，用于实现文本选择功能
+        if (ImGui::InputTextMultiline(("##md_selector" + std::to_string(id)).c_str(),
+                                      markdown.data(), markdown.size(),
+                                      input_size,
+                                      ImGuiInputTextFlags_ReadOnly))
+        {
+            // 当输入框状态改变时的处理（这里不需要额外操作）
+        }
+
+        // 同步滚动位置
+        ImGuiWindow* window = ImGui::GetCurrentWindow();
+        if (window && window->ScrollbarY)
+        {
+            // 检测输入框是否被滚动
+            float inputScrollY = ImGui::GetScrollY();
+            if (ImGui::IsWindowHovered() && fabsf(inputScrollY - lastScrollY) > 1.0f)
+            {
+                scrollFromInput = true;
+                lastScrollY = inputScrollY;
+            }
+
+            // 如果Markdown层被滚动，同步输入框的滚动位置
+            if (scrollFromMarkdown)
+            {
+                ImGui::SetScrollY(currentScrollY);
+            }
+            // 如果输入框被滚动，记录新的滚动位置供下次渲染时同步到Markdown层
+            else if (scrollFromInput)
+            {
+                lastScrollY = inputScrollY;
+            }
+        }
+
+        // 恢复原始样式设置
+        ImGui::PopStyleColor(3);
+    }
+
+    // 取消左侧缩进
+    ImGui::Unindent(4.0f);
 }
 
 void Application::RuntimeDetector()

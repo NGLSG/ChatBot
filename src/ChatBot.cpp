@@ -9,6 +9,8 @@ struct DString
     std::string* str1;
     std::string* str2;
     std::string* response;
+
+    void* instance;
     std::mutex mtx;
 };
 
@@ -26,26 +28,27 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
     DString* dstr = static_cast<DString*>(userp);
     size_t totalSize = size * nmemb;
     std::string dataChunk(static_cast<char*>(contents), totalSize);
+    ChatBot* chatBot = static_cast<ChatBot*>(dstr->instance);
+    if (chatBot && chatBot->forceStop.load())
+    {
+        return 0;
+    }
     dstr->response->append(dataChunk);
     {
-        // Lock while appending to str1.
         std::lock_guard<std::mutex> lock(dstr->mtx);
         dstr->str1->append(dataChunk);
     }
 
     std::stringstream ss;
     {
-        // Lock access to copy data for processing.
         std::lock_guard<std::mutex> lock(dstr->mtx);
         ss.str(*dstr->str1);
     }
     std::string line;
     std::string remaining;
 
-    // Process the buffer line-by-line.
     while (std::getline(ss, line))
     {
-        // Skip empty or all-whitespace lines.
         if (line.find_first_not_of(" \t\r\n") == std::string::npos)
             continue;
 
@@ -99,6 +102,16 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
     return totalSize;
 }
 
+int ProgressCallback(void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+{
+    ChatBot* chatBot = static_cast<ChatBot*>(clientp);
+    if (chatBot && chatBot->forceStop.load())
+    {
+        return 1;
+    }
+    return 0;
+}
+
 
 ChatGPT::ChatGPT(const OpenAIBotCreateInfo& chat_data, std::string systemrole) : chat_data_(chat_data)
 {
@@ -137,6 +150,17 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
         int retry_count = 0;
         while (retry_count < 3)
         {
+            // 检查是否要求强制停止
+            {
+                std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                if (forceStop)
+                {
+                    std::get<0>(Response[ts]) = "操作已被取消";
+                    std::get<1>(Response[ts]) = true;
+                    return "操作已被取消";
+                }
+            }
+
             try
             {
                 LogInfo("ChatBot: Post request...");
@@ -149,7 +173,6 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                 {
                     url = chat_data_._endPoint;
                 }
-
                 CURL* curl;
                 CURLcode res;
                 struct curl_slist* headers = NULL;
@@ -157,7 +180,6 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                 headers = curl_slist_append(headers, ("Authorization: Bearer " + chat_data_.api_key).c_str());
                 headers = curl_slist_append(headers, ("api-key: " + chat_data_.api_key).c_str());
                 headers = curl_slist_append(headers, "Transfer-Encoding: chunked");
-
                 curl = curl_easy_init();
                 if (curl)
                 {
@@ -165,70 +187,145 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
                     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
                     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+
+                    // 添加进度回调，用于检查停止标志
+                    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+                    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, ProgressCallback);
+                    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, this);
+
                     DString dstr;
                     dstr.str1 = new string();
                     dstr.str2 = &std::get<0>(Response[ts]);
                     dstr.response = new string();
+                    dstr.instance = this;
                     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dstr);
+
                     if (!chat_data_.useWebProxy && !chat_data_.proxy.empty())
                     {
                         curl_easy_setopt(curl, CURLOPT_PROXY, chat_data_.proxy.c_str());
                     }
                     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); // disable SSL verification
+
                     res = curl_easy_perform(curl);
-                    if (res != CURLE_OK)
+
+                    if (res == CURLE_ABORTED_BY_CALLBACK || res == CURLE_WRITE_ERROR && forceStop)
+                    {
+                        // 请求被我们的回调函数中止，意味着用户请求停止
+                        LogInfo("ChatBot: Request canceled by user");
+                        std::get<0>(Response[ts]) = std::get<0>(Response[ts]) + "\n[生成被中断]";
+                        std::get<1>(Response[ts]) = true;
+
+                        // 释放资源
+                        curl_easy_cleanup(curl);
+                        curl_slist_free_all(headers);
+                        delete dstr.str1;
+                        delete dstr.response;
+
+                        return std::get<0>(Response[ts]);
+                    }
+                    else if (res != CURLE_OK)
                     {
                         LogError("ChatBot Error: Request failed with error code " + std::to_string(res));
                         retry_count++;
+
+                        // 检查是否要求强制停止
+                        std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                        if (forceStop)
+                        {
+                            std::get<0>(Response[ts]) = "操作已被取消";
+                            std::get<1>(Response[ts]) = true;
+
+                            // 释放资源
+                            curl_easy_cleanup(curl);
+                            curl_slist_free_all(headers);
+                            delete dstr.str1;
+                            delete dstr.response;
+
+                            return "操作已被取消";
+                        }
                     }
-                    curl_easy_cleanup(curl);
-                    curl_slist_free_all(headers);
-                    std::stringstream stream(*dstr.response);
-                    std::string line;
-                    std::string full_response;
-                    while (std::getline(stream, line))
+                    else
                     {
-                        if (line.empty())
+                        // 成功完成请求，处理响应
+                        curl_easy_cleanup(curl);
+                        curl_slist_free_all(headers);
+
+                        std::stringstream stream(*dstr.response);
+                        std::string line;
+                        std::string full_response;
+
+                        while (std::getline(stream, line))
                         {
-                            continue;
-                        }
-                        // Remove "data: "
-                        line = line.substr(6);
-                        if (line == "[DONE]")
-                        {
-                            break;
-                        }
-                        json resp = json::parse(line);
-                        json choices = resp.value("choices", json::array());
-                        if (choices.empty())
-                        {
-                            continue;
-                        }
-                        json delta = choices[0].value("delta", json::object());
-                        if (delta.empty())
-                        {
-                            continue;
-                        }
-                        if (delta.count("role"))
-                        {
-                        }
-                        if (delta.count("content"))
-                        {
-                            if (delta["content"].is_string())
+                            // 在处理每一行之前检查是否应该停止
                             {
-                                std::string content = delta["content"].get<std::string>();
-                                full_response += content;
+                                std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                                if (forceStop)
+                                {
+                                    delete dstr.str1;
+                                    delete dstr.response;
+                                    std::get<0>(Response[ts]) = full_response + "\n[生成被中断]";
+                                    std::get<1>(Response[ts]) = true;
+                                    return std::get<0>(Response[ts]);
+                                }
+                            }
+
+                            if (line.empty())
+                            {
+                                continue;
+                            }
+                            // Remove "data: "
+                            line = line.substr(6);
+                            if (line == "[DONE]")
+                            {
+                                break;
+                            }
+                            json resp = json::parse(line);
+                            json choices = resp.value("choices", json::array());
+                            if (choices.empty())
+                            {
+                                continue;
+                            }
+                            json delta = choices[0].value("delta", json::object());
+                            if (delta.empty())
+                            {
+                                continue;
+                            }
+                            if (delta.count("role"))
+                            {
+                            }
+                            if (delta.count("content"))
+                            {
+                                if (delta["content"].is_string())
+                                {
+                                    std::string content = delta["content"].get<std::string>();
+                                    full_response += content;
+                                }
                             }
                         }
+
+                        delete dstr.str1;
+                        delete dstr.response;
+                        std::get<0>(Response[ts]) = full_response;
+                        return std::get<0>(Response[ts]);
                     }
-                    std::get<0>(Response[ts]) = full_response;
-                    return std::get<0>(Response[ts]);
+
+                    delete dstr.str1;
+                    delete dstr.response;
                 }
             }
             catch (std::exception& e)
             {
                 LogError("ChatBot Error: " + std::string(e.what()));
                 retry_count++;
+
+                // 检查是否要求强制停止
+                std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                if (forceStop)
+                {
+                    std::get<0>(Response[ts]) = "操作已被取消";
+                    std::get<1>(Response[ts]) = true;
+                    return "操作已被取消";
+                }
             }
         }
         LogError("ChatBot Error: Request failed after three retries.");
@@ -240,6 +337,140 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
     return "";
 }
 
+std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
+{
+    try
+    {
+        // 检查是否要求强制停止
+        {
+            std::lock_guard<std::mutex> stopLock(forceStopMutex);
+            if (forceStop)
+            {
+                std::get<0>(Response[timeStamp]) = "操作已被取消";
+                std::get<1>(Response[timeStamp]) = true;
+                return "操作已被取消";
+            }
+        }
+
+        json ask;
+        ask["content"] = prompt;
+        ask["role"] = role;
+        convid_ = convid;
+        if (Conversation.find(convid) == Conversation.end())
+        {
+            std::lock_guard<std::mutex> lock(historyAccessMutex);
+            history.push_back(defaultJson);
+            //history.push_back(defaultJson2);
+            Conversation.insert({convid_, history});
+        }
+        history.emplace_back(ask);
+        Conversation[convid_] = history;
+        std::string data = "{\n"
+            "  \"model\": \"" + chat_data_.model + "\",\n"
+            "  \"stream\": true,\n"
+            "  \"messages\": " +
+            Conversation[convid_].dump()
+            + "}\n";
+        Response[timeStamp] = std::make_tuple("", false);
+        std::string res = sendRequest(data, timeStamp);
+
+        // 再次检查是否要求强制停止
+        {
+            std::lock_guard<std::mutex> stopLock(forceStopMutex);
+            if (forceStop && !res.empty() && res != "操作已被取消")
+            {
+                // 如果生成过程中被取消但已有部分结果
+                json response;
+                response["content"] = res;
+                response["role"] = "assistant";
+                history.emplace_back(response);
+                std::get<1>(Response[timeStamp]) = true;
+                LogInfo("ChatBot: Post canceled but partial result saved");
+                return res;
+            }
+        }
+
+        // 如果没有被取消，正常处理结果
+        if (!res.empty() && res != "操作已被取消")
+        {
+            json response;
+            response["content"] = res;
+            response["role"] = "assistant";
+            history.emplace_back(response);
+            std::get<1>(Response[timeStamp]) = true;
+            LogInfo("ChatBot: Post finished");
+        }
+
+        return res;
+    }
+    catch (exception& e)
+    {
+        LogError(e.what());
+        std::get<0>(Response[timeStamp]) = "发生错误: " + std::string(e.what());
+        std::get<1>(Response[timeStamp]) = true;
+        return std::get<0>(Response[timeStamp]);
+    }
+}
+
+void ChatGPT::Reset()
+{
+    history.clear();
+    history.push_back(defaultJson);
+    Conversation[convid_] = history;
+    Del(convid_);
+    Save(convid_);
+}
+
+void ChatGPT::Load(std::string name)
+{
+    std::lock_guard<std::mutex> lock(fileAccessMutex);
+    std::stringstream buffer;
+    std::ifstream session_file(ConversationPath + name + suffix);
+    if (session_file.is_open())
+    {
+        buffer << session_file.rdbuf();
+        history = json::parse(buffer.str());
+        convid_ = name;
+        Conversation[name] = history;
+    }
+    else
+    {
+        LogError("ChatBot Error: Unable to load session " + name + ".");
+    }
+    LogInfo("Bot: 加载 {0} 成功", name);
+}
+
+void ChatGPT::Save(std::string name)
+{
+    std::ofstream session_file(ConversationPath + name + suffix);
+
+    if (session_file.is_open())
+    {
+        session_file << history.dump();
+        session_file.close();
+        LogInfo("Bot : Save {0} successfully", name);
+    }
+    else
+    {
+        LogError("ChatBot Error: Unable to save session {0},{1}", name, ".");
+    }
+}
+
+void ChatGPT::Del(std::string name)
+{
+    if (remove((ConversationPath + name + suffix).c_str()) != 0)
+    {
+        LogError("ChatBot Error: Unable to delete session {0},{1}", name, ".");
+    }
+    LogInfo("Bot : 删除 {0} 成功", name);
+}
+
+void ChatGPT::Add(std::string name)
+{
+    history.clear();
+    history.emplace_back(defaultJson);
+    Save(name);
+}
 
 std::string Claude::Submit(std::string text, size_t timeStamp, std::string role, std::string convid)
 {
@@ -253,25 +484,48 @@ std::string Claude::Submit(std::string text, size_t timeStamp, std::string role,
             {"text", text}
         };
 
-        cpr::Response r = cpr::Post(cpr::Url{"https://slack.com/api/chat.postMessage"},
-                                    payload);
+        cpr::Response r;
+        auto future = cpr::PostAsync(cpr::Url{"https://slack.com/api/chat.postMessage"},
+                                     payload);
+
+        // 等待响应，但允许中断
+        while (future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+        {
+            // 每100毫秒检查一次是否要求停止
+            {
+                std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                if (forceStop)
+                {
+                    // 记录被中断的状态
+                    std::get<0>(Response[timeStamp]) = "操作已被取消";
+                    std::get<1>(Response[timeStamp]) = true;
+                    return "操作已被取消";
+                }
+            }
+        }
+
+        // 获取结果
+        r = future.get();
+
         if (r.status_code == 200)
         {
-            // 发送成功
+            json response = json::parse(r.text);
         }
         else
         {
             // 发送失败,打印错误信息
             LogError(r.error.message);
+            std::get<0>(Response[timeStamp]) = "请求失败: " + r.error.message;
         }
-        json response = json::parse(r.text);
     }
     catch (std::exception& e)
     {
         LogError(e.what());
+        std::get<0>(Response[timeStamp]) = "发生错误: " + std::string(e.what());
     }
+
     std::get<1>(Response[timeStamp]) = true;
-    return "";
+    return std::get<0>(Response[timeStamp]);
 }
 
 void Claude::Reset()
@@ -377,17 +631,63 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
         std::string url = endPoint + "/v1beta/models/gemini-pro:generateContent?key="
             +
             geminiData._apiKey;
+
         int retry_count = 0;
         while (retry_count < 3)
         {
-            auto r = cpr::Post(cpr::Url{url}, cpr::Header{{"Content-Type", "application/json"}}, cpr::Body{data});
+            // 检查强制停止标志
+            {
+                std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                if (forceStop)
+                {
+                    // 设置响应状态并返回
+                    std::get<0>(Response[timeStamp]) = "操作已被取消";
+                    std::get<1>(Response[timeStamp]) = true;
+                    return "操作已被取消";
+                }
+            }
+
+            // 创建一个异步请求
+            auto future = cpr::PostAsync(
+                cpr::Url{url},
+                cpr::Header{{"Content-Type", "application/json"}},
+                cpr::Body{data}
+            );
+
+            // 等待响应，但允许中断
+            while (future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+            {
+                // 每100毫秒检查一次是否要求停止
+                std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                if (forceStop)
+                {
+                    // 设置响应状态并返回
+                    std::get<0>(Response[timeStamp]) = "操作已被取消";
+                    std::get<1>(Response[timeStamp]) = true;
+                    return "操作已被取消";
+                }
+            }
+
+            // 获取响应结果
+            auto r = future.get();
+
             if (r.status_code != 200)
             {
                 retry_count++;
                 LogError("Gemini: {0}", r.text);
-                std::get<1>(Response[timeStamp]) = true;
+
+                // 检查是否应该停止重试
+                std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                if (forceStop)
+                {
+                    std::get<0>(Response[timeStamp]) = "操作已被取消";
+                    std::get<1>(Response[timeStamp]) = true;
+                    return "操作已被取消";
+                }
+
                 continue;
             }
+
             json response = json::parse(r.text);
             std::optional<std::string> res = response["candidates"][0]["content"]["parts"][0]["text"];
             json ans;
@@ -397,15 +697,23 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
             ans["parts"][0]["text"] = res.value();
             history.emplace_back(ans);
             Conversation[convid_] = history;
+            std::get<0>(Response[timeStamp]) = res.value_or("NA");
             std::get<1>(Response[timeStamp]) = true;
             return res.value_or("NA");
         }
+
+        // 所有重试都失败
+        std::get<0>(Response[timeStamp]) = "所有请求尝试都失败了";
+        std::get<1>(Response[timeStamp]) = true;
     }
     catch (const std::exception& e)
     {
-        LogError("获取历史记录失败:" + string(e.what()));
+        LogError("获取历史记录失败:" + std::string(e.what()));
+        std::get<0>(Response[timeStamp]) = "发生错误: " + std::string(e.what());
+        std::get<1>(Response[timeStamp]) = true;
     }
-    return "";
+
+    return std::get<0>(Response[timeStamp]);
 }
 
 void Gemini::Reset()
@@ -522,6 +830,8 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
     if (new_len < 0)
     {
         LogError("LLama: failed to apply the chat template");
+        std::get<0>(Response[timeStamp]) = "Error: failed to apply the chat template";
+        std::get<1>(Response[timeStamp]) = true;
         return "Error: failed to apply the chat template";
     }
     if (new_len > (int)formatted.size())
@@ -532,8 +842,18 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
                                             formatted.size());
     }
     prompt = std::string(formatted.begin() + history[convid].prev_len, formatted.begin() + new_len);
-
     {
+        // 检查是否要求强制停止
+        {
+            std::lock_guard<std::mutex> stopLock(forceStopMutex);
+            if (forceStop)
+            {
+                std::get<0>(Response[timeStamp]) = "操作已被取消";
+                std::get<1>(Response[timeStamp]) = true;
+                return "操作已被取消";
+            }
+        }
+
         int n_prompt = -llama_tokenize(vocab, prompt.c_str(), prompt.size(), NULL, 0, true, true);
         std::vector<llama_token> prompt_tokens(n_prompt);
         if (llama_tokenize(vocab, prompt.c_str(), prompt.size(), prompt_tokens.data(), prompt_tokens.size(), true,
@@ -541,8 +861,21 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
         {
             LogError("LLama: failed to tokenize the prompt");
             std::get<0>(Response[timeStamp]) = "Error: failed to tokenize the prompt";
+            std::get<1>(Response[timeStamp]) = true;
             return "Error: failed to tokenize the prompt";
         }
+
+        // 再次检查是否要求强制停止
+        {
+            std::lock_guard<std::mutex> stopLock(forceStopMutex);
+            if (forceStop)
+            {
+                std::get<0>(Response[timeStamp]) = "操作已被取消";
+                std::get<1>(Response[timeStamp]) = true;
+                return "操作已被取消";
+            }
+        }
+
         llama_batch batch = llama_batch_get_one(prompt_tokens.data(), prompt_tokens.size());
         auto cparms = ctx->cparams;
         int error = 0;
@@ -552,6 +885,7 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
                 "LLama: Tokens exceed batch size,please reduce the number of tokens or increase the maxTokens size");
             std::get<0>(Response[timeStamp]) =
                 "Error: Tokens exceed batch size,please reduce the number of tokens or increase the maxTokens size";
+            std::get<1>(Response[timeStamp]) = true;
             error = 1;
         }
         if (error == 0)
@@ -559,47 +893,58 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
             llama_token new_token_id;
             while (true)
             {
+                // 检查是否要求强制停止
+                {
+                    std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                    if (forceStop)
+                    {
+                        LogInfo("LLama: Generation forcibly stopped");
+                        std::get<0>(Response[timeStamp]) += "\n[生成被中断]";
+                        std::get<1>(Response[timeStamp]) = true;
+                        error = 5;
+                        break;
+                    }
+                }
+
                 int n_ctx = llama_n_ctx(ctx);
                 int n_ctx_used = llama_get_kv_cache_used_cells(ctx);
                 if (n_ctx_used + batch.n_tokens > n_ctx)
                 {
                     LogError("LLama: context size exceeded,please open new session or reset");
                     std::get<0>(Response[timeStamp]) = "Error: context size exceeded,please open new session or reset";
+                    std::get<1>(Response[timeStamp]) = true;
                     error = 3;
                     break;
                 }
-
                 if (llama_decode(ctx, batch))
                 {
                     LogError("LLama: failed to decode");
                     std::get<0>(Response[timeStamp]) = "Error: failed to decode";
+                    std::get<1>(Response[timeStamp]) = true;
                     error = 2;
                     break;
                 }
-
                 new_token_id = llama_sampler_sample(smpl, ctx, -1);
-
                 if (llama_vocab_is_eog(vocab, new_token_id))
                 {
                     break;
                 }
-
                 char buf[256];
                 int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
                 if (n < 0)
                 {
                     LogError("LLama: failed to convert token to piece");
                     std::get<0>(Response[timeStamp]) = "Error: failed to convert token to piece";
+                    std::get<1>(Response[timeStamp]) = true;
                     error = 4;
                     break;
                 }
                 std::string piece(buf, n);
                 std::get<0>(Response[timeStamp]) += piece;
-
                 batch = llama_batch_get_one(&new_token_id, 1);
             }
         }
-        if (error == 0)
+        if (error == 0 || error == 5) // 正常完成或被强制停止
         {
             history[convid].messages.push_back({"assistant", std::get<0>(Response[timeStamp])});
             history[convid].prev_len = llama_chat_apply_template(tmpl, history[convid].To().data(),
@@ -608,14 +953,13 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
             if (history[convid].prev_len < 0)
             {
                 LogError("LLama: failed to apply the chat template");
+                std::get<0>(Response[timeStamp]) = "Error: failed to apply the chat template";
+                std::get<1>(Response[timeStamp]) = true;
                 return "Error: failed to apply the chat template";
             }
         }
     }
-
     std::get<1>(Response[timeStamp]) = true;
-
-
     return std::get<0>(Response[timeStamp]);
 }
 
@@ -711,102 +1055,4 @@ void LLama::Add(std::string name)
 map<long long, string> LLama::GetHistory()
 {
     return map<long long, string>();
-}
-
-std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
-{
-    try
-    {
-        json ask;
-        ask["content"] = prompt;
-        ask["role"] = role;
-        convid_ = convid;
-        if (Conversation.find(convid) == Conversation.end())
-        {
-            std::lock_guard<std::mutex> lock(historyAccessMutex);
-            history.push_back(defaultJson);
-            //history.push_back(defaultJson2);
-            Conversation.insert({convid_, history});
-        }
-        history.emplace_back(ask);
-        Conversation[convid_] = history;
-        std::string data = "{\n"
-            "  \"model\": \"" + chat_data_.model + "\",\n"
-            "  \"stream\": true,\n"
-            "  \"messages\": " +
-            Conversation[convid_].dump()
-            + "}\n";
-        Response[timeStamp] = std::make_tuple("", false);
-        std::string res = sendRequest(data, timeStamp);
-        json response;
-        response["content"] = res;
-        response["role"] = "assistant";
-        std::get<1>(Response[timeStamp]) = true;
-        LogInfo("ChatBot: Post finished");
-        return res;
-    }
-    catch (exception& e)
-    {
-        LogError(e.what());
-    }
-}
-
-void ChatGPT::Reset()
-{
-    history.clear();
-    history.push_back(defaultJson);
-    Conversation[convid_] = history;
-    Del(convid_);
-    Save(convid_);
-}
-
-void ChatGPT::Load(std::string name)
-{
-    std::lock_guard<std::mutex> lock(fileAccessMutex);
-    std::stringstream buffer;
-    std::ifstream session_file(ConversationPath + name + suffix);
-    if (session_file.is_open())
-    {
-        buffer << session_file.rdbuf();
-        history = json::parse(buffer.str());
-        convid_ = name;
-        Conversation[name] = history;
-    }
-    else
-    {
-        LogError("ChatBot Error: Unable to load session " + name + ".");
-    }
-    LogInfo("Bot: 加载 {0} 成功", name);
-}
-
-void ChatGPT::Save(std::string name)
-{
-    std::ofstream session_file(ConversationPath + name + suffix);
-
-    if (session_file.is_open())
-    {
-        session_file << history.dump();
-        session_file.close();
-        LogInfo("Bot : Save {0} successfully", name);
-    }
-    else
-    {
-        LogError("ChatBot Error: Unable to save session {0},{1}", name, ".");
-    }
-}
-
-void ChatGPT::Del(std::string name)
-{
-    if (remove((ConversationPath + name + suffix).c_str()) != 0)
-    {
-        LogError("ChatBot Error: Unable to delete session {0},{1}", name, ".");
-    }
-    LogInfo("Bot : 删除 {0} 成功", name);
-}
-
-void ChatGPT::Add(std::string name)
-{
-    history.clear();
-    history.emplace_back(defaultJson);
-    Save(name);
 }

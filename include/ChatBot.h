@@ -34,7 +34,17 @@ public:
     void SubmitAsync(std::string prompt, size_t timeStamp, std::string role = Role::User,
                      std::string convid = "default")
     {
+        {
+            std::lock_guard<std::mutex> lock(forceStopMutex);
+            forceStop = false;
+        }
         std::thread([=] { Submit(prompt, timeStamp, role, convid); }).detach();
+    }
+
+    void ForceStop()
+    {
+        std::lock_guard<std::mutex> lock(forceStopMutex);
+        forceStop = true;
     }
 
     virtual void Reset() = 0;
@@ -46,6 +56,7 @@ public:
     virtual void Del(std::string name) = 0;
 
     virtual void Add(std::string name) = 0;
+
 
     std::string GetResponse(size_t uid)
     {
@@ -61,11 +72,14 @@ public:
 
 
     map<long long, string> History;
+    std::atomic<bool> forceStop{false};
 
 protected:
     std::mutex fileAccessMutex;
     std::mutex historyAccessMutex;
     std::unordered_map<size_t, std::tuple<std::string, bool>> Response; //ts,response,finished
+
+    std::mutex forceStopMutex;
 };
 
 class ChatGPT : public ChatBot

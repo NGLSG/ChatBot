@@ -10,7 +10,6 @@ set(GGML_VULKAN 1 CACHE BOOL "Enable VK support in GGML")
 
 add_subdirectory(Vendor/libarchive)
 add_subdirectory(Vendor/llama.cpp)
-add_subdirectory(Vendor/llava)
 
 # 添加依赖库
 find_package(sndfile REQUIRED)
@@ -44,6 +43,7 @@ file(GLOB HEADERS
 add_definitions(-DNOCRYPT)
 
 add_executable(CyberGirl ${SOURCES} ${HEADERS})
+include_directories(${Vulkan_INCLUDE_DIRS})
 target_include_directories(CyberGirl PRIVATE
         ../include
         Vendor/spdlog/include
@@ -51,9 +51,12 @@ target_include_directories(CyberGirl PRIVATE
         ${Stb_INCLUDE_DIR}
         PRIVATE ${LUA_INCLUDE_DIR}
 )
-
+if(WIN32)
+    # 设置为Windows应用程序，不创建控制台
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SUBSYSTEM:WINDOWS")
+endif()
 # 对于 llama 静态库部分
-set_target_properties(llama ggml ggml-base llava PROPERTIES
+set_target_properties(llama ggml ggml-base PROPERTIES
         CXX_STANDARD 17
         CXX_STANDARD_REQUIRED YES
         CXX_EXTENSIONS OFF
@@ -61,8 +64,9 @@ set_target_properties(llama ggml ggml-base llava PROPERTIES
 )
 
 target_link_libraries(CyberGirl
+        PRIVATE ${Vulkan_LIBRARIES}
         PRIVATE ggml
-        PRIVATE llama llava
+        PRIVATE llama
         PRIVATE portaudio
         PRIVATE ${SNDFILE_LIBRARIES}
         PRIVATE OpenGL::GL
@@ -74,7 +78,7 @@ target_link_libraries(CyberGirl
         PRIVATE cpr::cpr
         PRIVATE ${LUA_LIBRARIES} sol2
         PRIVATE OpenSSL::SSL OpenSSL::Crypto
-        PRIVATE Vulkan::Vulkan
+
         PRIVATE CURL::libcurl
         PRIVATE glfw
         $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>

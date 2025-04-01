@@ -3,7 +3,7 @@
 
 using namespace std;
 
-int main(int argc, char* argv[])
+int SDL_main(int argc, char* argv[])
 {
     try
     {
@@ -16,7 +16,7 @@ int main(int argc, char* argv[])
         Logger::Init();
         Utils::SaveYaml("template.yaml", Utils::toYaml(Configure()));
         if (!UFile::Exists("config.yaml")) {
-            LogWarn("Application Warning: Please configure config.yaml! Then run this program again");
+            LogWarn("应用程序警告：请配置config.yaml！然后再次运行此程序");
             Utils::SaveYaml("config.yaml", Utils::toYaml(Configure()));
             setting = true;
         }
@@ -31,7 +31,6 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-
 /*
 #define NOMINMAX
 #include <windows.h>

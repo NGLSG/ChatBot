@@ -9,10 +9,10 @@ public :
 
     StableDiffusion(StableDiffusionData data);
 
-    std::string Text2Img(std::string prompt);
-
+    std::string Text2Img(std::string prompt, std::string negative_prompt="");
+StableDiffusionData _data;
 private:
-    StableDiffusionData _data;
+
     const int _maxSize = 256;
     std::string t2iurl;
 };

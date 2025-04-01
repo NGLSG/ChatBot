@@ -1,24 +1,31 @@
 #include "StableDiffusion.h"
 
-StableDiffusion::StableDiffusion(StableDiffusionData data) : _data(data) {
-    if (!UDirectory::Exists(ResPath)) {
+StableDiffusion::StableDiffusion(StableDiffusionData data) : _data(data)
+{
+    if (!UDirectory::Exists(ResPath))
+    {
         UDirectory::Create(ResPath);
     }
 }
 
-std::string StableDiffusion::Text2Img(std::string prompt) {
+std::string StableDiffusion::Text2Img(std::string prompt, std::string negative_prompt)
+{
     std::string url = _data.apiPath + "/sdapi/v1/txt2img";
     cpr::Session session;
     session.SetUrl(cpr::Url{url});
+    if (negative_prompt.empty())
+    {
+        negative_prompt = _data.negative_prompt;
+    }
     json body = {
-            {"denoising_strength", _data.denoising_strength},
-            {"prompt",             prompt},
-            {"sampler_index",      _data.sampler_index},
-            {"negative_prompt",    _data.negative_prompt},
-            {"steps",              _data.steps},
-            {"width",              _data.width},
-            {"height",             _data.height},
-            {"cfg_scale",          _data.cfg_scale}
+        {"denoising_strength", _data.denoising_strength},
+        {"prompt", prompt},
+        {"sampler_index", _data.sampler_index},
+        {"negative_prompt", negative_prompt},
+        {"steps", _data.steps},
+        {"width", _data.width},
+        {"height", _data.height},
+        {"cfg_scale", _data.cfg_scale}
     };
     std::string json_str = body.dump();
 
@@ -28,10 +35,11 @@ std::string StableDiffusion::Text2Img(std::string prompt) {
     session.SetHeader(cpr::Header{{"Content-Type", "application/json"}});
     session.SetVerifySsl(cpr::VerifySsl{false});
     cpr::Response response = session.Post();
-    if (response.status_code != 200) {
+    if (response.status_code != 200)
+    {
         LogError("StableDiffusion Error: Request failed with status code " +
-                 std::to_string(response.status_code) +
-                 ". Because " + response.reason);
+            std::to_string(response.status_code) +
+            ". Because " + response.reason);
         return 0;
     }
     json parsed_response = json::parse(response.text);
@@ -42,11 +50,16 @@ std::string StableDiffusion::Text2Img(std::string prompt) {
     float y = _data.height / _maxSize;
     std::string uid = std::to_string(Utils::GetCurrentTimestamp()) + ".png";
     std::string path = ResPath + uid;
-    if (x > 1) {
+    if (x > 1)
+    {
         UImage::ImgResize(image, 1 / x, path);
-    } else if (y > 1) {
+    }
+    else if (y > 1)
+    {
         UImage::ImgResize(image, 1 / y, path);
-    } else {
+    }
+    else
+    {
         UImage::Base64ToImage(image, path);
     }
 

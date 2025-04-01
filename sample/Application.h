@@ -20,6 +20,7 @@
 #include "Configure.h"
 #include "StableDiffusion.h"
 #include "imfilebrowser.h"
+#include "imgui_markdown.h"
 #include "Script.h"
 #include "sol/sol.hpp"
 
@@ -116,12 +117,31 @@ private:
 
     struct Chat
     {
-        int flag = 0; //0=user;1=bot
+        int flag = 0; // 0=user;1=bot
         size_t timestamp;
         std::string thinkContent;
         std::string content = "...";
         std::string image;
+        bool reedit = false;
         bool newMessage = true;
+        bool talking = false;
+
+        std::vector<Ref<Chat>> children; // 子节点列表
+        std::vector<std::string> history; // 历史记录
+        Chat* parent = nullptr; // 父节点指针
+        int currentVersionIndex = 0; // 当前激活的子节点索引
+
+        // 选择当前激活的分支
+        bool selectBranch(int index)
+        {
+            if (index >= 0 && index < children.size())
+            {
+                content = history[index];
+                currentVersionIndex = index;
+                return true;
+            }
+            return false;
+        }
     };
 
     Ref<Translate> translator;
@@ -136,6 +156,7 @@ private:
 
     std::vector<std::string> conversations;
     std::vector<std::shared_ptr<Chat>> chat_history;
+    std::vector<std::shared_future<std::string>> submit_futures;
 
     // 存储当前输入的文本
     std::string input_text;
@@ -234,7 +255,12 @@ private:
         {"send", 0},
         {"avatar", 0},
         {"pause", 0},
-        {"play", 0}
+        {"play", 0},
+        {"edit", 0},
+        {"cancel", 0},
+        {"copy", 0},
+        {"right", 0},
+        {"left", 0}
     };
     map<string, int> SelectIndices = {
         {"Live2D", 0},
@@ -267,21 +293,20 @@ private:
     void del(std::string name = "default");
 
     void AddChatRecord(Ref<Chat> data);
-
     void DeleteAllBotChat();
 
     void VitsListener();
 
-    void Draw(Ref<std::string> prompt, long long ts, bool callFromBot);
+    void _Draw(Ref<std::string> prompt, long long ts, bool callFromBot, const std::string& negative);
 
-    void Draw(const std::string& prompt, long long ts, bool callFromBot = false)
+    void Draw(const std::string& prompt, long long ts, bool callFromBot = false, const std::string& negative = "")
     {
         auto prompt_ref = CreateRef<std::string>(prompt);
-        std::thread t([=] { Draw(prompt_ref, ts, callFromBot); });
+        std::thread t([=] { _Draw(prompt_ref, ts, callFromBot, negative); });
         t.detach();
     }
 
-    void DisplayInputText(Ref<Chat> chat) const;
+    void DisplayInputText(Ref<Chat> chat, bool edit = false);
 
 
     bool ContainsCommand(std::string& str, std::string& cmd, std::string& args) const;
@@ -289,6 +314,61 @@ private:
     void InlineCommand(const std::string& cmd, const std::string& args, long long ts);
 
     void CreateBot();
+
+    void AddSubmit()
+    {
+        std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]()
+        {
+            Ref<Chat> botR = CreateRef<Chat>();
+            botR->flag = 1;
+            botR->timestamp = Utils::GetCurrentTimestamp() + 1;
+            std::lock_guard<std::mutex> lock(chat_history_mutex);
+            chat_history.back()->children.emplace_back(botR);
+            AddChatRecord(botR);
+            bot->SubmitAsync(last_input, botR->timestamp, role, convid);
+            botR->talking = true;
+            while (!bot->Finished(botR->timestamp))
+            {
+                botR->content = bot->GetResponse(botR->timestamp);
+                botR->newMessage = true;
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            }
+            botR->content = bot->GetResponse(botR->timestamp);
+            botR->talking = false;
+            botR->content = StringExecutor::AutoExecute(botR->content, bot);
+
+            return botR->content;
+        }).share();
+        {
+            std::lock_guard<std::mutex> lock(submit_futures_mutex);
+            submit_futures.push_back(std::move(submit_future));
+        }
+    }
+
+    void RebuildChatHistory()
+    {
+        std::lock_guard<std::mutex> lock(chat_history_mutex);
+        std::shared_ptr<Chat> chat = chat_history.front();
+        std::vector<std::shared_ptr<Chat>> chatList;
+        while (chat)
+        {
+            chatList.push_back(chat);
+            if (!chat->children.empty())
+            {
+                chat = chat->children[chat->currentVersionIndex];
+            }
+            else
+            {
+                chat = nullptr;
+            }
+        }
+        chat_history.clear();
+        for (auto& it : chatList)
+        {
+            chat_history.push_back(it);
+        }
+    }
 
     static inline void UniversalStyle()
     {
@@ -387,12 +467,15 @@ private:
                                 const char* confirm = reinterpret_cast<const char*>(u8"确定"),
                                 const char* cancel = reinterpret_cast<const char*>(u8"取消")
     );
+    void InitializeMarkdownConfig();
 
 
     static bool compareByTimestamp(const Ref<Chat> a, const Ref<Chat> b)
     {
         return a->timestamp < b->timestamp;
     }
+
+    void RenderMarkdown(vector<char>& markdown, ImVec2 input_size);
 
 public:
     inline static bool IsPythonInstalled()
@@ -472,6 +555,10 @@ public:
     explicit Application(const Configure& configure, bool setting = false);
 
     int Renderer();
+
+    ImGui::MarkdownImageData md_ImageCallback(ImGui::MarkdownLinkCallbackData data);
+
+    void md_LinkCallback(ImGui::MarkdownLinkCallbackData data);
 
     bool CheckFileExistence(const std::string& filePath, const std::string& fileType,
                             const std::string& executableFile = "", bool isExecutable = false) const;

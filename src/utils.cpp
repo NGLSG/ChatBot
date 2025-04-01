@@ -1237,13 +1237,17 @@ std::string StringExecutor::_Markdown(const std::string& text)
 void StringExecutor::_WriteToFile(std::string filename, const std::string& content)
 {
     static std::regex newline_pattern("\n");
+    static std::regex space_pattern(" ");
 
-    // 替换换行符为空字符串
+    // 替换换行符为指定字符串
     filename = std::regex_replace(filename, newline_pattern, "...");
+    // 移除所有空格
+    filename = std::regex_replace(filename, space_pattern, "");
+
     std::string fileParent = std::filesystem::path(filename).parent_path().string();
     if (!fileParent.empty())
         UDirectory::CreateDirIfNotExists(fileParent);
-    std::ofstream outfile(filename, ios::trunc);
+    std::ofstream outfile(filename, ios::out);
     if (outfile.is_open())
     {
         outfile << content;
@@ -1281,11 +1285,41 @@ std::pair<std::string, std::string> StringExecutor::EraseInRange(const std::stri
     return {res, erasePart};
 }
 
+bool StringExecutor::HasMarkdown(const std::string& str)
+{
+    // 创建正则表达式，匹配以[Markdown]开始和结束的内容
+    static const std::regex markdownPattern(R"(\[Markdown\]([\x01-\xFF]*?)\[Markdown\])", std::regex::icase);
+
+    // 判断是否匹配正则表达式
+    return std::regex_match(str, markdownPattern);
+}
+
+std::string StringExecutor::ExtractMarkdownContent(const std::string& str)
+{
+    // 创建正则表达式，捕获[Markdown]之间的内容
+    static const std::regex contentPattern(R"(\[Markdown\]([\x01-\xFF]*?)\[Markdown\])", std::regex::icase);
+    std::smatch matches;
+
+    // 执行匹配并提取内容
+    if (std::regex_search(str, matches, contentPattern) && matches.size() > 1)
+    {
+        return matches[1].str();
+    }
+
+    // 如果不匹配，返回原始字符串
+    return str;
+}
+
+void StringExecutor::AddDrawCallback(const DrawCallback& callback)
+{
+    drawCallback = callback;
+}
+
 std::string StringExecutor::AutoExecute(std::string text, const std::shared_ptr<ChatBot>& bot)
 {
     auto [res, part] = EraseInRange("<think>", "</think>", text);
 
-    return part + "\n" + Python(CMD(File(Process(PreProcess(res, bot)))));
+    return part + "\n" + Python(CMDWithOutput(CMD(File(Process(PreProcess(res, bot))))));
 }
 
 std::string StringExecutor::CMD(const std::string& text)
@@ -1310,11 +1344,81 @@ std::string StringExecutor::CMD(const std::string& text)
     {
         std::string processedCommand = _Markdown(command);
         Utils::AsyncExecuteShell(processedCommand, {});
-        replacedAnswer = std::regex_replace(replacedAnswer, pattern, "...",
+
+        replacedAnswer = std::regex_replace(replacedAnswer, pattern, "[Fin]",
                                             std::regex_constants::format_first_only);
     }
 
     return replacedAnswer;
+}
+
+std::string StringExecutor::CMDWithOutput(const std::string& text)
+{
+    static std::regex pattern(R"(\[CommandWithOutput\]([\x01-\xFF]*?)\[CommandWithOutput\])", std::regex::icase);
+    std::vector<std::string> commands;
+    std::smatch match;
+
+    // 使用 std::regex_iterator 匹配所有的命令
+    auto words_begin = std::sregex_iterator(text.begin(), text.end(), pattern);
+    auto words_end = std::sregex_iterator();
+
+    for (std::sregex_iterator i = words_begin; i != words_end; ++i)
+    {
+        match = *i;
+        commands.push_back(match[1].str());
+    }
+
+    // 依次执行命令并替换原始命令
+    std::string replacedAnswer = text;
+    for (const auto& command : commands)
+    {
+        std::string processedCommand = _Markdown(command);
+        std::string res = Utils::ExecuteShell(processedCommand);
+
+        replacedAnswer = std::regex_replace(replacedAnswer, pattern, "res",
+                                            std::regex_constants::format_first_only);
+    }
+
+    return replacedAnswer;
+}
+
+std::string StringExecutor::Draw(const std::string& text)
+{
+    static std::regex pattern1(R"(\[Draw\]([\x01-\xFF]*?)\[Draw\])");
+    static std::regex pattern2(R"(\[Positive\]([\x01-\xFF]*?)\[Positive\])");
+    std::string replacedAnswer = text;
+    if (!drawCallback)
+        return replacedAnswer;
+    try
+    {
+        smatch match;
+        auto draw_begin = std::sregex_iterator(text.begin(), text.end(), pattern1);
+        auto draw_end = std::sregex_iterator();
+        for (std::sregex_iterator i = draw_begin; i != draw_end; ++i)
+        {
+            match = *i;
+            std::string drawBlock = match[1].str();
+
+            std::string positive;
+            std::string negative;
+            if (std::regex_search(drawBlock, match, pattern2))
+            {
+                positive = match[1].str();
+            }
+            if (std::regex_search(drawBlock, match, pattern1))
+            {
+                negative = match[1].str();
+            }
+
+            drawCallback(positive, Utils::GetCurrentTimestamp(), false, negative);
+        }
+    }
+    catch (std::exception& e)
+    {
+        LogError("Error: {0}", e.what());
+    }
+    replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "[Fin]",
+                                        std::regex_constants::format_first_only);
 }
 
 std::string StringExecutor::File(const std::string& text)

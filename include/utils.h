@@ -432,6 +432,9 @@ private:
 
     static std::string trim(const std::string& s);
 
+    using DrawCallback = std::function<void(const std::string&, long long, bool, const std::string&)>;
+    inline static DrawCallback drawCallback;
+
 public:
     struct Code
     {
@@ -442,9 +445,19 @@ public:
     static std::pair<std::string, std::string> EraseInRange(const std::string& str1, const std::string& str2,
                                                             const std::string& text);
 
+    // 使用正则表达式检测字符串是否为规范化的Markdown格式
+    static bool HasMarkdown(const std::string& str);
+
+    // 从规范化格式中提取Markdown内容
+    static std::string ExtractMarkdownContent(const std::string& str);
+
+    static void AddDrawCallback(const DrawCallback& callback);
+
     static std::string AutoExecute(std::string text, const std::shared_ptr<ChatBot>& bot);
 
     static std::string CMD(const std::string& text);
+    static std::string CMDWithOutput(const std::string& text);
+    static std::string Draw(const std::string& text);
 
     static std::string File(const std::string& text);
 

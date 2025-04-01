@@ -6,6 +6,7 @@
 #define DOWNLOADER_H
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <mutex>
 #include <curl/curl.h>
