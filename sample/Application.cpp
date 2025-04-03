@@ -1,4 +1,5 @@
-﻿#include "Application.h"
+﻿#define NOMINMAX
+#include "Application.h"
 
 #include "Downloader.h"
 #include "SystemRole.h"
@@ -63,15 +64,20 @@ Application::Application(const Configure& configure, bool setting)
         }
         if (vitsData.enable && vits && vitsModel)
         {
-            Vits("欢迎使用本ChatBot");
+            if (!vitsData.UseGptSovite)
+            {
 #ifdef WIN32
-            Utils::OpenProgram("bin/VitsConvertor/VitsConvertor.exe");
+                Utils::OpenProgram("bin/VitsConvertor/VitsConvertor.exe");
 #else
             std::thread([&]() {
                 Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
             }).detach();
 #endif
-            VitsListener();
+            }
+            Vits("欢迎使用本ChatBot");
+
+            VitsAudioPlayer();
+            VitsQueueHandler();
         }
         text_buffers.emplace_back("model");
         text_buffers.emplace_back("endPoint");
@@ -87,7 +93,8 @@ Application::Application(const Configure& configure, bool setting)
         text_buffers.emplace_back("outDevice");
         text_buffers.emplace_back("inputDevice");
     }
-    catch (exception& e)
+    catch
+    (exception& e)
     {
         LogError(e.what());
     }
@@ -98,73 +105,333 @@ GLuint Application::LoadTexture(const std::string& path)
     return UImage::Img2Texture(path);
 }
 
-void Application::Vits(std::string text)
+void Application::PreloadNextAudio()
 {
-    if (configure.vits.UseGptSovite)
+    // 仅当没有预加载的音频时执行预加载
+    std::lock_guard<std::mutex> lockAudio(audioMutex);
+    if (nextAudio != nullptr)
     {
-        std::string endPoint = configure.vits.apiEndPoint;
-        std::thread([endPoint,text]
-        {
-            std::string url = endPoint + "?text=" + Utils::UrlEncode(text) + "&text_language=zh";
-            auto res = Get(cpr::Url{url});
-            if (res.status_code != 200)
-            {
-                LogError("GPT-SoVits Error: " + res.text);
-            }
-            else
-            {
-                std::ofstream wavFile("tmp.wav", std::ios::binary);
-                if (wavFile)
-                {
-                    // 将响应体写入文件
-                    wavFile.write(res.text.c_str(), res.text.size());
-                    wavFile.close();
-                    std::cout << "WAV file downloaded successfully." << std::endl;
-                }
-                else
-                {
-                    std::cerr << "Failed to open file for writing." << std::endl;
-                }
-            }
-        }).detach();
-        return;
+        return; // 已有预加载音频，不需要再加载
     }
-    VitsTask task;
-    task.model = Utils::GetAbsolutePath(vitsData.model);
-    task.config = Utils::GetAbsolutePath(vitsData.config);
-    task.text = text;
-    task.sid = vitsData.speaker_id;
-    Utils::SaveYaml("task.yaml", Utils::toYaml(task));
+
+    std::string fileToLoad;
+    bool hasFile = false;
+    bool needListen = false;
+
+    {
+        std::lock_guard<std::mutex> lock(vitsPlayQueueMutex);
+        if (!vitsPlayQueue.empty())
+        {
+            fileToLoad = vitsPlayQueue.front();
+
+            // 确认文件存在才处理
+            if (UFile::Exists(fileToLoad))
+            {
+                vitsPlayQueue.pop();
+                hasFile = true;
+                // 设置是否需要语音识别回调
+                needListen = whisperData.enable;
+            }
+        }
+    }
+
+    // 如果有文件可加载，开始异步预加载
+    if (hasFile)
+    {
+        // 创建预加载音频对象
+        auto newAudio = std::make_shared<PreloadedAudio>();
+        newAudio->filename = fileToLoad;
+        newAudio->isListen = needListen;
+
+        // 在后台线程预加载音频数据
+        std::thread([newAudio]()
+        {
+            // 打开音频文件
+            SF_INFO info;
+            SNDFILE* file = sf_open(newAudio->filename.c_str(), SFM_READ, &info);
+            if (!file)
+            {
+                std::cerr << "无法打开音频文件: " << newAudio->filename << std::endl;
+                return;
+            }
+
+            // 读取音频数据到内存
+            newAudio->sampleRate = info.samplerate;
+            newAudio->channels = info.channels;
+            newAudio->frames = info.frames;
+            newAudio->data = new float[info.frames * info.channels];
+            sf_readf_float(file, newAudio->data, info.frames);
+            sf_close(file);
+
+            // 标记加载完成
+            newAudio->ready = true;
+            LogInfo("音频预加载完成: {0}", newAudio->filename);
+        }).detach();
+
+        // 设置为下一个要播放的音频
+        nextAudio = newAudio;
+    }
 }
 
-void Application::VitsListener()
+// 音频播放处理函数 - 支持无缝衔接播放
+void Application::VitsAudioPlayer()
 {
-    static bool is_playing = false;
     std::thread([&]()
     {
-        VitsTask task;
         while (AppRunning)
         {
-            //std::string result = Utils::exec(Utils::GetAbsolutePath(bin + VitsConvertor + "VitsConvertor" + exeSuffix));
-
-            //if (result.find("Synthesized and saved!")) {
-            if (UFile::Exists(task.outpath))
+            // 检查是否需要预加载音频
+            if (nextAudio == nullptr)
             {
-                // 等待音频完成后再播放下一个
-                while (is_playing)
-                {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
-                is_playing = true;
-                listener->playRecorded(whisperData.enable);
-                is_playing = false;
-
-                std::remove(task.outpath.c_str());
+                PreloadNextAudio();
             }
-            //}
+
+            // 如果当前没有播放音频，且有预加载好的音频，则开始播放
+            bool startPlayback = false;
+            {
+                std::lock_guard<std::mutex> lockAudio(audioMutex);
+                if (!isPlaying && nextAudio && nextAudio->ready)
+                {
+                    currentAudio = nextAudio;
+                    nextAudio = nullptr;
+                    isPlaying = true;
+                    startPlayback = true;
+                }
+            }
+
+            // 开始播放
+            if (startPlayback)
+            {
+                // 捕获当前音频的智能指针，避免在线程中使用局部变量
+                auto audioToPlay = currentAudio;
+
+                // 在新线程中播放音频
+                std::thread([this, audioToPlay]()
+                {
+                    // 设置不录音标志
+                    NoRecord = true;
+
+                    // 初始化PortAudio
+                    PaError err = Pa_Initialize();
+                    if (err != paNoError)
+                    {
+                        std::cerr << "初始化PortAudio失败: " << Pa_GetErrorText(err) << std::endl;
+                        NoRecord = false;
+
+                        std::lock_guard<std::mutex> lockAudio(audioMutex);
+                        isPlaying = false;
+                        return;
+                    }
+
+                    // 准备播放参数
+                    paUserData userData = {audioToPlay->data, 0, audioToPlay->frames * audioToPlay->channels};
+                    PaStream* stream;
+
+                    // 打开音频流
+                    err = Pa_OpenDefaultStream(&stream, 0, audioToPlay->channels, paFloat32,
+                                               audioToPlay->sampleRate, FRAMES_PER_BUFFER, Utils::paCallback,
+                                               &userData);
+                    if (err != paNoError)
+                    {
+                        std::cerr << "打开音频流失败: " << Pa_GetErrorText(err) << std::endl;
+                        Pa_Terminate();
+                        NoRecord = false;
+
+                        std::lock_guard<std::mutex> lockAudio(audioMutex);
+                        isPlaying = false;
+                        return;
+                    }
+
+                    // 开始播放音频
+                    err = Pa_StartStream(stream);
+                    if (err != paNoError)
+                    {
+                        std::cerr << "启动音频流失败: " << Pa_GetErrorText(err) << std::endl;
+                        Pa_CloseStream(stream);
+                        Pa_Terminate();
+                        NoRecord = false;
+
+                        std::lock_guard<std::mutex> lockAudio(audioMutex);
+                        isPlaying = false;
+                        return;
+                    }
+
+                    // 在播放开始后立即尝试预加载下一个音频
+                    PreloadNextAudio();
+
+                    // 等待音频播放完成
+                    while (Pa_IsStreamActive(stream))
+                    {
+                        Pa_Sleep(100);
+                    }
+
+                    // 播放完成，清理资源
+                    err = Pa_StopStream(stream);
+                    Pa_CloseStream(stream);
+                    Pa_Terminate();
+
+                    // 恢复录音标志
+                    NoRecord = false;
+
+                    // 如果需要语音识别，则调用listen方法
+                    if (audioToPlay->isListen && listener)
+                    {
+                        listener->listen();
+                    }
+
+                    // 记录日志
+                    LogInfo("音频播放完成: {0}", audioToPlay->filename);
+
+                    // 删除已播放的临时文件
+                    std::remove(audioToPlay->filename.c_str());
+
+                    // 标记播放结束
+                    {
+                        std::lock_guard<std::mutex> lockAudio(audioMutex);
+                        isPlaying = false;
+                    }
+                }).detach();
+            }
+
+            // 短暂休眠
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
     }).detach();
 }
+
+// 在VITS任务处理函数中，当音频文件生成完成后立即触发预加载
+void Application::VitsQueueHandler()
+{
+    std::thread([&]()
+    {
+        while (AppRunning)
+        {
+            // 从队列中获取任务
+            VitsQueueItem item;
+            bool hasTask = false;
+
+            {
+                std::lock_guard<std::mutex> lock(vitsQueueMutex);
+                if (!vitsQueue.empty())
+                {
+                    item = vitsQueue.front();
+                    vitsQueue.pop();
+                    hasTask = true;
+                }
+            }
+
+            // 处理任务
+            if (hasTask)
+            {
+                if (item.isApi)
+                {
+                    // 处理API任务
+                    std::string url = item.endPoint + "?text=" + Utils::UrlEncode(item.text) + "&text_language=zh";
+                    auto res = Get(cpr::Url{url});
+
+                    if (res.status_code != 200)
+                    {
+                        LogError("GPT-SoVits错误: " + res.text);
+                        vits = false;
+                    }
+                    else
+                    {
+                        std::ofstream wavFile(item.outputFile, std::ios::binary);
+                        if (wavFile)
+                        {
+                            wavFile.write(res.text.c_str(), res.text.size());
+                            wavFile.close();
+                            LogInfo("语音合成完成: {0} -> {1}", item.text, item.outputFile);
+
+                            // 添加到播放队列
+                            {
+                                std::lock_guard<std::mutex> playLock(vitsPlayQueueMutex);
+                                vitsPlayQueue.push(item.outputFile);
+                            }
+
+                            // 语音生成完成后立即触发预加载
+                            PreloadNextAudio();
+                        }
+                        else
+                        {
+                            std::cerr << "无法打开文件进行写入: " << item.outputFile << std::endl;
+                        }
+                    }
+                }
+                else
+                {
+                    // 处理本地任务
+                    VitsTask task;
+                    task.model = Utils::GetAbsolutePath(vitsData.model);
+                    task.config = Utils::GetAbsolutePath(vitsData.config);
+                    task.text = item.text;
+                    task.sid = vitsData.speaker_id;
+                    task.outpath = item.outputFile;
+
+                    // 保存任务
+                    Utils::SaveYaml("task.yaml", Utils::toYaml(task));
+                    LogInfo("本地语音合成任务已创建: {0}", item.text);
+
+                    // 添加到播放队列
+                    {
+                        std::lock_guard<std::mutex> playLock(vitsPlayQueueMutex);
+                        vitsPlayQueue.push(item.outputFile);
+                    }
+
+                    // 语音任务创建后尝试预加载（本地VITS可能需要额外的文件监听机制）
+                    PreloadNextAudio();
+                }
+            }
+            else
+            {
+                // 队列为空时休眠一段时间
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+        }
+    }).detach();
+}
+
+// 修改后的Vits方法 - 将语音合成任务添加到队列
+void Application::Vits(std::string text)
+{
+    // 提取普通文本
+    text = Utils::ExtractNormalText(text);
+
+    // 如果启用了翻译，先进行翻译
+    if (configure.baiDuTranslator.enable)
+    {
+        text = translator->translate(text, configure.vits.lanType);
+    }
+
+    // 生成唯一的输出文件名
+    static int fileCounter = 0;
+    std::string outputFile = "vits_" + std::to_string(fileCounter++) + ".wav";
+
+    // 创建队列项并设置相关信息
+    VitsQueueItem item;
+    item.text = text;
+    item.outputFile = outputFile;
+
+    // 根据配置选择API或本地处理
+    if (configure.vits.UseGptSovite)
+    {
+        item.isApi = true;
+        item.endPoint = configure.vits.apiEndPoint;
+    }
+    else
+    {
+        item.isApi = false;
+    }
+
+    // 添加到队列
+    {
+        std::lock_guard<std::mutex> lock(vitsQueueMutex);
+        vitsQueue.push(item);
+    }
+
+    LogInfo("语音合成任务已添加到队列: {0}", text);
+}
+
 
 void Application::_Draw(Ref<std::string> prompt, long long ts, bool callFromBot, const std::string& negative)
 {
@@ -415,8 +682,8 @@ void Application::DisplayInputText(Ref<Chat> chat, bool edit)
 
         int enter_count = std::count(processed_content.begin(), processed_content.end(), '\n');
         input_size.y += orig * (enter_count + 1) + ImGui::GetStyle().ItemSpacing.y;
-        input_size.x = max(input_size.x, 32);
-        input_size.y = max(input_size.y, 16);
+        input_size.x = max(input_size.x, 32.f);
+        input_size.y = max(input_size.y, 16.f);
 
         std::vector<char> mutableBuffer(processed_content.begin(), processed_content.end());
         mutableBuffer.push_back('\0');
@@ -485,7 +752,8 @@ void Application::DisplayInputText(Ref<Chat> chat, bool edit)
 
             // 取消按钮
             ImGui::PushID(("cancel_button_" + std::to_string(chat->timestamp)).c_str());
-            if (ImGui::ImageButton(("cancel_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["cancel"],
+            if (ImGui::ImageButton(("cancel_button_" + std::to_string(chat->timestamp)).c_str(),
+                                   TextureCache["cancel"],
                                    ImVec2(16, 16)))
             {
                 chat->reedit = false;
@@ -575,7 +843,8 @@ void Application::DisplayInputText(Ref<Chat> chat, bool edit)
                 // 用户消息 - 添加编辑按钮
                 ImGui::SameLine();
                 ImGui::PushID(("edit_button_" + std::to_string(chat->timestamp)).c_str());
-                if (ImGui::ImageButton(("edit_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["edit"],
+                if (ImGui::ImageButton(("edit_button_" + std::to_string(chat->timestamp)).c_str(),
+                                       TextureCache["edit"],
                                        ImVec2(16, 16)))
                 {
                     chat->reedit = true;
@@ -585,7 +854,8 @@ void Application::DisplayInputText(Ref<Chat> chat, bool edit)
 
                 ImGui::SameLine();
                 ImGui::PushID(("del_button_" + std::to_string(chat->timestamp)).c_str());
-                if (ImGui::ImageButton(("del_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["del"],
+                if (ImGui::ImageButton(("del_button_" + std::to_string(chat->timestamp)).c_str(),
+                                       TextureCache["del"],
                                        ImVec2(16, 16)))
                 {
                     // 查找要删除的聊天记录在历史中的位置
@@ -701,7 +971,8 @@ void Application::DisplayInputText(Ref<Chat> chat, bool edit)
 
                 ImGui::SameLine();
                 ImGui::PushID(("left_button_" + std::to_string(chat->timestamp)).c_str());
-                if (ImGui::ImageButton(("left_button_" + std::to_string(chat->timestamp)).c_str(), TextureCache["left"],
+                if (ImGui::ImageButton(("left_button_" + std::to_string(chat->timestamp)).c_str(),
+                                       TextureCache["left"],
                                        ImVec2(16, 16)))
                 {
                     if (chat->currentVersionIndex > 0)
@@ -881,6 +1152,10 @@ void Application::CreateBot()
         {
             bot = CreateRef<Gemini>(configure.gemini);
             ConversationPath /= "Gemini/";
+            if (!std::filesystem::exists(ConversationPath))
+            {
+                std::filesystem::create_directories(ConversationPath);
+            }
         }
         else if (configure.grok.enable)
         {
@@ -895,7 +1170,9 @@ void Application::CreateBot()
                     if (!cconfig.useLocalModel)
                         bot = CreateRef<GPTLike>(cconfig, SYSTEMROLE + SYSTEMROLE_EX);
                     else
+                    {
                         bot = CreateRef<LLama>(cconfig.llamaData, SYSTEMROLE + SYSTEMROLE_EX);
+                    }
                     break; // use the first available custom GPT
                 }
             }
@@ -1026,7 +1303,8 @@ void Application::RenderDownloadBox()
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
     for (auto& downloader : downloaders)
     {
-        if (downloader != nullptr && downloader->GetStatus() != UInitializing && downloader->GetStatus() != UFinished)
+        if (downloader != nullptr && downloader->GetStatus() != UInitializing && downloader->GetStatus() !=
+            UFinished)
         {
             std::string dA = downloader->GetBasicInfo().url;
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(32.f / 256.f, 126.f / 256.f, 177.f / 256.f, 1.0f));
@@ -1041,24 +1319,28 @@ void Application::RenderDownloadBox()
             if (downloader->IsRunning())
             {
                 ImGui::SameLine();
-
-                if (ImGui::ImageButton((dA + std::to_string(TextureCache["pause"])).c_str(), TextureCache["pause"],
+                ImGui::PushID(("button_" + dA).c_str());
+                if (ImGui::ImageButton(("button_" + dA).c_str(), TextureCache["pause"],
                                        ImVec2(32, 32)))
                 {
                     downloader->Pause();
                 }
+                ImGui::PopID();
             }
             if (downloader->GetStatus() == UPaused)
             {
                 ImGui::SameLine();
-                if (ImGui::ImageButton((dA + std::to_string(TextureCache["play"])).c_str(), TextureCache["play"],
+                ImGui::PushID(("button_" + dA).c_str());
+                if (ImGui::ImageButton(("button_" + dA).c_str(), TextureCache["play"],
                                        ImVec2(32, 32)))
                 {
                     downloader->Resume();
                 }
+                ImGui::PopID();
             }
             ImGui::SameLine();
-            if (ImGui::ImageButton((dA + std::to_string(TextureCache["del"])).c_str(), TextureCache["del"],
+            ImGui::PushID(("button_" + dA).c_str());
+            if (ImGui::ImageButton(("button_" + dA).c_str(), TextureCache["del"],
                                    ImVec2(32, 32)))
             {
                 std::thread([downloader]()
@@ -1067,6 +1349,7 @@ void Application::RenderDownloadBox()
                     downloader->Stop();
                 }).detach();
             }
+            ImGui::PopID();
         }
     }
     Downloading = false;
@@ -1131,7 +1414,8 @@ void Application::RenderChatBox()
                 ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabHovered, cursor_color);
                 ImGui::PushStyleColor(ImGuiCol_ScrollbarGrabActive, cursor_color);
                 ImGui::PushID(("Avatar" + std::to_string(botAnswer->timestamp)).c_str());
-                if (ImGui::ImageButton("##" + TextureCache["avatar"], TextureCache["avatar"],
+                if (ImGui::ImageButton(("Avatar" + std::to_string(botAnswer->timestamp)).c_str(),
+                                       TextureCache["avatar"],
                                        ImVec2(24, 24)))
                 {
                     fileBrowser = true;
@@ -1185,7 +1469,8 @@ void Application::RenderChatBox()
                         if (ImGui::ImageButton("##" + SDCache[botAnswer->image], (SDCache[botAnswer->image]),
                                                ImVec2(256, 256)))
                         {
-                            Utils::OpenFileManager(Utils::GetAbsolutePath(Resources + "Images/" + botAnswer->image));
+                            Utils::OpenFileManager(
+                                Utils::GetAbsolutePath(Resources + "Images/" + botAnswer->image));
                         }
                     }
                 }
@@ -1549,13 +1834,21 @@ void Application::RenderInputBox()
                         codes[code.Type].emplace_back(it);
                     }
                 }
-                if (vits && vitsData.enable)
+                /*if (vits && vitsData.enable)
                 {
-                    std::string VitsText = translator->translate(Utils::ExtractNormalText(response),
-                                                                 vitsData.lanType);
-                    Vits(VitsText);
-                }
-                else if (whisperData.enable)
+                    if (configure.baiDuTranslator.enable)
+                    {
+                        std::string VitsText = translator->translate(Utils::ExtractNormalText(response),
+                                                                     vitsData.lanType);
+                        Vits(VitsText);
+                    }
+                    else
+                    {
+                        std::string VitsText = Utils::ExtractNormalText(response);
+                        Vits(VitsText);
+                    }
+                }*/
+                if (whisperData.enable)
                 {
                     listener->listen();
                 }
@@ -1578,11 +1871,14 @@ void Application::RenderConversationBox()
     UniversalStyle();
     ImGui::Begin(reinterpret_cast<const char*>(u8"会话"), NULL,
                  ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav);
-    if (ImGui::ImageButton("##" + TextureCache["add"], TextureCache["add"], ImVec2(16, 16)))
+    ImGui::PushID(("button_" + std::to_string(TextureCache["add"])).c_str());
+    if (ImGui::ImageButton(("button_" + std::to_string(TextureCache["add"])).c_str(), TextureCache["add"],
+                           ImVec2(16, 16)))
     {
         // 显示输入框
         show_input_box = true;
     }
+    ImGui::PopID();
     ImGui::SameLine();
     ImGui::Text(reinterpret_cast<const char*>(u8"新建会话"));
     for (const auto& conversation : conversations)
@@ -1592,6 +1888,7 @@ void Application::RenderConversationBox()
         ImGui::Image(TextureCache["message"], ImVec2(32, 32),
                      ImVec2(0, 0),
                      ImVec2(1, 1));
+
 
         // 消息文本
         ImGui::SameLine();
@@ -1819,6 +2116,7 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
+            ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
             if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
@@ -1828,6 +2126,7 @@ void Application::RenderConfigBox()
             {
                 clicked = !clicked;
             }
+            ImGui::PopID();
             if (ImGui::InputText(reinterpret_cast<const char*>(u8"OpenAI 模型"), GetBufferByName("model").buffer,
                                  TEXT_BUFFER))
             {
@@ -1883,6 +2182,7 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
+            ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
             if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
@@ -1892,6 +2192,7 @@ void Application::RenderConfigBox()
             {
                 clicked = !clicked;
             }
+            ImGui::PopID();
             /*            ImGui::InputText(reinterpret_cast<const char *>(u8"用户名"), configure.claude.userName.data(),
                                          TEXT_BUFFER);
 
@@ -1912,6 +2213,7 @@ void Application::RenderConfigBox()
             double currentTime = ImGui::GetTime();
             strcpy_s(GetBufferByName("api").buffer, configure.gemini._apiKey.c_str());
             strcpy_s(GetBufferByName("endPoint").buffer, configure.gemini._endPoint.c_str());
+            strcpy_s(GetBufferByName("model").buffer, configure.gemini.model.c_str());
             if (currentTime - lastInputTime > 0.5)
             {
                 showPassword = false;
@@ -1938,6 +2240,7 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
+            ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
             if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
@@ -1947,10 +2250,16 @@ void Application::RenderConfigBox()
             {
                 clicked = !clicked;
             }
+            ImGui::PopID();
             if (ImGui::InputText(reinterpret_cast<const char*>(u8"远程接入点"), GetBufferByName("endPoint").buffer,
                                  TEXT_BUFFER))
             {
                 configure.gemini._endPoint = GetBufferByName("endPoint").buffer;
+            }
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
+                                 TEXT_BUFFER))
+            {
+                configure.gemini.model = GetBufferByName("model").buffer;
             }
         }
         else if (configure.grok.enable)
@@ -1986,6 +2295,7 @@ void Application::RenderConfigBox()
                 }
             }
             ImGui::SameLine();
+            ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
             if (ImGui::ImageButton("##" + (TextureCache["eye"]), (TextureCache["eye"]),
                                    ImVec2(16, 16),
                                    ImVec2(0, 0),
@@ -1995,6 +2305,7 @@ void Application::RenderConfigBox()
             {
                 clicked = !clicked;
             }
+            ImGui::PopID();
             if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
                                  TEXT_BUFFER))
             {
@@ -2042,6 +2353,7 @@ void Application::RenderConfigBox()
                         }
                     }
                     ImGui::SameLine();
+                    ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
                     if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
                                            ImVec2(16, 16),
                                            ImVec2(0, 0),
@@ -2051,6 +2363,7 @@ void Application::RenderConfigBox()
                     {
                         clicked = !clicked;
                     }
+                    ImGui::PopID();
                     if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 主机"),
                                          GetBufferByName("apiHost").buffer,
                                          TEXT_BUFFER))
@@ -2132,6 +2445,7 @@ void Application::RenderConfigBox()
     // 显示百度翻译配置
     if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"百度翻译(如果需要)")))
     {
+        ImGui::Checkbox(reinterpret_cast<const char*>(u8"启用百度翻译"), &configure.baiDuTranslator.enable);
         ImGui::InputText("BaiDu App ID", configure.baiDuTranslator.appId.data(),
                          TEXT_BUFFER);
         static bool showbaiduPassword = false, baiduclicked = false;
@@ -2162,6 +2476,7 @@ void Application::RenderConfigBox()
             }
         }
         ImGui::SameLine();
+        ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
         if (ImGui::ImageButton("##" + TextureCache["eye"], (TextureCache["eye"]),
                                ImVec2(16, 16),
                                ImVec2(0, 0),
@@ -2171,6 +2486,7 @@ void Application::RenderConfigBox()
         {
             baiduclicked = !baiduclicked;
         }
+        ImGui::PopID();
 
         if (ImGui::InputText(reinterpret_cast<const char*>(u8"对百度使用的代理"),
                              GetBufferByName("proxy").buffer,
@@ -2777,7 +3093,6 @@ int Application::Renderer()
     config.OversampleH = 1;
     config.OversampleV = 1;
     config.PixelSnapH = true;
-    config.GlyphExtraSpacing = ImVec2(0.0f, 1.0f);
     font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
                                         io.Fonts->GetGlyphRangesChineseFull());
     H1 = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
@@ -3285,6 +3600,9 @@ void Application::save(std::string name, bool out)
 
 bool Application::Initialize()
 {
+    isPlaying = false;
+    nextAudio = nullptr;
+    currentAudio = nullptr;
     LogInfo("Python installed: {0}", IsPythonInstalled());
     if (!IsPythonInstalled())
     {
@@ -3426,9 +3744,9 @@ bool Application::Initialize()
         if (!CheckFileExistence(live2D.bin, "Live2D executable file"))
         {
             bool compressed = false;
-            if (UFile::Exists(bin + "Live2D.zip"))
+            if (UFile::Exists("Resources/Live2D.zip"))
             {
-                compressed = UCompression::DecompressZip(bin + "Live2D.zip", bin + Live2DPath);
+                compressed = UCompression::DecompressZip("Resources/Live2D.zip", bin + Live2DPath);
                 configure.live2D.bin = bin + Live2DPath + "DesktopPet.exe";
                 Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
             }
@@ -3449,12 +3767,19 @@ bool Application::Initialize()
     }
     if (is_valid_text(configure.stableDiffusion.apiPath))
     {
-        StringExecutor::AddDrawCallback([this](const std::string& _p, long long ts, bool fromBot, const std::string& _n)
+        StringExecutor::SetDrawCallback(
+            [this](const std::string& _p, long long ts, bool fromBot, const std::string& _n)
+            {
+                Draw(_p, ts, fromBot, _n);
+            });
+    }
+    if (vits)
+    {
+        StringExecutor::SetTTSCallback([this](const std::string& text)
         {
-            Draw(_p, ts, fromBot, _n);
+            Vits(text);
         });
     }
-
     mdConfig.linkCallback = LinkCallback;
     mdConfig.imageCallback = ImageCallback;
 

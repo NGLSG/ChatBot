@@ -25,78 +25,116 @@ static inline void TrimLeading(std::string& s)
 
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
 {
+    // 基本参数转换
     DString* dstr = static_cast<DString*>(userp);
     size_t totalSize = size * nmemb;
     std::string dataChunk(static_cast<char*>(contents), totalSize);
     ChatBot* chatBot = static_cast<ChatBot*>(dstr->instance);
+
+    // 检查是否需要停止请求
     if (chatBot && chatBot->forceStop.load())
     {
-        return 0;
+        return 0; // 返回0会导致libcurl中断请求
     }
+
+    // 将数据添加到完整响应缓冲区（用于最终验证）
     dstr->response->append(dataChunk);
+
+    // 临时存储所有已接收但未处理的数据
     {
         std::lock_guard<std::mutex> lock(dstr->mtx);
         dstr->str1->append(dataChunk);
     }
 
-    std::stringstream ss;
+    // 获取当前完整的缓冲区内容
+    std::string buffer;
     {
         std::lock_guard<std::mutex> lock(dstr->mtx);
-        ss.str(*dstr->str1);
+        buffer = *dstr->str1;
     }
-    std::string line;
-    std::string remaining;
 
-    while (std::getline(ss, line))
-    {
-        if (line.find_first_not_of(" \t\r\n") == std::string::npos)
+    // 声明变量用于存储各种处理状态
+    std::string processed;
+    std::string remainingBuffer;
+    size_t processedLength = 0;
+
+    // 按照"data: "标记分割数据流
+    size_t currentPos = 0;
+    size_t nextPos = 0;
+
+    while ((nextPos = buffer.find("data:", currentPos)) != std::string::npos) {
+        // 定位此数据块的结束位置（下一个data:或缓冲区结束）
+        size_t endPos = buffer.find("data:", nextPos + 5);
+        if (endPos == std::string::npos) {
+            endPos = buffer.length();
+        }
+
+        // 提取完整的数据块
+        std::string dataBlock = buffer.substr(nextPos, endPos - nextPos);
+
+        // 检查是否为结束标记
+        if (dataBlock.find("[DONE]") != std::string::npos) {
+            currentPos = endPos;
             continue;
-
-        TrimLeading(line);
-
-        const std::string dataPrefix = "data: ";
-        if (line.compare(0, dataPrefix.length(), dataPrefix) == 0)
-        {
-            line = line.substr(dataPrefix.length());
         }
 
-        size_t donePos = line.find("[DONE]");
-        if (donePos != std::string::npos)
-        {
-            line.erase(donePos);
-        }
+        // 尝试找到并解析JSON内容
+        size_t jsonStart = dataBlock.find('{');
+        if (jsonStart != std::string::npos) {
+            std::string jsonStr = dataBlock.substr(jsonStart);
 
-        try
-        {
-            json resp = json::parse(line);
-            json choices = resp.value("choices", json::array());
-            if (!choices.empty())
-            {
-                json delta = choices[0].value("delta", json::object());
-                if (!delta.empty() && delta.contains("content"))
-                {
-                    if (delta["content"].is_string())
-                    {
-                        // Lock while updating str2.
-                        std::lock_guard<std::mutex> lock(dstr->mtx);
-                        dstr->str2->append(delta["content"].get<std::string>());
-                        std::cout << "\r" << *dstr->str2 << std::flush;
+            // 尝试解析JSON
+            try {
+                json jsonData = json::parse(jsonStr);
+
+                // 从JSON中提取文本内容
+                if (jsonData.contains("choices") && !jsonData["choices"].empty()) {
+                    auto& choices = jsonData["choices"];
+
+                    if (choices[0].contains("delta") &&
+                        choices[0]["delta"].contains("content") &&
+                        !choices[0]["delta"]["content"].is_null()) {
+
+                        std::string content = choices[0]["delta"]["content"].get<std::string>();
+                        processed += content;
                     }
                 }
             }
+            catch (...) {
+                // JSON解析失败，这个数据块可能不完整
+                // 如果不是最后一个数据块，则忽略并继续
+                if (endPos != buffer.length()) {
+                    currentPos = endPos;
+                    continue;
+                }
+
+                // 如果是最后一个数据块，保留以待下次处理
+                remainingBuffer = buffer.substr(nextPos);
+                break;
+            }
         }
-        catch (const json::exception& e)
-        {
-            remaining += line + "\n";
-        }
-        catch (const std::exception& e)
-        {
-        }
+
+        // 移动到下一个位置
+        currentPos = endPos;
+        processedLength = endPos;
     }
 
+    // 更新未处理完的缓冲区
     {
         std::lock_guard<std::mutex> lock(dstr->mtx);
-        *dstr->str1 = remaining;
+        if (processedLength > 0) {
+            // 只保留未处理的部分
+            if (processedLength < buffer.length()) {
+                *dstr->str1 = buffer.substr(processedLength);
+            } else {
+                dstr->str1->clear();
+            }
+        }
+
+        // 将解析出的内容添加到输出
+        if (!processed.empty()) {
+            dstr->str2->append(processed);
+        }
     }
 
     return totalSize;
@@ -164,6 +202,7 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
             try
             {
                 LogInfo("ChatBot: Post request...");
+                // 确定请求URL
                 std::string url = "";
                 if (!chat_data_.useWebProxy)
                 {
@@ -173,6 +212,8 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                 {
                     url = chat_data_._endPoint;
                 }
+
+                // 设置CURL请求
                 CURL* curl;
                 CURLcode res;
                 struct curl_slist* headers = NULL;
@@ -193,24 +234,27 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, ProgressCallback);
                     curl_easy_setopt(curl, CURLOPT_XFERINFODATA, this);
 
+                    // 初始化数据结构
                     DString dstr;
-                    dstr.str1 = new string();
-                    dstr.str2 = &std::get<0>(Response[ts]);
-                    dstr.response = new string();
+                    dstr.str1 = new string();  // 用于处理缓冲区
+                    dstr.str2 = &std::get<0>(Response[ts]);  // 最终输出结果
+                    dstr.response = new string();  // 保存完整响应
                     dstr.instance = this;
                     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dstr);
 
+                    // 设置代理
                     if (!chat_data_.useWebProxy && !chat_data_.proxy.empty())
                     {
                         curl_easy_setopt(curl, CURLOPT_PROXY, chat_data_.proxy.c_str());
                     }
-                    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); // disable SSL verification
+                    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L); // 禁用SSL验证
 
+                    // 执行请求
                     res = curl_easy_perform(curl);
 
-                    if (res == CURLE_ABORTED_BY_CALLBACK || res == CURLE_WRITE_ERROR && forceStop)
+                    // 处理请求被中断的情况
+                    if (res == CURLE_ABORTED_BY_CALLBACK || (res == CURLE_WRITE_ERROR && forceStop))
                     {
-                        // 请求被我们的回调函数中止，意味着用户请求停止
                         LogInfo("ChatBot: Request canceled by user");
                         std::get<0>(Response[ts]) = std::get<0>(Response[ts]) + "\n[生成被中断]";
                         std::get<1>(Response[ts]) = true;
@@ -225,6 +269,7 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                     }
                     else if (res != CURLE_OK)
                     {
+                        // 请求失败，准备重试
                         LogError("ChatBot Error: Request failed with error code " + std::to_string(res));
                         retry_count++;
 
@@ -246,7 +291,7 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                     }
                     else
                     {
-                        // 成功完成请求，处理响应
+                        // 释放资源
                         curl_easy_cleanup(curl);
                         curl_slist_free_all(headers);
 
@@ -302,19 +347,18 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                                 }
                             }
                         }
-
                         delete dstr.str1;
                         delete dstr.response;
-                        std::get<0>(Response[ts]) = full_response;
+
+                        // 返回已在WriteCallback中处理好的响应
+                        std::cout<<std::get<0>(Response[ts])<<std::endl;
                         return std::get<0>(Response[ts]);
                     }
-
-                    delete dstr.str1;
-                    delete dstr.response;
                 }
             }
             catch (std::exception& e)
             {
+                // 处理异常
                 LogError("ChatBot Error: " + std::string(e.what()));
                 retry_count++;
 
@@ -400,7 +444,12 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
             std::get<1>(Response[timeStamp]) = true;
             LogInfo("ChatBot: Post finished");
         }
-
+        while (!std::get<0>(Response[timeStamp]).empty())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            //等待被处理完成
+        }
+        std::get<1>(Response[timeStamp]) = true;
         return res;
     }
     catch (exception& e)
@@ -524,6 +573,11 @@ std::string Claude::Submit(std::string text, size_t timeStamp, std::string role,
         std::get<0>(Response[timeStamp]) = "发生错误: " + std::string(e.what());
     }
 
+    while (!std::get<0>(Response[timeStamp]).empty())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        //等待被处理完成
+    }
     std::get<1>(Response[timeStamp]) = true;
     return std::get<0>(Response[timeStamp]);
 }
@@ -628,7 +682,7 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
             endPoint = geminiData._endPoint;
         else
             endPoint = "https://generativelanguage.googleapis.com";
-        std::string url = endPoint + "/v1beta/models/gemini-pro:generateContent?key="
+        std::string url = endPoint + "/v1beta/models/"+geminiData.model+":generateContent?key="
             +
             geminiData._apiKey;
 
@@ -698,6 +752,11 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
             history.emplace_back(ans);
             Conversation[convid_] = history;
             std::get<0>(Response[timeStamp]) = res.value_or("NA");
+            while (!std::get<0>(Response[timeStamp]).empty())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                //等待被处理完成
+            }
             std::get<1>(Response[timeStamp]) = true;
             return res.value_or("NA");
         }
@@ -958,6 +1017,11 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
                 return "Error: failed to apply the chat template";
             }
         }
+    }
+    while (!std::get<0>(Response[timeStamp]).empty())
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        //等待被处理完成
     }
     std::get<1>(Response[timeStamp]) = true;
     return std::get<0>(Response[timeStamp]);

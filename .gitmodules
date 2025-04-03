@@ -7,3 +7,7 @@
 [submodule "sample/Vendor/libarchive"]
 	path = sample/Vendor/libarchive
 	url = https://github.com/libarchive/libarchive
+[submodule "sample/Vendor/imgui"]
+	path = sample/Vendor/imgui
+	url = https://github.com/ocornut/imgui.git
+	branch = docking

@@ -25,7 +25,7 @@
 #include "sol/sol.hpp"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char*>(u8"CyberGirl v1.6.3");
+const std::string VERSION = reinterpret_cast<const char*>(u8"ChatBot v1.6.3");
 extern std::vector<std::string> scommands;
 extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void
@@ -291,6 +291,44 @@ private:
     float fontSize = 16;
     std::unordered_map<std::string, std::shared_ptr<Script>> PluginsScript1;
 
+    struct VitsQueueItem
+    {
+        bool isApi; // 是否为API任务
+        std::string text; // 文本内容
+        std::string endPoint; // API端点（仅用于API任务）
+        std::string outputFile; // 输出文件名
+    };
+
+    struct PreloadedAudio
+    {
+        std::string filename; // 音频文件名
+        float* data; // 音频数据
+        int sampleRate; // 采样率
+        int channels; // 通道数
+        int frames; // 总帧数
+        bool isListen; // 是否需要监听
+        bool ready; // 是否已加载完成
+
+        PreloadedAudio() : data(nullptr), sampleRate(0), channels(0), frames(0), isListen(false), ready(false)
+        {
+        }
+
+        ~PreloadedAudio()
+        {
+            if (data) delete[] data;
+        }
+    };
+
+    // 添加新的队列和状态变量
+    std::queue<VitsQueueItem> vitsQueue; // 任务队列
+    std::mutex vitsQueueMutex; // 队列互斥锁
+    std::queue<std::string> vitsPlayQueue; // 播放队列
+    std::mutex vitsPlayQueueMutex; // 播放队列互斥锁
+    inline static std::mutex audioMutex;
+
+    bool isPlaying; // 当前是否正在播放
+    std::shared_ptr<PreloadedAudio> nextAudio; // 下一个预加载的音频
+    std::shared_ptr<PreloadedAudio> currentAudio; // 当前播放的音频
 
     vector<std::shared_ptr<Application::Chat>> load(std::string name = "default");
 
@@ -301,7 +339,8 @@ private:
     void AddChatRecord(Ref<Chat> data);
     void DeleteAllBotChat();
 
-    void VitsListener();
+    void VitsAudioPlayer();
+    void VitsQueueHandler();
 
     void _Draw(Ref<std::string> prompt, long long ts, bool callFromBot, const std::string& negative);
 
@@ -331,16 +370,30 @@ private:
             std::lock_guard<std::mutex> lock(chat_history_mutex);
             chat_history.back()->addChild(botR);
             AddChatRecord(botR);
+            if (vits)
+                last_input += "(VE)";
             bot->SubmitAsync(last_input, botR->timestamp, role, convid);
             botR->talking = true;
+            std::string _tmpText = "";
             while (!bot->Finished(botR->timestamp))
             {
-                botR->content = bot->GetResponse(botR->timestamp);
+                _tmpText += bot->GetResponse(botR->timestamp);
+                if (vits)
+                {
+                    _tmpText = StringExecutor::TTS(_tmpText);
+                }
+                botR->content = _tmpText;
                 botR->newMessage = true;
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(16));
             }
-            botR->content = bot->GetResponse(botR->timestamp);
+            //->content = bot->GetResponse(botR->timestamp);
+            _tmpText += bot->GetResponse(botR->timestamp);
+            if (vits)
+            {
+                _tmpText = StringExecutor::TTS(_tmpText);
+            }
+            botR->content = _tmpText;
             botR->talking = false;
             botR->content = StringExecutor::AutoExecute(botR->content, bot);
 
@@ -439,6 +492,7 @@ private:
 
     // 加载纹理,并保存元数据
     GLuint LoadTexture(const std::string& path);
+    void PreloadNextAudio();
 
     void Vits(std::string text);
 
@@ -523,7 +577,7 @@ public:
     {
         if (IsPythonInstalled())
             return Utils::ExecuteShell(PythonHome + PythonExecute, pyPath, args...);
-        return fmt::format("Wrong there is no python executable in your path {0}", PythonHome);
+        return std::format("Wrong there is no python executable in your path {0}", PythonHome);
     }
 
     static std::string GetPythonPackage()

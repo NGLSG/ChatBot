@@ -60,7 +60,10 @@ public:
 
     std::string GetResponse(size_t uid)
     {
-        return std::get<0>(Response[uid]);
+        std::string response;
+        response = std::get<0>(Response[uid]);
+        std::get<0>(Response[uid]) = "";
+        return response;
     }
 
     bool Finished(size_t uid)

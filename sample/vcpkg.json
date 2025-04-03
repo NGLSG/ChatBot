@@ -1,0 +1,30 @@
+{
+  "dependencies" : [ "libsndfile", "nlohmann-json", "opengl", "portaudio", "vulkan", {
+    "name" : "glfw3",
+    "version>=" : "3.4#1"
+  }, {
+    "name" : "yaml-cpp",
+    "version>=" : "0.8.0#1"
+  }, {
+    "name" : "sol2",
+    "version>=" : "3.3.1"
+  }, {
+    "name" : "lua",
+    "version>=" : "5.4.7"
+  }, {
+    "name" : "sdl2",
+    "version>=" : "2.30.11"
+  }, {
+    "name" : "sdl2-image",
+    "version>=" : "2.8.4"
+  }, {
+    "name" : "openssl",
+    "version>=" : "3.4.0#1"
+  }, {
+    "name" : "cpr",
+    "version>=" : "1.11.1"
+  }, {
+    "name" : "glad",
+    "version>=" : "0.1.36"
+  } ]
+}

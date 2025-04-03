@@ -203,7 +203,7 @@ void Downloader::Stop()
         pauseCondition.notify_all();
         downloadThread.join();
 #ifdef WIN32
-        TerminateThread(downloadThread.native_handle(), 0);
+        TerminateThread(HANDLE(downloadThread.native_handle()), 0);
 #else
         pthread_t pthread_id = downloadThread.native_handle();
         pthread_cancel(pthread_id);

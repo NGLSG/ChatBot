@@ -20,12 +20,53 @@ bool UFile::Exists(const std::string& filename)
     return file.good();
 }
 
+std::vector<std::string> UFile::GetFilesInDirectory(const std::string& folder)
+{
+    std::vector<std::string> result;
+
+    // 使用filesystem遍历目录
+    for (const auto& entry : std::filesystem::directory_iterator(folder))
+    {
+        result.push_back(entry.path().string());
+    }
+
+    return result;
+}
+
+std::string UFile::PlatformPath(std::string path)
+{
+    return std::filesystem::path(path).make_preferred().string();
+}
+
+bool UFile::EndsWith(const std::string& str, const std::string& suffix)
+{
+    return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
+}
+
 bool UDirectory::CreateDirIfNotExists(const std::string& dir)
 {
     if (!Exists(dir))
     {
         return Create(dir);
     }
+    return true;
+}
+
+bool UFile::UCopyFile(const std::string& src, const std::string& dst)
+{
+    try
+    {
+        std::filesystem::copy_file(
+            std::filesystem::path(src),
+            std::filesystem::path(dst)
+        );
+    }
+    catch (std::filesystem::filesystem_error& e)
+    {
+        // 处理错误
+        return false;
+    }
+
     return true;
 }
 
@@ -158,6 +199,37 @@ int Utils::paCallback(const void* inputBuffer, void* outputBuffer, unsigned long
     return framesToCopy < framesPerBuffer ? paComplete : paContinue;
 }
 
+void Utils::AsyncExecuteShell(const std::string& cmd, std::vector<std::string> args)
+{
+    std::thread([cmd, args]()
+    {
+        std::string command = cmd;
+        for (const auto& arg : args)
+        {
+            command += " " + arg;
+        }
+#ifdef _WIN32
+        std::unique_ptr<FILE, decltype(&_pclose)> pipe(popen(command.c_str(), "r"), _pclose);
+#else
+            std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+#endif
+
+        if (!pipe)
+        {
+            std::cerr << "Error opening pipe." << std::endl;
+            return;
+        }
+
+        char buffer[128];
+        std::mutex mtx; // 用于同步输出的互斥锁
+        while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr)
+        {
+            std::lock_guard<std::mutex> lock(mtx); // 锁定互斥锁
+            std::cout << buffer;
+        }
+    }).detach(); // 使用detach让线程在后台运行
+}
+
 std::string Utils::GetAbsolutePath(const std::string& relativePath)
 {
     // 将相对路径转换为std::filesystem::path类型的路径
@@ -209,10 +281,10 @@ void Utils::playAudioAsync(const std::string& filename, std::function<void()> ca
         // 打开音频文件
         NoRecord = true;
         SF_INFO info;
-        SNDFILE* file = sf_open("tmp.wav", SFM_READ, &info);
+        SNDFILE* file = sf_open(filename.c_str(), SFM_READ, &info);
         if (!file)
         {
-            std::cerr << "Failed to open file: tmp.wav" << std::endl;
+            std::cerr << "Failed to open file: "<< filename << std::endl;
             return;
         }
 
@@ -361,6 +433,31 @@ void Utils::SaveYaml(const std::string& filename, const YAML::Node& node)
     }
     file << node;
     file.close();
+}
+
+std::vector<std::string> Utils::GetMicrophoneDevices()
+{
+    std::vector<std::string> Devices;
+    if (SDL_Init(SDL_INIT_AUDIO) != 0)
+    {
+        LogError("SDL_Init Error: {0}", SDL_GetError());
+        return Devices;
+    }
+    int count = SDL_GetNumAudioDevices(1);
+    if (count < 0)
+    {
+        LogError("SDL_GetNumAudioDevices Error: {0}", SDL_GetError());
+    }
+    else
+    {
+        for (int i = 0; i < count; i++)
+        {
+            const char* deviceName = SDL_GetAudioDeviceName(i, 1);
+            Devices.push_back(deviceName);
+        }
+    }
+    SDL_Quit();
+    return Devices;
 }
 
 size_t Utils::write_callback(char* ptr, size_t size, size_t nmemb, void* userdata)
@@ -549,6 +646,16 @@ bool Utils::CheckFileSize(const std::string& file_path, int expected_size)
     }
 }
 #ifdef WIN32
+void Utils::CleanUpChildProcess()
+{
+    if (childProcessHandle != nullptr)
+    {
+        TerminateProcess(childProcessHandle.load(), 0); // 强制终止子进程
+        CloseHandle(childProcessHandle.load()); // 关闭进程句柄
+        std::cout << "Child process terminated" << std::endl;
+    }
+}
+
 void Utils::OpenProgram(const char* path)
 {
     std::thread worker([=]()
@@ -588,7 +695,7 @@ void Utils::OpenProgram(const char* path)
                            const_cast<char*>(cmdLine.c_str()),
                            nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi))
         {
-            std::cerr << "Failed to open process" << std::endl;
+            std::cerr << cmdLine << ": Failed to open process" << std::endl;
             return;
         }
 
@@ -707,10 +814,86 @@ void Utils::OpenURL(const std::string& url)
 #endif
 }
 
+bool Utils::CheckCMDExist(const std::string& cmd)
+{
+#ifdef _WIN32
+    std::string command = "where " + cmd;
+#else
+    std::string command = "which " + cmd;
+#endif
+
+    std::string result = Utils::exec(command);
+    return !result.empty();
+}
+
+void Utils::SaveFile(const std::string& content, const std::string& filename)
+{
+    std::fstream outfile(filename);
+    if (outfile)
+    {
+        outfile << content << std::endl;
+        outfile.close();
+        LogInfo("数据已保存到文件 {0}", filename);
+    }
+    else
+    {
+        LogError("无法打开文件 {0}", filename);
+    }
+}
+
 std::string Utils::GetDirName(const std::string& dir)
 {
     std::filesystem::path path(dir);
     return path.parent_path().string() + "/";
+}
+
+std::string Utils::GetspecificPath(const std::string& path)
+{
+    std::string specificPath = path;
+
+#ifdef _WIN32
+    // Replace all forward slashes with backslashes for Windows
+    for (char& c : specificPath)
+    {
+        if (c == '/')
+        {
+            c = '\\';
+        }
+    }
+#else
+        // Replace all backslashes with forward slashes for non-Windows systems
+        for (char& c : specificPath) {
+            if (c == '\\') {
+                c = '/';
+            }
+        }
+#endif
+
+    return specificPath;
+}
+
+std::string Utils::UrlEncode(const std::string& value)
+{
+    std::ostringstream escaped;
+    escaped.fill('0');
+    escaped << std::hex;
+
+    for (auto i = value.begin(), n = value.end(); i != n; ++i)
+    {
+        std::string::value_type c = (*i);
+
+        // 保持字母和数字不变
+        if (isalnum(c) || c == '-')
+        {
+            escaped << c;
+            continue;
+        }
+
+        // 对特殊字符进行编码
+        escaped << '%' << std::setw(2) << int((unsigned char)c);
+    }
+
+    return escaped.str();
 }
 
 std::string Utils::GetFileExt(std::string file)
@@ -1310,7 +1493,39 @@ std::string StringExecutor::ExtractMarkdownContent(const std::string& str)
     return str;
 }
 
-void StringExecutor::AddDrawCallback(const DrawCallback& callback)
+std::string StringExecutor::TTS(const std::string& text)
+{
+    static const std::regex ttsPattern(R"(\[Voice\]([\x01-\xFF]*?)\[Voice\])", std::regex::icase);
+    if (!ttsCallback)
+        return text;
+
+    std::string result;
+    std::string::const_iterator searchStart(text.cbegin());
+    std::smatch match;
+
+    while (std::regex_search(searchStart, text.cend(), match, ttsPattern))
+    {
+        result.append(searchStart, match[0].first);
+
+        std::string ttsText = match[1].str();
+        ttsCallback(ttsText);
+
+        result.append(ttsText);
+
+        searchStart = match[0].second;
+    }
+
+    result.append(searchStart, text.cend());
+
+    return result;
+}
+
+void StringExecutor::SetTTSCallback(const TTSCallback& callback)
+{
+    ttsCallback = callback;
+}
+
+void StringExecutor::SetDrawCallback(const DrawCallback& callback)
 {
     drawCallback = callback;
 }
@@ -1529,7 +1744,7 @@ std::string StringExecutor::Python(const std::string& text)
         for (const auto& pythonMatch : pythonMatches)
         {
             std::string processedPy = _Markdown(pythonMatch);
-            std::string pyPath = tmpPythonPath + fmt::format("temp_{0}.py", num++);
+            std::string pyPath = tmpPythonPath + std::format("temp_{0}.py", num++);
             _WriteToFile(pyPath, processedPy);
             auto res = Application::ExecutePython(pyPath);
             replacedAnswer = std::regex_replace(replacedAnswer, pattern, res,

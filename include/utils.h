@@ -48,47 +48,14 @@ public:
     static bool Exists(const std::string& filename);
 
     // 获取目录下所有文件
-    static std::vector<std::string> GetFilesInDirectory(const std::string& folder)
-    {
-        std::vector<std::string> result;
+    static std::vector<std::string> GetFilesInDirectory(const std::string& folder);
 
-        // 使用filesystem遍历目录
-        for (const auto& entry : std::filesystem::directory_iterator(folder))
-        {
-            result.push_back(entry.path().string());
-        }
-
-        return result;
-    }
-
-    static std::string PlatformPath(std::string path)
-    {
-        return std::filesystem::path(path).make_preferred().string();
-    }
+    static std::string PlatformPath(std::string path);
 
     // 检查是否以某后缀结尾
-    static bool EndsWith(const std::string& str, const std::string& suffix)
-    {
-        return std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
-    }
+    static bool EndsWith(const std::string& str, const std::string& suffix);
 
-    static bool UCopyFile(const std::string& src, const std::string& dst)
-    {
-        try
-        {
-            std::filesystem::copy_file(
-                std::filesystem::path(src),
-                std::filesystem::path(dst)
-            );
-        }
-        catch (std::filesystem::filesystem_error& e)
-        {
-            // 处理错误
-            return false;
-        }
-
-        return true;
-    }
+    static bool UCopyFile(const std::string& src, const std::string& dst);
 };
 
 class UDirectory
@@ -142,27 +109,20 @@ private:
         int length;
     } paUserData;
 
-    static int paCallback(const void* inputBuffer, void* outputBuffer,
-                          unsigned long framesPerBuffer,
-                          const PaStreamCallbackTimeInfo* timeInfo,
-                          PaStreamCallbackFlags statusFlags,
-                          void* userData);
+
 
     static bool CheckFileSize(const std::string& file_path, int expected_size);
 
 public:
+    static int paCallback(const void* inputBuffer, void* outputBuffer,
+                         unsigned long framesPerBuffer,
+                         const PaStreamCallbackTimeInfo* timeInfo,
+                         PaStreamCallbackFlags statusFlags,
+                         void* userData);
 #ifdef WIN32
     inline static std::atomic<HANDLE> childProcessHandle{nullptr};
 
-    static void CleanUpChildProcess()
-    {
-        if (childProcessHandle != nullptr)
-        {
-            TerminateProcess(childProcessHandle.load(), 0); // 强制终止子进程
-            CloseHandle(childProcessHandle.load()); // 关闭进程句柄
-            std::cout << "Child process terminated" << std::endl;
-        }
-    }
+    static void CleanUpChildProcess();
 
     static void OpenProgram(const char* path);
 #else
@@ -182,36 +142,7 @@ public:
     template <typename... Args>
     static std::string ExecuteShell(const std::string& cmd, Args... args);
 
-    static void AsyncExecuteShell(const std::string& cmd, std::vector<std::string> args)
-    {
-        std::thread([cmd, args]()
-        {
-            std::string command = cmd;
-            for (const auto& arg : args)
-            {
-                command += " " + arg;
-            }
-#ifdef _WIN32
-            std::unique_ptr<FILE, decltype(&_pclose)> pipe(popen(command.c_str(), "r"), _pclose);
-#else
-            std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
-#endif
-
-            if (!pipe)
-            {
-                std::cerr << "Error opening pipe." << std::endl;
-                return;
-            }
-
-            char buffer[128];
-            std::mutex mtx; // 用于同步输出的互斥锁
-            while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr)
-            {
-                std::lock_guard<std::mutex> lock(mtx); // 锁定互斥锁
-                std::cout << buffer;
-            }
-        }).detach(); // 使用detach让线程在后台运行
-    }
+    static void AsyncExecuteShell(const std::string& cmd, std::vector<std::string> args);
 
     static std::string GetAbsolutePath(const std::string& relativePath);
     static std::string exec(const std::string& command);
@@ -226,54 +157,9 @@ public:
 
     static std::string GetDirName(const std::string& dir);
 
-    static std::string GetspecificPath(const std::string& path)
-    {
-        std::string specificPath = path;
+    static std::string GetspecificPath(const std::string& path);
 
-#ifdef _WIN32
-        // Replace all forward slashes with backslashes for Windows
-        for (char& c : specificPath)
-        {
-            if (c == '/')
-            {
-                c = '\\';
-            }
-        }
-#else
-        // Replace all backslashes with forward slashes for non-Windows systems
-        for (char& c : specificPath) {
-            if (c == '\\') {
-                c = '/';
-            }
-        }
-#endif
-
-        return specificPath;
-    }
-
-    static std::string UrlEncode(const std::string& value)
-    {
-        std::ostringstream escaped;
-        escaped.fill('0');
-        escaped << std::hex;
-
-        for (auto i = value.begin(), n = value.end(); i != n; ++i)
-        {
-            std::string::value_type c = (*i);
-
-            // 保持字母和数字不变
-            if (isalnum(c) || c == '-')
-            {
-                escaped << c;
-                continue;
-            }
-
-            // 对特殊字符进行编码
-            escaped << '%' << std::setw(2) << int((unsigned char)c);
-        }
-
-        return escaped.str();
-    }
+    static std::string UrlEncode(const std::string& value);
 
 
     static std::string GetFileExt(std::string file);
@@ -294,34 +180,11 @@ public:
 
     static void OpenURL(const std::string& url);
 
-    static bool CheckCMDExist(const std::string& cmd)
-    {
-#ifdef _WIN32
-        std::string command = "where " + cmd;
-#else
-    std::string command = "which " + cmd;
-#endif
-
-        std::string result = Utils::exec(command);
-        return !result.empty();
-    }
+    static bool CheckCMDExist(const std::string& cmd);
 
     static void ExecuteInBackGround(const std::string& appName);
 
-    static void SaveFile(const std::string& content, const std::string& filename)
-    {
-        std::fstream outfile(filename);
-        if (outfile)
-        {
-            outfile << content << std::endl;
-            outfile.close();
-            LogInfo("数据已保存到文件 {0}", filename);
-        }
-        else
-        {
-            LogError("无法打开文件 {0}", filename);
-        }
-    }
+    static void SaveFile(const std::string& content, const std::string& filename);
 
     template <typename T>
     static std::optional<T> LoadYaml(const std::string& file)
@@ -350,30 +213,7 @@ public:
         return node;
     }
 
-    static std::vector<std::string> GetMicrophoneDevices()
-    {
-        std::vector<std::string> Devices;
-        if (SDL_Init(SDL_INIT_AUDIO) != 0)
-        {
-            LogError("SDL_Init Error: {0}", SDL_GetError());
-            return Devices;
-        }
-        int count = SDL_GetNumAudioDevices(1);
-        if (count < 0)
-        {
-            LogError("SDL_GetNumAudioDevices Error: {0}", SDL_GetError());
-        }
-        else
-        {
-            for (int i = 0; i < count; i++)
-            {
-                const char* deviceName = SDL_GetAudioDeviceName(i, 1);
-                Devices.push_back(deviceName);
-            }
-        }
-        SDL_Quit();
-        return Devices;
-    }
+    static std::vector<std::string> GetMicrophoneDevices();
 
     static size_t write_callback(char* ptr, size_t size, size_t nmemb, void* userdata);
 
@@ -434,6 +274,8 @@ private:
 
     using DrawCallback = std::function<void(const std::string&, long long, bool, const std::string&)>;
     inline static DrawCallback drawCallback;
+    using TTSCallback = std::function<void(const std::string&)>;
+    inline static TTSCallback ttsCallback;
 
 public:
     struct Code
@@ -451,7 +293,13 @@ public:
     // 从规范化格式中提取Markdown内容
     static std::string ExtractMarkdownContent(const std::string& str);
 
-    static void AddDrawCallback(const DrawCallback& callback);
+    static std::string TTS(const std::string& text);
+
+    static void SetTTSCallback(const TTSCallback& callback);
+
+    static void SetDrawCallback(const DrawCallback& callback);
+
+
 
     static std::string AutoExecute(std::string text, const std::shared_ptr<ChatBot>& bot);
 

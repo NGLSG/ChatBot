@@ -228,10 +228,10 @@ void Listener::ResetRecorded()
     recordedData.clear(); // 清空录音数据
 }
 
-void Listener::playRecorded(bool islisten)
+void Listener::playRecorded(const std::string& filePath, bool islisten)
 {
     // 使用std::shared_ptr来管理filename的生命周期
-    auto filename_ptr = std::make_shared<std::string>(taskPath);
+    auto filename_ptr = std::make_shared<std::string>(filePath);
 
     // 播放音频文件
     if (islisten)
@@ -274,6 +274,11 @@ std::vector<float> Listener::getRecordedData()
 {
     std::lock_guard<std::mutex> lock(recordedData_mutex); // 加锁
     return recordedData;
+}
+
+void Listener::ChangeTaskPath(std::string path)
+{
+    taskPath = path;
 }
 
 void Listener::listen(std::string file)

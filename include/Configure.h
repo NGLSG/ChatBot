@@ -7,6 +7,7 @@
 
 struct TranslateData
 {
+    bool enable = false;
     std::string appId;
     std::string APIKey;
     std::string proxy = "";
@@ -125,6 +126,7 @@ struct GeminiBotCreateInfo
     bool enable = false;
     std::string _apiKey;
     std::string _endPoint;
+    std::string model = "gemini-2.0-flash";
 };
 
 
@@ -216,6 +218,7 @@ namespace YAML
             node["enable"] = data.enable;
             node["api_Key"] = data._apiKey;
             node["endPoint"] = data._endPoint;
+            node["model"] = data.model;
             return node;
         }
 
@@ -224,6 +227,14 @@ namespace YAML
             data._apiKey = node["api_Key"].as<std::string>();
             data.enable = node["enable"].as<bool>();
             data._endPoint = node["endPoint"].as<std::string>();
+            if (node["model"])
+            {
+                data.model = node["model"].as<std::string>();
+            }
+            else
+            {
+                data.model = "gemini-2.0-flash";
+            }
             return true;
         }
     };
@@ -266,6 +277,7 @@ namespace YAML
             node["appId"] = data.appId;
             node["APIKey"] = data.APIKey;
             node["proxy"] = data.proxy;
+            node["enable"] = data.enable;
             return node;
         }
 
@@ -274,6 +286,14 @@ namespace YAML
             data.proxy = node["proxy"].as<std::string>();
             data.appId = node["appId"].as<std::string>();
             data.APIKey = node["APIKey"].as<std::string>();
+            if (node["enable"])
+            {
+                data.enable = node["enable"].as<bool>();
+            }
+            else
+            {
+                data.enable = false;
+            }
             return true;
         }
     };

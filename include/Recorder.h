@@ -58,13 +58,15 @@ public:
 
     void ResetRecorded();
 
-    void playRecorded(bool islisten = true);
+    void playRecorded(const std::string& filePath, bool islisten = true);
 
     void changeFile(std::string filename);
 
     void ChangeDevice(std::string device);
 
     std::vector<float> getRecordedData();
+
+    void ChangeTaskPath(std::string path);
 
 private:
     std::string taskPath;

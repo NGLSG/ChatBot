@@ -1,10 +1,8 @@
 ﻿#ifndef LOGGER_H
 #define LOGGER_H
 
-#include "pch.h"
-#include <memory.h>
+#include <chrono>
 #include <spdlog/spdlog.h>
-#include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 class Logger {
@@ -36,7 +34,7 @@ public:
     }
 
 private:
-    static std::shared_ptr<spdlog::logger> s_CoreLogger; //内核日志
+    inline static std::shared_ptr<spdlog::logger> s_CoreLogger; //内核日志
 };
 
 //日志
