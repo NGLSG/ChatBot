@@ -31,7 +31,7 @@ _✨ 一站式AI交互解决方案：语音唤醒、多模态对话、本地执�
     </td>
     <td>
       <h3>🔮 多API支持</h3>
-      <p>支持OpenAI、Claude、讯飞星火、ChatGLM、通义千问、腾讯混元、百川AI、Gemini等多种API</p>
+      <p>支持OpenAI、Claude、讯飞星火、火山引擎、通义千问、腾讯混元、百川AI、Gemini等多种API</p>
     </td>
   </tr>
   <tr>
@@ -158,6 +158,11 @@ cmake --build .
     - OpenAI (GPT系列)
     - Claude (Anthropic)
     - Google Gemini
+    - 讯飞星火
+    - 火山引擎
+    - 通义千问
+    - 腾讯混元
+    - 百川AI
     - 泛OpenAI接口的API服务
 
 - **本地模型**

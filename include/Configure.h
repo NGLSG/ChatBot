@@ -20,6 +20,15 @@ struct LLamaCreateInfo
     int maxTokens = 4096;
 };
 
+struct ClaudeAPICreateInfo
+{
+    bool enable = false;
+    std::string apiKey;
+    std::string model = "claude-3.5";
+    std::string apiVersion = "2023-06-01";
+    std::string _endPoint = "https://api.anthropic.com/v1/complete";
+};
+
 struct OpenAIBotCreateInfo
 {
     bool enable = true;
@@ -129,7 +138,6 @@ struct GeminiBotCreateInfo
     std::string model = "gemini-2.0-flash";
 };
 
-
 struct Live2D
 {
     bool enable = false;
@@ -149,12 +157,46 @@ struct Configure
     ClaudeBotCreateInfo claude;
     GeminiBotCreateInfo gemini;
     GPTLikeCreateInfo grok;
-    StableDiffusionData stableDiffusion;
+    GPTLikeCreateInfo mistral;
+    GPTLikeCreateInfo qianwen;
+    GPTLikeCreateInfo sparkdesk;
+    GPTLikeCreateInfo chatglm;
+    GPTLikeCreateInfo hunyuan;
+    GPTLikeCreateInfo baichuan;
+    GPTLikeCreateInfo huoshan;
+    ClaudeAPICreateInfo claudeAPI;
     std::unordered_map<std::string, GPTLikeCreateInfo> customGPTs;
+    StableDiffusionData stableDiffusion;
+
 };
 
 namespace YAML
 {
+    template <>
+    struct convert<ClaudeAPICreateInfo>
+    {
+        static Node encode(const ClaudeAPICreateInfo& data)
+        {
+            Node node;
+            node["enable"] = data.enable;
+            node["apiKey"] = data.apiKey;
+            node["model"] = data.model;
+            node["apiVersion"] = data.apiVersion;
+            node["endPoint"] = data._endPoint;
+            return node;
+        }
+
+        static bool decode(const Node& node, ClaudeAPICreateInfo& data)
+        {
+            data.enable = node["enable"].as<bool>();
+            data.apiKey = node["apiKey"].as<std::string>();
+            data.model = node["model"].as<std::string>();
+            data.apiVersion = node["apiVersion"].as<std::string>();
+            data._endPoint = node["endPoint"].as<std::string>();
+            return true;
+        }
+    };
+
     template <>
     struct convert<LLamaCreateInfo>
     {
@@ -538,6 +580,14 @@ namespace YAML
             node["live2D"] = config.live2D;
             node["stableDiffusion"] = config.stableDiffusion;
             node["grok"] = config.grok;
+            node["mistral"] = config.mistral;
+            node["qwen"] = config.qianwen;
+            node["chatglm"] = config.chatglm;
+            node["hunyuan"] = config.hunyuan;
+            node["baichuan"] = config.baichuan;
+            node["sparkdesk"] = config.sparkdesk;
+            node["huoshan"] = config.huoshan;
+            node["claudeAPI"] = config.claudeAPI;
             node["customGPTs"] = config.customGPTs;
             return node;
         }
@@ -556,7 +606,38 @@ namespace YAML
             {
                 config.OutDeviceID = node["OutDeviceID"].as<std::string>();
             }
-
+            if (node["claudeAPI"])
+            {
+                config.claudeAPI = node["claudeAPI"].as<ClaudeAPICreateInfo>();
+            }
+            if (node["mistral"])
+            {
+                config.mistral = node["mistral"].as<GPTLikeCreateInfo>();
+            }
+            if (node["qwen"])
+            {
+                config.qianwen = node["qwen"].as<GPTLikeCreateInfo>();
+            }
+            if (node["sparkdesk"])
+            {
+                config.sparkdesk = node["sparkdesk"].as<GPTLikeCreateInfo>();
+            }
+            if (node["chatglm"])
+            {
+                config.chatglm = node["chatglm"].as<GPTLikeCreateInfo>();
+            }
+            if (node["hunyuan"])
+            {
+                config.hunyuan = node["hunyuan"].as<GPTLikeCreateInfo>();
+            }
+            if (node["baichuan"])
+            {
+                config.baichuan = node["baichuan"].as<GPTLikeCreateInfo>();
+            }
+            if (node["huoshan"])
+            {
+                config.huoshan = node["huoshan"].as<GPTLikeCreateInfo>();
+            }
             config.openAi = node["openAi"].as<OpenAIBotCreateInfo>();
             config.gemini = node["gemini"].as<GeminiBotCreateInfo>();
             config.claude = node["claude"].as<ClaudeBotCreateInfo>();

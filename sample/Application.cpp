@@ -92,6 +92,7 @@ Application::Application(const Configure& configure, bool setting)
         text_buffers.emplace_back("search");
         text_buffers.emplace_back("outDevice");
         text_buffers.emplace_back("inputDevice");
+        text_buffers.emplace_back("version");
     }
     catch
     (exception& e)
@@ -1082,17 +1083,32 @@ void Application::CreateBot()
             return key.empty();
         };
 
+        // 检查所有模型的API密钥是否缺失
         if ((configure.openAi.enable && isMissingKey(configure.openAi.api_key)) ||
             (configure.claude.enable && isMissingKey(configure.claude.slackToken)) ||
             (configure.gemini.enable && isMissingKey(configure.gemini._apiKey)) ||
-            (configure.grok.enable && isMissingKey(configure.grok.api_key)))
+            (configure.grok.enable && isMissingKey(configure.grok.api_key)) ||
+            (configure.mistral.enable && isMissingKey(configure.mistral.api_key)) ||
+            (configure.qianwen.enable && isMissingKey(configure.qianwen.api_key)) ||
+            (configure.sparkdesk.enable && isMissingKey(configure.sparkdesk.api_key)) ||
+            (configure.chatglm.enable && isMissingKey(configure.chatglm.api_key)) ||
+            (configure.hunyuan.enable && isMissingKey(configure.hunyuan.api_key)) ||
+            (configure.baichuan.enable && isMissingKey(configure.baichuan.api_key)) ||
+            (configure.claudeAPI.enable && isMissingKey(configure.claudeAPI.apiKey)) ||
+            (configure.huoshan.enable && isMissingKey(configure.huoshan.api_key))
+        )
         {
             OnlySetting = true;
             state = State::NO_BOT_KEY;
         }
 
+        // 检查是否没有选择任何模型
         if (!configure.openAi.enable && !configure.claude.enable &&
-            !configure.gemini.enable && !configure.grok.enable)
+            !configure.gemini.enable && !configure.grok.enable &&
+            !configure.mistral.enable && !configure.qianwen.enable &&
+            !configure.sparkdesk.enable && !configure.chatglm.enable &&
+            !configure.hunyuan.enable && !configure.baichuan.enable &&
+            !configure.claudeAPI.enable && !configure.huoshan.enable)
         {
             bool hasCustomGPT = false;
             for (const auto& [name, cconfig] : configure.customGPTs)
@@ -1111,6 +1127,7 @@ void Application::CreateBot()
             }
         }
 
+        // 检查自定义模型配置
         for (const auto& [name, cconfig] : configure.customGPTs)
         {
             if (cconfig.enable)
@@ -1139,10 +1156,21 @@ void Application::CreateBot()
             }
         }
 
+        // 创建所选的聊天机器人实例
         if (configure.claude.enable)
         {
-            bot = CreateRef<Claude>(configure.claude);
+            bot = CreateRef<ClaudeInSlack>(configure.claude);
             GetClaudeHistory();
+        }
+        else if (configure.claudeAPI.enable)
+        {
+            // 创建Claude API聊天机器人
+            bot = CreateRef<Claude>(configure.claudeAPI, SYSTEMROLE + SYSTEMROLE_EX);
+            ConversationPath /= "ClaudeAPI/";
+            if (!std::filesystem::exists(ConversationPath))
+            {
+                std::filesystem::create_directories(ConversationPath);
+            }
         }
         else if (configure.openAi.enable)
         {
@@ -1161,8 +1189,78 @@ void Application::CreateBot()
         {
             bot = CreateRef<Grok>(configure.grok, SYSTEMROLE + SYSTEMROLE_EX);
         }
+        // 创建Mistral聊天机器人
+        else if (configure.mistral.enable)
+        {
+            bot = CreateRef<Mistral>(configure.mistral, SYSTEMROLE + SYSTEMROLE_EX);
+            ConversationPath /= "Mistral/";
+            if (!std::filesystem::exists(ConversationPath))
+            {
+                std::filesystem::create_directories(ConversationPath);
+            }
+        }
+        // 创建通义千问聊天机器人
+        else if (configure.qianwen.enable)
+        {
+            bot = CreateRef<TongyiQianwen>(configure.qianwen, SYSTEMROLE + SYSTEMROLE_EX);
+            ConversationPath /= "QianWen/";
+            if (!std::filesystem::exists(ConversationPath))
+            {
+                std::filesystem::create_directories(ConversationPath);
+            }
+        }
+        // 创建讯飞星火聊天机器人
+        else if (configure.sparkdesk.enable)
+        {
+            bot = CreateRef<SparkDesk>(configure.sparkdesk, SYSTEMROLE + SYSTEMROLE_EX);
+            ConversationPath /= "SparkDesk/";
+            if (!std::filesystem::exists(ConversationPath))
+            {
+                std::filesystem::create_directories(ConversationPath);
+            }
+        }
+        // 创建ChatGLM聊天机器人
+        else if (configure.chatglm.enable)
+        {
+            bot = CreateRef<ChatGLM>(configure.chatglm, SYSTEMROLE + SYSTEMROLE_EX);
+            ConversationPath /= "ChatGLM/";
+            if (!std::filesystem::exists(ConversationPath))
+            {
+                std::filesystem::create_directories(ConversationPath);
+            }
+        }
+        // 创建腾讯混元聊天机器人
+        else if (configure.hunyuan.enable)
+        {
+            bot = CreateRef<HunyuanAI>(configure.hunyuan, SYSTEMROLE + SYSTEMROLE_EX);
+            ConversationPath /= "Hunyuan/";
+            if (!std::filesystem::exists(ConversationPath))
+            {
+                std::filesystem::create_directories(ConversationPath);
+            }
+        }
+        // 创建百川AI聊天机器人
+        else if (configure.baichuan.enable)
+        {
+            bot = CreateRef<BaichuanAI>(configure.baichuan, SYSTEMROLE + SYSTEMROLE_EX);
+            ConversationPath /= "Baichuan/";
+            if (!std::filesystem::exists(ConversationPath))
+            {
+                std::filesystem::create_directories(ConversationPath);
+            }
+        }
+        else if (configure.huoshan.enable)
+        {
+            bot = CreateRef<HuoshanAI>(configure.huoshan, SYSTEMROLE + SYSTEMROLE_EX);
+            ConversationPath /= "Huoshan/";
+            if (!std::filesystem::exists(ConversationPath))
+            {
+                std::filesystem::create_directories(ConversationPath);
+            }
+        }
         else
         {
+            // 创建自定义GPT或本地模型
             for (const auto& [name, cconfig] : configure.customGPTs)
             {
                 if (cconfig.enable)
@@ -1173,10 +1271,12 @@ void Application::CreateBot()
                     {
                         bot = CreateRef<LLama>(cconfig.llamaData, SYSTEMROLE + SYSTEMROLE_EX);
                     }
-                    break; // use the first available custom GPT
+                    break; // 使用第一个可用的自定义GPT
                 }
             }
         }
+
+        // 清理会话列表
         conversations.clear();
         for (const auto& entry : std::filesystem::directory_iterator(ConversationPath))
         {
@@ -1195,6 +1295,8 @@ void Application::CreateBot()
                 }
             }
         }
+
+        // 如果不是使用Claude Slack接口，确保至少有一个会话
         if (!configure.claude.enable)
         {
             if (conversations.empty())
@@ -1205,6 +1307,8 @@ void Application::CreateBot()
             }
             convid = conversations[0];
         }
+
+        // 加载当前会话
         bot->Load(convid);
         chat_history = load(convid);
         loadingBot = false;
@@ -1968,68 +2072,84 @@ void Application::RenderConfigBox()
     }
 
     // 显示 ChatBot 配置
+    // LLM 功能配置界面
     if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"LLM功能")))
     {
-        ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用Claude (实验性功能)"), &configure.claude.enable);
-        if (configure.claude.enable)
-        {
-            configure.gemini.enable = false;
-            configure.openAi.enable = false;
-            configure.grok.enable = false;
-            for (auto& it : configure.customGPTs)
-            {
-                it.second.enable = false;
-            }
-        }
-        ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用Gemini"), &configure.gemini.enable);
-        if (configure.gemini.enable)
-        {
-            configure.claude.enable = false;
-            configure.openAi.enable = false;
-            configure.grok.enable = false;
-            for (auto& it : configure.customGPTs)
-            {
-                it.second.enable = false;
-            }
-        }
-        ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用OpenAI"), &configure.openAi.enable);
-        if (configure.openAi.enable)
-        {
-            configure.claude.enable = false;
-            configure.gemini.enable = false;
-            configure.grok.enable = false;
-            for (auto& it : configure.customGPTs)
-            {
-                it.second.enable = false;
-            }
-        }
+        // ========== 第一部分：LLM 选择区域 ==========
 
-        ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用GPT-Grok"), &configure.grok.enable);
-        if (configure.grok.enable)
+        // LLM 选择的辅助函数
+        auto SelectLLM = [&](const char* name, bool& enabled, bool isBeta = false)
         {
-            configure.claude.enable = false;
-            configure.gemini.enable = false;
-            configure.openAi.enable = false;
-            for (auto& it : configure.customGPTs)
+            // 添加 Beta 标签
+            if (isBeta)
             {
-                it.second.enable = false;
+                ImGui::Checkbox(name, &enabled);
+                if (enabled)
+                {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "(实验性功能)");
+                }
             }
-        }
+            else
+            {
+                ImGui::Checkbox(name, &enabled);
+            }
+
+            // 如果当前模型启用，禁用其它所有模型
+            if (enabled)
+            {
+                // 禁用所有内置模型
+                if (&enabled != &configure.claude.enable) configure.claude.enable = false;
+                if (&enabled != &configure.gemini.enable) configure.gemini.enable = false;
+                if (&enabled != &configure.openAi.enable) configure.openAi.enable = false;
+                if (&enabled != &configure.mistral.enable) configure.mistral.enable = false;
+                if (&enabled != &configure.grok.enable) configure.grok.enable = false;
+                if (&enabled != &configure.claudeAPI.enable) configure.claudeAPI.enable = false;
+                if (&enabled != &configure.qianwen.enable) configure.qianwen.enable = false;
+                if (&enabled != &configure.sparkdesk.enable) configure.sparkdesk.enable = false;
+                if (&enabled != &configure.chatglm.enable) configure.chatglm.enable = false;
+                if (&enabled != &configure.hunyuan.enable) configure.hunyuan.enable = false;
+                if (&enabled != &configure.baichuan.enable) configure.baichuan.enable = false;
+                if (&enabled != &configure.huoshan.enable) configure.huoshan.enable = false;
+
+                // 禁用所有自定义模型
+                for (auto& it : configure.customGPTs)
+                {
+                    it.second.enable = false;
+                }
+            }
+        };
+
+        // 内置模型选择
+        SelectLLM(reinterpret_cast<const char*>(u8"使用Claude (Slack接口)"), configure.claude.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用ClaudeAPI"), configure.claudeAPI.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用Gemini"), configure.gemini.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用OpenAI"), configure.openAi.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用Mistral AI"), configure.mistral.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用Grok"), configure.grok.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用通义千问"), configure.qianwen.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用讯飞星火"), configure.sparkdesk.enable);
+        //SelectLLM(reinterpret_cast<const char*>(u8"使用ChatGLM"), configure.chatglm.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用腾讯混元"), configure.hunyuan.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用百川AI"), configure.baichuan.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用火山引擎"), configure.huoshan.enable);
+
+        // ========== 第二部分：自定义API选择区域 ==========
         static int filteredItemCount = 0;
-
         float lineHeight = ImGui::GetTextLineHeightWithSpacing() * 1.5;
         float childHeight = (filteredItemCount < 10 ? filteredItemCount : 10) * lineHeight + lineHeight;
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.0f, 1.0f)); // Orange
 
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.0f, 1.0f)); // 橙色
         ImGui::Text("自定义API: ");
-
         ImGui::PopStyleColor();
+
         ImGui::BeginChild("##自定义API", ImVec2(0, childHeight), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
         {
+            // 搜索框
             ImGui::InputText("##", GetBufferByName("search").buffer, TEXT_BUFFER);
-
             std::string searchStr(GetBufferByName("search").buffer);
 
+            // 过滤函数
             auto filterMatch = [&searchStr](const std::string& name) -> bool
             {
                 if (searchStr.empty())
@@ -2037,6 +2157,7 @@ void Application::RenderConfigBox()
                 return name.find(searchStr) != std::string::npos;
             };
 
+            // 计算过滤后的项目数
             filteredItemCount = 0;
             for (const auto& pair : configure.customGPTs)
             {
@@ -2045,24 +2166,34 @@ void Application::RenderConfigBox()
                     filteredItemCount++;
                 }
             }
+
+            // 显示自定义API选项
             for (auto& pair : configure.customGPTs)
             {
-                // Only display items that match the search criteria.
+                // 只显示匹配搜索条件的项目
                 if (!filterMatch(pair.first))
                     continue;
 
-                // Display a checkbox for each custom GPT.
                 if (ImGui::Checkbox(pair.first.c_str(), &pair.second.enable))
                 {
-                    // When a custom GPT is enabled, disable the other predefined providers.
                     if (pair.second.enable)
                     {
+                        // 当启用某个自定义GPT时，禁用所有其他模型
                         configure.claude.enable = false;
+                        configure.claudeAPI.enable = false;
                         configure.gemini.enable = false;
                         configure.openAi.enable = false;
+                        configure.mistral.enable = false;
+                        configure.qianwen.enable = false;
+                        configure.sparkdesk.enable = false;
+                        configure.chatglm.enable = false;
+                        configure.hunyuan.enable = false;
+                        configure.baichuan.enable = false;
+                        configure.huoshan.enable = false;
+
                         configure.grok.enable = false;
 
-                        // Disable all other custom GPTs.
+                        // 禁用其他自定义GPT
                         for (auto& pair2 : configure.customGPTs)
                         {
                             if (pair2.first != pair.first)
@@ -2075,353 +2206,417 @@ void Application::RenderConfigBox()
             }
         }
         ImGui::EndChild();
+
+        // 添加自定义API按钮
         if (ImGui::Button(reinterpret_cast<const char*>(u8"添加自定义API"), ImVec2(120, 30)))
         {
             ImGui::OpenPopup(reinterpret_cast<const char*>(u8"请输入新的配置名字"));
         }
+
+        // ========== 第三部分：API配置区域 ==========
         ImGui::Text("API配置: ");
         ImGui::BeginChild("##API配置", ImVec2(0, 160), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
-        if (configure.openAi.enable)
+
+        // 显示密码输入框的辅助函数
+        auto ShowPasswordInput = [&](const char* label, std::string& value, const char* buffer_name)
         {
-            static bool showPassword = false, clicked = false;
-            static double lastInputTime = 0.0;
+            static std::map<std::string, bool> showPasswords;
+            static std::map<std::string, bool> clicked;
+            static std::map<std::string, double> lastInputTimes;
+
+            std::string key = label; // 用标签作为唯一键
             double currentTime = ImGui::GetTime();
-            strcpy_s(GetBufferByName("api").buffer, configure.openAi.api_key.c_str());
-            strcpy_s(GetBufferByName("endPoint").buffer, configure.openAi._endPoint.c_str());
-            strcpy_s(GetBufferByName("model").buffer, configure.openAi.model.c_str());
-            strcpy_s(GetBufferByName("proxy").buffer, configure.openAi.proxy.c_str());
-            if (currentTime - lastInputTime > 0.5)
+
+            // 初始化状态（如果不存在）
+            if (showPasswords.find(key) == showPasswords.end())
             {
-                showPassword = false;
+                showPasswords[key] = false;
+                clicked[key] = false;
+                lastInputTimes[key] = 0.0;
             }
-            if (showPassword || clicked)
+
+            // 复制值到缓冲区
+            strcpy_s(GetBufferByName(buffer_name).buffer, value.c_str());
+
+            // 自动隐藏密码
+            if (currentTime - lastInputTimes[key] > 0.5)
             {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"OpenAI API Key"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer)))
+                showPasswords[key] = false;
+            }
+
+            // 根据状态显示输入框
+            if (showPasswords[key] || clicked[key])
+            {
+                if (ImGui::InputText(label, GetBufferByName(buffer_name).buffer, sizeof(input_buffer)))
                 {
-                    configure.openAi.api_key = GetBufferByName("api").buffer;
+                    value = GetBufferByName(buffer_name).buffer;
                 }
             }
             else
             {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"OpenAI API Key"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer),
+                if (ImGui::InputText(label, GetBufferByName(buffer_name).buffer, sizeof(input_buffer),
                                      ImGuiInputTextFlags_Password))
                 {
-                    configure.openAi.api_key = GetBufferByName("api").buffer;
-                    showPassword = true;
-                    lastInputTime = ImGui::GetTime();
+                    value = GetBufferByName(buffer_name).buffer;
+                    showPasswords[key] = true;
+                    lastInputTimes[key] = currentTime;
                 }
             }
+
+            // 眼睛按钮（切换密码显示）
             ImGui::SameLine();
-            ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
+            ImGui::PushID(("button_eye_" + key).c_str());
             if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
-                                   ImVec2(16, 16),
-                                   ImVec2(0, 0),
-                                   ImVec2(1, 1),
-                                   ImVec4(0, 0, 0, 0),
-                                   ImVec4(1, 1, 1, 1)))
+                                   ImVec2(16, 16), ImVec2(0, 0), ImVec2(1, 1),
+                                   ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1)))
             {
-                clicked = !clicked;
+                clicked[key] = !clicked[key];
             }
             ImGui::PopID();
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"OpenAI 模型"), GetBufferByName("model").buffer,
-                                 TEXT_BUFFER))
+        };
+
+        // 显示普通输入框的辅助函数
+        auto ShowTextInput = [&](const char* label, std::string& value, const char* buffer_name)
+        {
+            strcpy_s(GetBufferByName(buffer_name).buffer, value.c_str());
+            if (ImGui::InputText(label, GetBufferByName(buffer_name).buffer, TEXT_BUFFER))
             {
-                configure.openAi.model = GetBufferByName("model").buffer;
+                value = GetBufferByName(buffer_name).buffer;
             }
+        };
+
+        // 根据当前选择的模型显示相应配置
+        if (configure.openAi.enable)
+        {
+            // OpenAI配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"OpenAI API Key"), configure.openAi.api_key, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"OpenAI 模型"), configure.openAi.model, "model");
+
             ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用远程代理"), &configure.openAi.useWebProxy);
+
             if (configure.openAi.useWebProxy)
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"对OpenAI使用的代理"),
-                                     GetBufferByName("proxy").buffer,
-                                     TEXT_BUFFER))
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"对OpenAI使用的代理"), configure.openAi.proxy, "proxy");
+            }
+            else
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"远程接入点"), configure.openAi._endPoint, "endPoint");
+            }
+        }
+        else if (configure.qianwen.enable)
+        {
+            // 通义千问配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"通义千问 API Key"), configure.qianwen.api_key, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), configure.qianwen.model, "model");
+
+            // 添加通义千问模型选择下拉菜单
+            const char* models[] = {
+                "qwen-max", "qwen-plus", "qwen-turbo", "qwen-max-longcontext"
+            };
+            static int currentModel = 0;
+
+            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentModel]))
+            {
+                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
                 {
-                    configure.openAi.proxy = GetBufferByName("proxy").buffer;
-                }
-                else
-                {
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"远程接入点"),
-                                         GetBufferByName("endPoint").buffer,
-                                         TEXT_BUFFER))
+                    bool isSelected = (currentModel == i);
+                    if (ImGui::Selectable(models[i], isSelected))
                     {
-                        configure.openAi._endPoint = GetBufferByName("endPoint").buffer;
+                        currentModel = i;
+                        configure.qianwen.model = models[i];
+                        strcpy_s(GetBufferByName("model").buffer, configure.qianwen.model.c_str());
+                    }
+
+                    if (isSelected)
+                    {
+                        ImGui::SetItemDefaultFocus();
                     }
                 }
+                ImGui::EndCombo();
+            }
+
+            // 自定义端点设置
+            ShowTextInput(reinterpret_cast<const char*>(u8"API 端点 (可选)"), configure.qianwen.apiHost, "apiHost");
+
+            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：通义千问API需要阿里云DashScope API密钥，非通义大模型API密钥"));
+        }
+        else if (configure.mistral.enable)
+        {
+            // Mistral配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"Mistral API Key"), configure.mistral.api_key, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"Mistral 模型"), configure.mistral.model, "model");
+
+            // 模型选择下拉菜单
+            const char* models[] = {
+                "mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "open-mixtral-8x7b"
+            };
+            static int currentModel = 0;
+
+            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentModel]))
+            {
+                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
+                {
+                    bool isSelected = (currentModel == i);
+                    if (ImGui::Selectable(models[i], isSelected))
+                    {
+                        currentModel = i;
+                        configure.mistral.model = models[i];
+                        strcpy_s(GetBufferByName("model").buffer, configure.mistral.model.c_str());
+                    }
+
+                    if (isSelected)
+                    {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+        else if (configure.huoshan.enable)
+        {
+            // Mistral配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"火山引擎 API Key"), configure.huoshan.api_key, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.huoshan.model, "model");
+        }
+        else if (configure.sparkdesk.enable)
+        {
+            // 星火配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"星火 API Key"), configure.sparkdesk.api_key, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"模型版本"), configure.sparkdesk.model, "model");
+
+            // 添加星火模型选择下拉菜单
+            const char* models[] = {
+                "v1.5", "v2.0", "v3.0", "v3.5"
+            };
+            static int currentModel = 0;
+
+            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型版本"), models[currentModel]))
+            {
+                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
+                {
+                    bool isSelected = (currentModel == i);
+                    if (ImGui::Selectable(models[i], isSelected))
+                    {
+                        currentModel = i;
+                        configure.sparkdesk.model = models[i];
+                        strcpy_s(GetBufferByName("model").buffer, configure.sparkdesk.model.c_str());
+                    }
+
+                    if (isSelected)
+                    {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：星火API需要在讯飞开放平台申请，使用时需提供AppId、APIKey和APISecret"));
         }
         else if (configure.claude.enable)
         {
-            static bool showPassword = false, clicked = false;
-            static double lastInputTime = 0.0;
-            double currentTime = ImGui::GetTime();
-            strcpy_s(GetBufferByName("api").buffer, configure.claude.slackToken.c_str());
-            if (currentTime - lastInputTime > 0.5)
+            // Claude Slack接口配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"Claude Token"), configure.claude.slackToken, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"Claude ID"), configure.claude.channelID, "channelID");
+        }
+        else if (configure.chatglm.enable)
+        {
+            // ChatGLM配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"ChatGLM API Key"), configure.chatglm.api_key, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"模型版本"), configure.chatglm.model, "model");
+
+            // 添加ChatGLM模型选择下拉菜单
+            const char* models[] = {
+                "chatglm_turbo", "chatglm_pro", "chatglm_std", "glm-4", "glm-4v"
+            };
+            static int currentGLMModel = 0;
+
+            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentGLMModel]))
             {
-                showPassword = false;
-            }
-            if (showPassword || clicked)
-            {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"Claude Token"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer)))
+                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
                 {
-                    configure.claude.slackToken = GetBufferByName("api").buffer;
+                    bool isSelected = (currentGLMModel == i);
+                    if (ImGui::Selectable(models[i], isSelected))
+                    {
+                        currentGLMModel = i;
+                        configure.chatglm.model = models[i];
+                        strcpy_s(GetBufferByName("model").buffer, configure.chatglm.model.c_str());
+                    }
+
+                    if (isSelected)
+                    {
+                        ImGui::SetItemDefaultFocus();
+                    }
                 }
+                ImGui::EndCombo();
             }
-            else
+
+            // 自定义端点设置
+            ShowTextInput(reinterpret_cast<const char*>(u8"自定义API端点"), configure.chatglm.apiHost, "apiHost");
+
+            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：ChatGLM API需要在智谱AI开放平台申请"));
+        }
+        // 在配置部分添加腾讯混元的配置界面
+        else if (configure.hunyuan.enable)
+        {
+            // 腾讯混元配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"腾讯云SecretId"), configure.hunyuan.api_key, "api");
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"腾讯云SecretKey"), configure.hunyuan.apiPath, "apiPath");
+            ShowTextInput(reinterpret_cast<const char*>(u8"应用AppId"), configure.hunyuan.apiHost, "apiHost");
+            ShowTextInput(reinterpret_cast<const char*>(u8"模型版本"), configure.hunyuan.model, "model");
+
+            // 添加混元模型选择下拉菜单
+            const char* models[] = {
+                "hunyuan-pro", "hunyuan-standard", "hunyuan-lite"
+            };
+            static int currentHunyuanModel = 0;
+
+            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentHunyuanModel]))
             {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"Claude Token"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer),
-                                     ImGuiInputTextFlags_Password))
+                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
                 {
-                    configure.claude.slackToken = GetBufferByName("api").buffer;
-                    showPassword = true;
-                    lastInputTime = ImGui::GetTime();
+                    bool isSelected = (currentHunyuanModel == i);
+                    if (ImGui::Selectable(models[i], isSelected))
+                    {
+                        currentHunyuanModel = i;
+                        configure.hunyuan.model = models[i];
+                        strcpy_s(GetBufferByName("model").buffer, configure.hunyuan.model.c_str());
+                    }
+
+                    if (isSelected)
+                    {
+                        ImGui::SetItemDefaultFocus();
+                    }
                 }
+                ImGui::EndCombo();
             }
-            ImGui::SameLine();
-            ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
-            if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
-                                   ImVec2(16, 16),
-                                   ImVec2(0, 0),
-                                   ImVec2(1, 1),
-                                   ImVec4(0, 0, 0, 0),
-                                   ImVec4(1, 1, 1, 1)))
+
+            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：腾讯混元API需要腾讯云账号和开通的混元服务"));
+        }
+        // 在配置部分添加百川AI的配置界面
+        else if (configure.baichuan.enable)
+        {
+            // 百川AI配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"百川 API Key"), configure.baichuan.api_key, "api");
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"百川 Secret Key"), configure.baichuan.apiPath, "apiPath");
+            ShowTextInput(reinterpret_cast<const char*>(u8"模型版本"), configure.baichuan.model, "model");
+
+            // 添加百川模型选择下拉菜单
+            const char* models[] = {
+                "Baichuan4", "Baichuan3-Turbo", "Baichuan2-Turbo", "Baichuan2-53B"
+            };
+            static int currentBaichuanModel = 0;
+
+            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentBaichuanModel]))
             {
-                clicked = !clicked;
+                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
+                {
+                    bool isSelected = (currentBaichuanModel == i);
+                    if (ImGui::Selectable(models[i], isSelected))
+                    {
+                        currentBaichuanModel = i;
+                        configure.baichuan.model = models[i];
+                        strcpy_s(GetBufferByName("model").buffer, configure.baichuan.model.c_str());
+                    }
+
+                    if (isSelected)
+                    {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
             }
-            ImGui::PopID();
-            /*            ImGui::InputText(reinterpret_cast<const char *>(u8"用户名"), configure.claude.userName.data(),
-                                         TEXT_BUFFER);
 
+            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：百川AI需要在百川大模型开放平台申请并创建应用获取密钥"));
+        }
+        else if (configure.claudeAPI.enable)
+        {
+            // Claude API配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"Claude API Key"), configure.claudeAPI.apiKey, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"Claude 模型"), configure.claudeAPI.model, "model");
+            ShowTextInput(reinterpret_cast<const char*>(u8"API 版本"), configure.claudeAPI.apiVersion, "version");
+            ShowTextInput(reinterpret_cast<const char*>(u8"API 端点"), configure.claudeAPI._endPoint, "endPoint");
 
-                        ImGui::InputText("Claude Cookie",
-                                         configure.claude.cookies.data(),
-                                         TEXT_BUFFER);*/
-
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"Claude ID"), configure.claude.channelID.data(),
-                                 TEXT_BUFFER))
-            {
-            }
+            // 添加提示信息
+            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：Claude API 必须提供 API 版本号，默认为 2023-06-01"));
         }
         else if (configure.gemini.enable)
         {
-            static bool showPassword = false, clicked = false;
-            static double lastInputTime = 0.0;
-            double currentTime = ImGui::GetTime();
-            strcpy_s(GetBufferByName("api").buffer, configure.gemini._apiKey.c_str());
-            strcpy_s(GetBufferByName("endPoint").buffer, configure.gemini._endPoint.c_str());
-            strcpy_s(GetBufferByName("model").buffer, configure.gemini.model.c_str());
-            if (currentTime - lastInputTime > 0.5)
-            {
-                showPassword = false;
-            }
-            if (showPassword || clicked)
-            {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer)))
-                {
-                    configure.gemini._apiKey = GetBufferByName("api").buffer;
-                }
-            }
-            else
-            {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer),
-                                     ImGuiInputTextFlags_Password))
-                {
-                    configure.gemini._apiKey = GetBufferByName("api").buffer;
-                    showPassword = true;
-                    lastInputTime = ImGui::GetTime();
-                }
-            }
-            ImGui::SameLine();
-            ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
-            if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
-                                   ImVec2(16, 16),
-                                   ImVec2(0, 0),
-                                   ImVec2(1, 1),
-                                   ImVec4(0, 0, 0, 0),
-                                   ImVec4(1, 1, 1, 1)))
-            {
-                clicked = !clicked;
-            }
-            ImGui::PopID();
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"远程接入点"), GetBufferByName("endPoint").buffer,
-                                 TEXT_BUFFER))
-            {
-                configure.gemini._endPoint = GetBufferByName("endPoint").buffer;
-            }
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
-                                 TEXT_BUFFER))
-            {
-                configure.gemini.model = GetBufferByName("model").buffer;
-            }
+            // Gemini配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"API Key"), configure.gemini._apiKey, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"远程接入点"), configure.gemini._endPoint, "endPoint");
+            ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), configure.gemini.model, "model");
         }
         else if (configure.grok.enable)
         {
-            static bool showPassword = false, clicked = false;
-            static double lastInputTime = 0.0;
-            double currentTime = ImGui::GetTime();
-            strcpy_s(GetBufferByName("api").buffer, configure.grok.api_key.c_str());
-            strcpy_s(GetBufferByName("model").buffer, configure.grok.model.c_str());
-            if (currentTime - lastInputTime > 0.5)
-            {
-                showPassword = false;
-            }
-            if (showPassword || clicked)
-            {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer)))
-                {
-                    configure.grok.api_key = GetBufferByName("api").buffer;
-                }
-            }
-            else
-            {
-                if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
-                                     GetBufferByName("api").buffer,
-                                     sizeof(input_buffer),
-                                     ImGuiInputTextFlags_Password))
-                {
-                    configure.grok.api_key = GetBufferByName("api").buffer;
-                    showPassword = true;
-                    lastInputTime = ImGui::GetTime();
-                }
-            }
-            ImGui::SameLine();
-            ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
-            if (ImGui::ImageButton("##" + (TextureCache["eye"]), (TextureCache["eye"]),
-                                   ImVec2(16, 16),
-                                   ImVec2(0, 0),
-                                   ImVec2(1, 1),
-                                   ImVec4(0, 0, 0, 0),
-                                   ImVec4(1, 1, 1, 1)))
-            {
-                clicked = !clicked;
-            }
-            ImGui::PopID();
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
-                                 TEXT_BUFFER))
-            {
-                configure.grok.model = GetBufferByName("model").buffer;
-            }
+            // Grok配置
+            ShowPasswordInput(reinterpret_cast<const char*>(u8"API Key"), configure.grok.api_key, "api");
+            ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), configure.grok.model, "model");
         }
-
-        for (auto& [name,cdata] : configure.customGPTs)
+        else
         {
-            if (cdata.enable)
+            // 自定义GPT配置
+            for (auto& [name, cdata] : configure.customGPTs)
             {
-                static bool showPassword = false, clicked = false;
-                static double lastInputTime = 0.0;
-                double currentTime = ImGui::GetTime();
-                ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用本地模型"), &cdata.useLocalModel);
-                if (!cdata.useLocalModel)
+                if (cdata.enable)
                 {
-                    strcpy_s(GetBufferByName("api").buffer, cdata.api_key.c_str());
-                    strcpy_s(GetBufferByName("apiHost").buffer, cdata.apiHost.c_str());
-                    strcpy_s(GetBufferByName("apiPath").buffer, cdata.apiPath.c_str());
-                    strcpy_s(GetBufferByName("model").buffer, cdata.model.c_str());
-                    if (currentTime - lastInputTime > 0.5)
+                    // 本地模型切换
+                    ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用本地模型"), &cdata.useLocalModel);
+
+                    if (!cdata.useLocalModel)
                     {
-                        showPassword = false;
-                    }
-                    if (showPassword || clicked)
-                    {
-                        if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
-                                             GetBufferByName("api").buffer,
-                                             sizeof(input_buffer)))
-                        {
-                            cdata.api_key = GetBufferByName("api").buffer;
-                        }
+                        // 远程API配置
+                        ShowPasswordInput(reinterpret_cast<const char*>(u8"API Key"), cdata.api_key, "api");
+                        ShowTextInput(reinterpret_cast<const char*>(u8"API 主机"), cdata.apiHost, "apiHost");
+                        ShowTextInput(reinterpret_cast<const char*>(u8"API 路径"), cdata.apiPath, "apiPath");
+                        ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), cdata.model, "model");
                     }
                     else
                     {
-                        if (ImGui::InputText(reinterpret_cast<const char*>(u8"API Key"),
-                                             GetBufferByName("api").buffer,
-                                             sizeof(input_buffer),
-                                             ImGuiInputTextFlags_Password))
+                        // 本地模型配置
+                        ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), cdata.llamaData.model, "model");
+
+                        // 上下文大小设置
+                        ImGui::InputInt(reinterpret_cast<const char*>(u8"上下文大小"), &cdata.llamaData.contextSize);
+                        if (cdata.llamaData.contextSize < 512)
                         {
-                            cdata.api_key = GetBufferByName("api").buffer;
-                            showPassword = true;
-                            lastInputTime = ImGui::GetTime();
+                            cdata.llamaData.contextSize = 512;
+                        }
+
+                        // 最大生成长度设置
+                        ImGui::InputInt(reinterpret_cast<const char*>(u8"最大生成长度"), &cdata.llamaData.maxTokens);
+                        if (cdata.llamaData.maxTokens < 256)
+                        {
+                            cdata.llamaData.maxTokens = 256;
                         }
                     }
-                    ImGui::SameLine();
-                    ImGui::PushID(("button_" + std::to_string(TextureCache["eye"])).c_str());
-                    if (ImGui::ImageButton("##" + TextureCache["eye"], TextureCache["eye"],
-                                           ImVec2(16, 16),
-                                           ImVec2(0, 0),
-                                           ImVec2(1, 1),
-                                           ImVec4(0, 0, 0, 0),
-                                           ImVec4(1, 1, 1, 1)))
+
+                    // 删除按钮
+                    if (ImGui::Button(reinterpret_cast<const char*>(u8"删除此API"), ImVec2(120, 30)))
                     {
-                        clicked = !clicked;
-                    }
-                    ImGui::PopID();
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 主机"),
-                                         GetBufferByName("apiHost").buffer,
-                                         TEXT_BUFFER))
-                    {
-                        cdata.apiHost = GetBufferByName("apiHost").buffer;
-                    }
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"API 路径"),
-                                         GetBufferByName("apiPath").buffer,
-                                         TEXT_BUFFER))
-                    {
-                        cdata.apiPath = GetBufferByName("apiPath").buffer;
-                    }
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
-                                         TEXT_BUFFER))
-                    {
-                        cdata.model = GetBufferByName("model").buffer;
-                    }
-                }
-                else
-                {
-                    strcpy_s(GetBufferByName("model").buffer, cdata.llamaData.model.c_str());
-                    if (ImGui::InputText(reinterpret_cast<const char*>(u8"模型名称"), GetBufferByName("model").buffer,
-                                         TEXT_BUFFER))
-                    {
-                        cdata.llamaData.model = GetBufferByName("model").buffer;
-                    }
-                    ImGui::InputInt(reinterpret_cast<const char*>(u8"上下文大小"), &cdata.llamaData.contextSize);
-                    if (cdata.llamaData.contextSize < 512)
-                    {
-                        cdata.llamaData.contextSize = 512;
+                        cdata.enable = false;
+                        configure.customGPTs.erase(name);
                     }
 
-                    ImGui::InputInt(reinterpret_cast<const char*>(u8"最大生成长度"), &cdata.llamaData.maxTokens);
-                    if (cdata.llamaData.maxTokens < 256)
-                    {
-                        cdata.llamaData.maxTokens = 256;
-                    }
-                }
-                if (ImGui::Button(reinterpret_cast<const char*>(u8"删除此API"), ImVec2(120, 30)))
-                {
-                    cdata.enable = false;
-                    configure.customGPTs.erase(name);
+                    break; // 只显示当前启用的自定义API
                 }
             }
         }
+
         ImGui::EndChild();
 
+        // 应用按钮
         if (ImGui::Button(reinterpret_cast<const char*>(u8"切换模型"), ImVec2(120, 30)))
         {
             CreateBot();
             Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
         }
 
+        // 弹出窗口：添加新配置
         if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"请输入新的配置名字"), NULL,
                                    ImGuiWindowFlags_AlwaysAutoResize))
         {
-            ImGui::InputText(reinterpret_cast<const char*>(u8"配置名字"), GetBufferByName("newName").buffer,
-                             TEXT_BUFFER);
+            ImGui::InputText(reinterpret_cast<const char*>(u8"配置名字"), GetBufferByName("newName").buffer, TEXT_BUFFER);
+
             if (ImGui::Button(reinterpret_cast<const char*>(u8"确定"), ImVec2(120, 0)))
             {
                 std::string name = GetBufferByName("newName").buffer;
@@ -2430,14 +2625,15 @@ void Application::RenderConfigBox()
                     name = "NewConfig_" + std::to_string(configure.customGPTs.size());
                 }
                 configure.customGPTs[name] = GPTLikeCreateInfo();
-
                 ImGui::CloseCurrentPopup();
             }
+
             ImGui::SameLine();
             if (ImGui::Button(reinterpret_cast<const char*>(u8"取消"), ImVec2(120, 0)))
             {
                 ImGui::CloseCurrentPopup();
             }
+
             ImGui::EndPopup();
         }
     }

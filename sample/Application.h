@@ -19,7 +19,7 @@
 #endif
 #include "stb_image_write.h"
 #include "stb_image.h"
-#include "ChatBot.h"
+#include "Impls/Bots.h"
 #include "VoiceToText.h"
 #include "Translate.h"
 #include "Recorder.h"
@@ -31,7 +31,7 @@
 #include "sol/sol.hpp"
 
 #define TEXT_BUFFER 4096
-const std::string VERSION = reinterpret_cast<const char*>(u8"ChatBot v1.6.3");
+const std::string VERSION = reinterpret_cast<const char*>(u8"ChatBot v2.0.0");
 extern std::vector<std::string> scommands;
 extern bool cpshow;
 // 定义一个委托类型，它接受一个空参数列表，返回类型为 void

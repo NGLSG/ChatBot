@@ -83,17 +83,19 @@ find_package(OpenSSL REQUIRED)
 file(GLOB SOURCES
         ../src/*.c*
         *.c*
+        ../src/Impls/*.c*
 )
 
 file(GLOB HEADERS
         *.h*
         ../include/*.h*
+        ../include/Impls/*.h*
 )
 
 add_definitions(-DNOCRYPT)
 
-add_executable(CyberGirl ${SOURCES} ${HEADERS})
-target_include_directories(CyberGirl PRIVATE
+add_executable(ChatBot ${SOURCES} ${HEADERS})
+target_include_directories(ChatBot PRIVATE
         ../include
         Vendor/llava
         PRIVATE ${LUA_INCLUDE_DIR}
@@ -112,17 +114,17 @@ set_target_properties(llama ggml ggml-base PROPERTIES
 
 # 向主程序添加定义，以便程序知道使用何种后端
 if(GGML_CUDA)  # 更新为使用新的选项名称
-    target_compile_definitions(CyberGirl PRIVATE HAVE_CUDA=1)
+    target_compile_definitions(ChatBot PRIVATE HAVE_CUDA=1)
     if(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL 12.0)
-        target_compile_definitions(CyberGirl PRIVATE HAVE_CUDA12=1)
+        target_compile_definitions(ChatBot PRIVATE HAVE_CUDA12=1)
     endif()
 elseif(GGML_VULKAN)
-    target_compile_definitions(CyberGirl PRIVATE HAVE_VULKAN=1)
+    target_compile_definitions(ChatBot PRIVATE HAVE_VULKAN=1)
 else()
-    target_compile_definitions(CyberGirl PRIVATE CPU_ONLY=1)
+    target_compile_definitions(ChatBot PRIVATE CPU_ONLY=1)
 endif()
 
-target_link_libraries(CyberGirl
+target_link_libraries(ChatBot
         PRIVATE ggml
         PRIVATE llama
         PRIVATE portaudio
@@ -144,15 +146,15 @@ if(WIN32)
     # Windows系统资源处理
     if(MSVC)
         # Visual Studio编译器
-        target_sources(CyberGirl PRIVATE
+        target_sources(ChatBot PRIVATE
                 Resources/Info.rc
                 Resources/icon.ico
         )
         # 为Visual Studio设置图标
-        set_property(TARGET CyberGirl PROPERTY VS_DEBUGGER_COMMAND_ARGUMENTS "")
+        set_property(TARGET ChatBot PROPERTY VS_DEBUGGER_COMMAND_ARGUMENTS "")
     else()
         # MinGW或其他Windows编译器
-        target_sources(CyberGirl PRIVATE
+        target_sources(ChatBot PRIVATE
                 Resources/Info.rc
         )
         # MinGW需要特殊处理资源编译
@@ -161,14 +163,14 @@ if(WIN32)
     endif()
 elseif(APPLE)
     # macOS系统资源处理
-    set_target_properties(CyberGirl PROPERTIES
+    set_target_properties(ChatBot PROPERTIES
             MACOSX_BUNDLE TRUE
             MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Resources/Info.plist
             MACOSX_BUNDLE_ICON_FILE "icon.icns"
-            MACOSX_BUNDLE_BUNDLE_NAME "CyberGirl"
+            MACOSX_BUNDLE_BUNDLE_NAME "ChatBot"
     )
     # 添加icns图标到应用包
-    target_sources(CyberGirl PRIVATE
+    target_sources(ChatBot PRIVATE
             Resources/icon.icns
     )
     # 确保图标文件被正确复制到应用包中
@@ -181,16 +183,16 @@ else()
     # Linux通常使用安装规则来处理资源文件
     # 创建.desktop文件
     configure_file(
-            ${CMAKE_CURRENT_SOURCE_DIR}/Resources/CyberGirl.desktop.in
-            ${CMAKE_CURRENT_BINARY_DIR}/CyberGirl.desktop
+            ${CMAKE_CURRENT_SOURCE_DIR}/Resources/ChatBot.desktop.in
+            ${CMAKE_CURRENT_BINARY_DIR}/ChatBot.desktop
             @ONLY
     )
     # 安装图标和桌面快捷方式
     install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/Resources/icon.png
             DESTINATION share/icons/hicolor/128x128/apps
-            RENAME cybergirl.png
+            RENAME ChatBot.png
     )
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/CyberGirl.desktop
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ChatBot.desktop
             DESTINATION share/applications
     )
 endif()
@@ -209,27 +211,27 @@ if (MSVC)
     # 编译选项
     if (CMAKE_BUILD_TYPE STREQUAL "Debug")
         # Debug模式
-        target_compile_options(CyberGirl PRIVATE "/W0" "/bigobj" "/utf-8" "/MDd" "/Od" "/Zi" "/RTC1")
+        target_compile_options(ChatBot PRIVATE "/W0" "/bigobj" "/utf-8" "/MDd" "/Od" "/Zi" "/RTC1")
     elseif (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
         # RelWithDebInfo模式
-        target_compile_options(CyberGirl PRIVATE "/W0" "/bigobj" "/utf-8" "/MD" "/O2" "/Zi" "/DEBUG:FULL")
-        target_link_options(CyberGirl PRIVATE "/DEBUG:FULL" "/INCREMENTAL:NO")
+        target_compile_options(ChatBot PRIVATE "/W0" "/bigobj" "/utf-8" "/MD" "/O2" "/Zi" "/DEBUG:FULL")
+        target_link_options(ChatBot PRIVATE "/DEBUG:FULL" "/INCREMENTAL:NO")
     else ()
         # Release模式
-        target_compile_options(CyberGirl PRIVATE "/W0" "/bigobj" "/utf-8" "/MD" "/O2")
+        target_compile_options(ChatBot PRIVATE "/W0" "/bigobj" "/utf-8" "/MD" "/O2")
     endif ()
 endif ()
 
 # 资源处理
 file(GLOB_RECURSE RESOURCES "Resources/*")
-set_target_properties(CyberGirl PROPERTIES
+set_target_properties(ChatBot PROPERTIES
         RESOURCE "${RESOURCES}"
         # 确保主可执行文件输出到正确位置
         RUNTIME_OUTPUT_DIRECTORY "${OUTPUT_DIR}"
 )
 
 # 资源文件输出路径设置
-set_target_properties(CyberGirl PROPERTIES
+set_target_properties(ChatBot PROPERTIES
         VS_RESOURCE_OUTPUT_DIRECTORY "${OUTPUT_DIR}/Resources"
         XCODE_ATTRIBUTE_RESOURCE_OUTPUT_DIRECTORY "${OUTPUT_DIR}/Resources"
 )
@@ -237,11 +239,11 @@ set_target_properties(CyberGirl PROPERTIES
 # 创建启动器脚本，添加DLL搜索路径
 if(WIN32)
     file(GENERATE OUTPUT "${OUTPUT_DIR}/启动.bat" CONTENT
-            "@echo off\nrem 设置DLL搜索路径\nset PATH=%~dp0Bin;%PATH%\nrem 启动应用程序\n\"%~dp0CyberGirl.exe\" %*\n"
+            "@echo off\nrem 设置DLL搜索路径\nset PATH=%~dp0Bin;%PATH%\nrem 启动应用程序\n\"%~dp0ChatBot.exe\" %*\n"
     )
 endif()
 
 # 在程序中添加代码，使其能够找到Bin目录中的DLL
-target_compile_definitions(CyberGirl PRIVATE
+target_compile_definitions(ChatBot PRIVATE
         DLL_PATH="${CMAKE_BINARY_DIR}/Chatbot/Bin"
 )

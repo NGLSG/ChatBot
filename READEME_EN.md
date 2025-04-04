@@ -31,7 +31,7 @@ _✨ All-in-one AI interaction solution: Voice wake-up, multimodal dialogue, loc
     </td>
     <td>
       <h3>🔮 Multi-API Support</h3>
-      <p>Supports OpenAI, Claude, iFlytek Spark, ChatGLM, Tongyi Qianwen, Tencent Hunyuan, Baichuan AI, Gemini, and more</p>
+      <p>Supports OpenAI, Claude, iFlytek Spark, Huoshan AI, Tongyi Qianwen, Tencent Hunyuan, Baichuan AI, Gemini, and more</p>
     </td>
   </tr>
   <tr>
@@ -112,6 +112,7 @@ git clone https://github.com/Microsoft/vcpkg.git
 cd vcpkg
 ./bootstrap-vcpkg.bat
 ```
+
 </details>
 
 <details>
@@ -122,6 +123,7 @@ git clone https://github.com/Microsoft/vcpkg.git
 cd vcpkg
 ./bootstrap-vcpkg.sh
 ```
+
 </details>
 
 #### Installing Dependencies
@@ -155,14 +157,19 @@ cmake --build .
 This project supports the following API types:
 
 - **Public API Services**
-   - OpenAI (GPT series)
-   - Claude (Anthropic)
-   - Google Gemini
-   - OpenAI-compatible API services
+    - OpenAI (GPT series)
+    - Claude (Anthropic)
+    - Google Gemini
+    - iFlytek Spark
+    - Huoshan AI
+    - Tongyi Qianwen
+    - Tencent Hunyuan
+    - Baichuan AI
+    - OpenAI-compatible API services
 
 - **Local Models**
-   - Ollama (supports various open-source models)
-   - LLama (various local models)
+    - Ollama (supports various open-source models)
+    - LLama (various local models)
 
 ## 🔗 Related Links
 
@@ -184,4 +191,5 @@ If you like this project, please give us a star! Your support motivates us to ke
 
 ## 📄 License
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0). This means you are free to use, modify, and distribute the software, but any derivative works must also be released under the same license.
+This project is licensed under the [GNU General Public License v3.0](LICENSE) (GPL-3.0). This means you are free to use,
+modify, and distribute the software, but any derivative works must also be released under the same license.
