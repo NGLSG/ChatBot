@@ -1,6 +1,8 @@
 ﻿#define NOMINMAX
 #include "utils.h"
 
+#include <SDL.h>
+
 #include "../sample/Application.h"
 #include "ChatBot.h"
 #include "Downloader.h"

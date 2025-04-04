@@ -38,10 +38,11 @@ private:
 };
 
 //日志
-#define LogTrace(...)        Logger::GetCoreLogger()->trace(__VA_ARGS__)
-#define LogInfo(...)         Logger::GetCoreLogger()->info(__VA_ARGS__)
-#define LogWarn(...)         Logger::GetCoreLogger()->warn(__VA_ARGS__)
-#define LogError(...)        Logger::GetCoreLogger()->error(__VA_ARGS__)
-#define LogFatal(...)        Logger::GetCoreLogger()->critical(__VA_ARGS__)
+#define LogTrace(...) SPDLOG_LOGGER_TRACE(::Logger::GetCoreLogger(), __VA_ARGS__)
+#define LogInfo(...) SPDLOG_LOGGER_INFO(::Logger::GetCoreLogger(), __VA_ARGS__)
+#define LogWarn(...) SPDLOG_LOGGER_WARN(::Logger::GetCoreLogger(), __VA_ARGS__)
+#define LogError(...) SPDLOG_LOGGER_ERROR(::Logger::GetCoreLogger(), __VA_ARGS__)
+#define LogFatal(...) SPDLOG_LOGGER_CRITICAL(::Logger::GetCoreLogger(), __VA_ARGS__)
+
 
 #endif

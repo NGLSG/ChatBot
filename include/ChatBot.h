@@ -269,19 +269,7 @@ public:
           const std::string& sysr =
               "You are LLama, a large language model trained by OpenSource. Respond conversationally.");
 
-    ~LLama()
-    {
-        try
-        {
-            if (model)
-                llama_model_free(model);
-            if (ctx)
-                llama_free(ctx);
-        }
-        catch (...)
-        {
-        }
-    }
+    ~LLama();
 
     std::string Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid) override;
     void Reset() override;
@@ -297,10 +285,7 @@ private:
         std::string role;
         std::string content;
 
-        llama_chat_message To()
-        {
-            return {role.c_str(), _strdup(content.c_str())};
-        }
+        llama_chat_message To();
     };
 
 
@@ -309,15 +294,7 @@ private:
         std::vector<ChatMessage> messages;
         int prev_len = 0;
 
-        std::vector<llama_chat_message> To()
-        {
-            std::vector<llama_chat_message> msgs;
-            for (auto& m : messages)
-            {
-                msgs.push_back(m.To());
-            }
-            return msgs;
-        }
+        std::vector<llama_chat_message> To();
     };
 
     LLamaCreateInfo llamaData;
@@ -332,83 +309,9 @@ private:
     const std::string suffix = ".dat";
     std::unordered_map<std::string, chatInfo> history;
 
-    static uint16_t GetGPUMemory()
-    {
-        // Create Vulkan application info
-        vk::ApplicationInfo appInfo(
-            "GPU Memory Query", VK_MAKE_VERSION(1, 0, 0),
-            "No Engine", VK_MAKE_VERSION(1, 0, 0),
-            VK_API_VERSION_1_0
-        );
+    static uint16_t GetGPUMemory();
 
-        // Create Vulkan instance
-        vk::InstanceCreateInfo instanceCreateInfo({}, &appInfo);
-        vk::Instance instance = vk::createInstance(instanceCreateInfo);
-
-        // Enumerate physical devices
-        std::vector<vk::PhysicalDevice> physicalDevices = instance.enumeratePhysicalDevices();
-        if (physicalDevices.empty())
-        {
-            LogError("No GPU physical devices found");
-            return -1;
-        }
-
-        // Use the first (default) physical device
-        vk::PhysicalDevice physicalDevice = physicalDevices[0];
-
-        // Get properties of the default physical device
-        vk::PhysicalDeviceProperties deviceProperties = physicalDevice.getProperties();
-        std::cout << "Device Name: " << deviceProperties.deviceName << std::endl;
-
-        // Retrieve memory properties for the default device
-        vk::PhysicalDeviceMemoryProperties memoryProperties = physicalDevice.getMemoryProperties();
-
-        vk::DeviceSize totalLocalMemory = 0;
-        // Sum up all heaps flagged as device local (GPU memory)
-        for (const auto& heap : memoryProperties.memoryHeaps)
-        {
-            if (heap.flags & vk::MemoryHeapFlagBits::eDeviceLocal)
-            {
-                totalLocalMemory += heap.size;
-            }
-        }
-        std::cout << "Total GPU Memory: " << totalLocalMemory / (1024 * 1024) << " MB" << std::endl;
-
-        // Cleanup Vulkan instance
-        instance.destroy();
-
-        return static_cast<uint16_t>(totalLocalMemory / (1024 * 1024));
-    }
-
-    static uint16_t GetGPULayer()
-    {
-        //获取当前显卡的显存
-        uint16_t gpu_memory = GetGPUMemory();
-        if (gpu_memory >= 24000) //24GB
-        {
-            return 60;
-        }
-        else if (gpu_memory >= 16000) //16GB
-        {
-            return 40;
-        }
-        else if (gpu_memory >= 8000) //8GB
-        {
-            return 20;
-        }
-        else if (gpu_memory >= 4000) //4GB
-        {
-            return 10;
-        }
-        else if (gpu_memory >= 2000) //2GB
-        {
-            return 5;
-        }
-        else
-        {
-            return 0;
-        }
-    }
+    static uint16_t GetGPULayer();
 };
 
 

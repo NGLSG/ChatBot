@@ -10,7 +10,13 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <regex>
+#include <vulkan/vulkan.h>
 #include <GLFW/glfw3.h>
+
+// 如果使用 Windows 平台，还需要这些额外包含
+#ifdef _WIN32
+#include <GLFW/glfw3native.h>
+#endif
 #include "stb_image_write.h"
 #include "stb_image.h"
 #include "ChatBot.h"
