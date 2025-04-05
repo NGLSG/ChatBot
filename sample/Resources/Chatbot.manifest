@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <!-- 应用程序标识信息 -->
+  <assemblyIdentity type="win32" name="ChatBot" version="2.0.0"/>
+
+  <!-- Windows通用控件依赖 -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
+                        processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+    </dependentAssembly>
+  </dependency>
+
+  <!-- 应用程序设置 -->
+  <application>
+    <!-- 添加DPI感知设置 -->
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>
+      <!-- 允许处理长路径 -->
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+
+  <!-- 添加bin目录作为DLL搜索路径 -->
+  <file name="ChatBot.exe">
+    <activatableClass xmlns="urn:schemas-microsoft-com:winrt.v1"
+                     threadingModel="both" fileName="bin"/>
+  </file>
+
+  <!-- 添加程序执行目录作为DLL搜索路径 -->
+  <file name="*">
+    <activatableClass xmlns="urn:schemas-microsoft-com:winrt.v1"
+                     threadingModel="both" fileName="."/>
+  </file>
+
+  <!-- 启用安全DLL搜索模式的同时允许自定义搜索路径 -->
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <!-- 使用应用程序兼容性设置来影响DLL搜索行为 -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10/11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+    </application>
+    <windowsSettings>
+      <!-- 启用DLL重定向 -->
+      <heapType xmlns="http://schemas.microsoft.com/SMI/2020/WindowsSettings">SegmentHeap</heapType>
+    </windowsSettings>
+  </compatibility>
+</assembly>

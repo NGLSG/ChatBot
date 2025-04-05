@@ -854,122 +854,101 @@ void Application::DisplayInputText(Ref<Chat> chat, bool edit)
                 ImGui::PopID();
 
                 ImGui::SameLine();
-                ImGui::PushID(("del_button_" + std::to_string(chat->timestamp)).c_str());
-                if (ImGui::ImageButton(("del_button_" + std::to_string(chat->timestamp)).c_str(),
-                                       TextureCache["del"],
-                                       ImVec2(16, 16)))
+                if (!chat_history.empty() && chat_history.back() && !chat_history.back()->talking)
                 {
-                    // 查找要删除的聊天记录在历史中的位置
-                    auto it = ranges::find(chat_history, chat);
-                    if (it != chat_history.end())
+                    ImGui::PushID(("del_button_" + std::to_string(chat->timestamp)).c_str());
+                    if (ImGui::ImageButton(("del_button_" + std::to_string(chat->timestamp)).c_str(),
+                                           TextureCache["del"],
+                                           ImVec2(16, 16)))
                     {
-                        // 检查节点是否有历史记录
-                        if (!chat->history.empty())
+                        bool flag = true;
+                        // 查找要删除的聊天记录在历史中的位置
+                        auto it = ranges::find(chat_history, chat);
+                        if (it != chat_history.end())
                         {
-                            // 如果有历史记录，则只删除当前版本对应的内容和子节点
-
-                            // 删除当前版本对应的子节点
-                            if (chat->currentVersionIndex < chat->children.size())
+                            // 检查节点是否有历史记录
+                            if (chat->history.size() > 1)
                             {
-                                auto childIt = chat->children.begin() + chat->currentVersionIndex;
-                                if (childIt != chat->children.end())
+                                if (chat->currentVersionIndex < chat->children.size())
                                 {
-                                    chat->children.erase(childIt);
+                                    auto childIt = chat->children.begin() + chat->currentVersionIndex;
+                                    if (childIt != chat->children.end())
+                                    {
+                                        chat->children.erase(childIt);
+                                    }
+                                }
+
+                                if (!chat->history.empty())
+                                {
+                                    int currentIndex = chat->currentVersionIndex;
+
+                                    if (currentIndex < chat->history.size())
+                                    {
+                                        chat->history.erase(chat->history.begin() + currentIndex);
+                                    }
+
+                                    if (currentIndex > 0)
+                                    {
+                                        chat->currentVersionIndex--;
+                                    }
+                                    else if (chat->history.empty())
+                                    {
+                                        chat->currentVersionIndex = 0;
+                                    }
+
+                                    // 更新内容为当前索引对应的历史记录内容
+                                    if (!chat->history.empty() && chat->currentVersionIndex < chat->history.size())
+                                    {
+                                        chat->content = chat->history[chat->currentVersionIndex];
+                                    }
+                                    // 如果没有历史记录了，则重置内容
+                                    else if (chat->history.empty())
+                                    {
+                                        chat->content = "..."; // 默认内容
+                                    }
                                 }
                             }
-
-                            // 处理历史记录删除和索引调整
-                            if (!chat->history.empty())
-                            {
-                                // 获取当前索引
-                                int currentIndex = chat->currentVersionIndex;
-
-                                // 删除当前版本的历史记录
-                                if (currentIndex < chat->history.size())
-                                {
-                                    chat->history.erase(chat->history.begin() + currentIndex);
-                                }
-
-                                // 索引调整规则：如果删除的是第一个版本(index=0)，索引不变，否则索引前移一位
-                                if (currentIndex > 0)
-                                {
-                                    chat->currentVersionIndex--;
-                                }
-                                // 若删除的是第一个版本，且还有剩余历史记录，索引保持为0
-                                else if (chat->history.empty())
-                                {
-                                    chat->currentVersionIndex = 0;
-                                }
-
-                                // 更新内容为当前索引对应的历史记录内容
-                                if (!chat->history.empty() && chat->currentVersionIndex < chat->history.size())
-                                {
-                                    chat->content = chat->history[chat->currentVersionIndex];
-                                }
-                                // 如果没有历史记录了，则重置内容
-                                else if (chat->history.empty())
-                                {
-                                    chat->content = "..."; // 默认内容
-                                }
-                            }
-                        }
-                        // 如果没有历史记录，则按照原来的逻辑删除节点
-                        else
-                        {
-                            // 如果该聊天节点有父节点（不是根节点）
-                            if (chat->parent != nullptr)
-                            {
-                                // 从父节点的子节点列表中移除
-                                auto& siblings = chat->parent->children;
-                                auto nodeIt = ranges::find(siblings, chat);
-                                if (nodeIt != siblings.end())
-                                {
-                                    siblings.erase(nodeIt);
-                                }
-                            }
-                            // 如果是根节点，直接从聊天历史中删除
                             else
-                            {
-                                chat_history.erase(it);
-                            }
-
-                            // 处理子节点，将其提升到当前节点的位置
-                            if (!chat->children.empty())
                             {
                                 if (chat->parent != nullptr)
                                 {
-                                    // 将所有子节点添加到父节点
-                                    for (auto& child : chat->children)
+                                    // 从父节点的子节点列表中移除
+                                    auto& siblings = chat->parent->children;
+                                    auto nodeIt = ranges::find(siblings, chat);
+                                    if (nodeIt != siblings.end())
                                     {
-                                        child->parent = chat->parent;
-                                        chat->parent->children.push_back(child);
+                                        siblings.erase(nodeIt);
                                     }
                                 }
                                 else
                                 {
-                                    // 如果是根节点，将子节点提升为根节点
-                                    for (auto& child : chat->children)
+                                    chat_history.clear();
+                                    bot->Reset();
+                                    codes.clear();
+                                    if (configure.claude.enable)
                                     {
-                                        child->parent = nullptr;
-                                        chat_history.push_back(child);
+                                        FirstTime = Utils::GetCurrentTimestamp();
                                     }
+                                    save(convid);
+                                    flag = false;
                                 }
+
+                                // 无论是否为根节点，都清空子节点
+                                chat->children.clear(); // 直接清空子节点列表，不再保留任何子节点
                             }
+                            if (flag)
+                                RebuildChatHistory();
                         }
-
-                        // 重建聊天历史（更新UI和数据结构）
-                        RebuildChatHistory();
+                        else
+                        {
+                            // 如果在历史记录中找不到该聊天节点，记录错误
+                            LogError("聊天记录未在历史中找到！");
+                        }
+                        save(convid);
+                        bot->Save(convid);
                     }
-                    else
-                    {
-                        // 如果在历史记录中找不到该聊天节点，记录错误
-                        LogError("聊天记录未在历史中找到！");
-                    }
-                    save(convid);
-                    bot->Save(convid);
+                    ImGui::PopID();
                 }
-                ImGui::PopID();
-
                 ImGui::SameLine();
                 ImGui::PushID(("left_button_" + std::to_string(chat->timestamp)).c_str());
                 if (ImGui::ImageButton(("left_button_" + std::to_string(chat->timestamp)).c_str(),
@@ -1423,8 +1402,8 @@ void Application::RenderDownloadBox()
             if (downloader->IsRunning())
             {
                 ImGui::SameLine();
-                ImGui::PushID(("button_" + dA).c_str());
-                if (ImGui::ImageButton(("button_" + dA).c_str(), TextureCache["pause"],
+                ImGui::PushID(("button_" +TextureCache["pause"]+ dA).c_str());
+                if (ImGui::ImageButton(("button_" +TextureCache["pause"]+ dA).c_str(), TextureCache["pause"],
                                        ImVec2(32, 32)))
                 {
                     downloader->Pause();
@@ -1434,8 +1413,8 @@ void Application::RenderDownloadBox()
             if (downloader->GetStatus() == UPaused)
             {
                 ImGui::SameLine();
-                ImGui::PushID(("button_" + dA).c_str());
-                if (ImGui::ImageButton(("button_" + dA).c_str(), TextureCache["play"],
+                ImGui::PushID(("button_"+TextureCache["play"] + dA).c_str());
+                if (ImGui::ImageButton(("button_"+TextureCache["play"] + dA).c_str(), TextureCache["play"],
                                        ImVec2(32, 32)))
                 {
                     downloader->Resume();
@@ -1443,8 +1422,8 @@ void Application::RenderDownloadBox()
                 ImGui::PopID();
             }
             ImGui::SameLine();
-            ImGui::PushID(("button_" + dA).c_str());
-            if (ImGui::ImageButton(("button_" + dA).c_str(), TextureCache["del"],
+            ImGui::PushID(("button_"+TextureCache["del"] + dA).c_str());
+            if (ImGui::ImageButton(("button_"+TextureCache["del"] + dA).c_str(), TextureCache["del"],
                                    ImVec2(32, 32)))
             {
                 std::thread([downloader]()
@@ -4247,7 +4226,7 @@ void Application::RuntimeDetector()
                                reinterpret_cast<const char*>(u8"安装Whisper失败"),
                                reinterpret_cast<const char*>(u8"安装Whisper成功"));
     }
-    else if (!vits)
+    else if (!vits && (configure.vits.enable && !configure.vits.UseGptSovite))
     {
         ShowConfirmationDialog(reinterpret_cast<const char*>(u8"下载通知"),
                                reinterpret_cast<const char*>(u8"检测到你并没安装VitsConvertor,是否安装?"), vits,

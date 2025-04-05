@@ -21,9 +21,9 @@ BEGIN
             VALUE "CompanyName", "Gezhi Studio"
             VALUE "FileDescription", ""
             VALUE "FileVersion", "1.3.0.1"
-            VALUE "InternalName", "CyberGirl.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2023 Gezhi Studio"
-            VALUE "OriginalFilename", "CyberGirl.exe"
+            VALUE "InternalName", "Chatbot.exe"
+            VALUE "LegalCopyright", "Copyright (C) 2025 Gezhi Studio"
+            VALUE "OriginalFilename", "Chatbot.exe"
             VALUE "ProductName", ""
             VALUE "ProductVersion", "1.3.0.1"
         END
