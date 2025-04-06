@@ -6,6 +6,7 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
     {
         std::lock_guard<std::mutex> lock(historyAccessMutex);
         convid_ = convid;
+        lastFinalResponse = "";
         Response[timeStamp] = std::make_tuple("", false);
         json ask;
         ask["role"] = role;

@@ -1,4 +1,3 @@
-
 #include "Impls/ChatGPT_Impl.h"
 
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
@@ -40,10 +39,12 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
     size_t currentPos = 0;
     size_t nextPos = 0;
 
-    while ((nextPos = buffer.find("data:", currentPos)) != std::string::npos) {
+    while ((nextPos = buffer.find("data:", currentPos)) != std::string::npos)
+    {
         // 定位此数据块的结束位置（下一个data:或缓冲区结束）
         size_t endPos = buffer.find("data:", nextPos + 5);
-        if (endPos == std::string::npos) {
+        if (endPos == std::string::npos)
+        {
             endPos = buffer.length();
         }
 
@@ -51,37 +52,43 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
         std::string dataBlock = buffer.substr(nextPos, endPos - nextPos);
 
         // 检查是否为结束标记
-        if (dataBlock.find("[DONE]") != std::string::npos) {
+        if (dataBlock.find("[DONE]") != std::string::npos)
+        {
             currentPos = endPos;
             continue;
         }
 
         // 尝试找到并解析JSON内容
         size_t jsonStart = dataBlock.find('{');
-        if (jsonStart != std::string::npos) {
+        if (jsonStart != std::string::npos)
+        {
             std::string jsonStr = dataBlock.substr(jsonStart);
 
             // 尝试解析JSON
-            try {
+            try
+            {
                 json jsonData = json::parse(jsonStr);
 
                 // 从JSON中提取文本内容
-                if (jsonData.contains("choices") && !jsonData["choices"].empty()) {
+                if (jsonData.contains("choices") && !jsonData["choices"].empty())
+                {
                     auto& choices = jsonData["choices"];
 
                     if (choices[0].contains("delta") &&
                         choices[0]["delta"].contains("content") &&
-                        !choices[0]["delta"]["content"].is_null()) {
-
+                        !choices[0]["delta"]["content"].is_null())
+                    {
                         std::string content = choices[0]["delta"]["content"].get<std::string>();
                         processed += content;
                     }
                 }
             }
-            catch (...) {
+            catch (...)
+            {
                 // JSON解析失败，这个数据块可能不完整
                 // 如果不是最后一个数据块，则忽略并继续
-                if (endPos != buffer.length()) {
+                if (endPos != buffer.length())
+                {
                     currentPos = endPos;
                     continue;
                 }
@@ -100,17 +107,22 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
     // 更新未处理完的缓冲区
     {
         std::lock_guard<std::mutex> lock(dstr->mtx);
-        if (processedLength > 0) {
+        if (processedLength > 0)
+        {
             // 只保留未处理的部分
-            if (processedLength < buffer.length()) {
+            if (processedLength < buffer.length())
+            {
                 *dstr->str1 = buffer.substr(processedLength);
-            } else {
+            }
+            else
+            {
                 dstr->str1->clear();
             }
         }
 
         // 将解析出的内容添加到输出
-        if (!processed.empty()) {
+        if (!processed.empty())
+        {
             dstr->str2->append(processed);
         }
     }
@@ -140,7 +152,9 @@ ChatGPT::ChatGPT(std::string systemrole)
 }
 
 map<long long, string> ChatGPT::GetHistory()
-{ return map<long long, string>(); }
+{
+    return map<long long, string>();
+}
 
 std::string ChatGPT::Stamp2Time(long long timestamp)
 {
@@ -243,9 +257,9 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
 
                     // 初始化数据结构
                     DString dstr;
-                    dstr.str1 = new string();  // 用于处理缓冲区
-                    dstr.str2 = &std::get<0>(Response[ts]);  // 最终输出结果
-                    dstr.response = new string();  // 保存完整响应
+                    dstr.str1 = new string(); // 用于处理缓冲区
+                    dstr.str2 = &std::get<0>(Response[ts]); // 最终输出结果
+                    dstr.response = new string(); // 保存完整响应
                     dstr.instance = this;
                     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dstr);
 
@@ -358,7 +372,7 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                         delete dstr.response;
 
                         // 返回已在WriteCallback中处理好的响应
-                        std::cout<<std::get<0>(Response[ts])<<std::endl;
+                        std::cout << std::get<0>(Response[ts]) << std::endl;
                         return std::get<0>(Response[ts]);
                     }
                 }
@@ -402,7 +416,7 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
                 return "操作已被取消";
             }
         }
-
+        lastFinalResponse = "";
         json ask;
         ask["content"] = prompt;
         ask["role"] = role;
@@ -430,11 +444,6 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
             std::lock_guard<std::mutex> stopLock(forceStopMutex);
             if (forceStop && !res.empty() && res != "操作已被取消")
             {
-                // 如果生成过程中被取消但已有部分结果
-                json response;
-                response["content"] = res;
-                response["role"] = "assistant";
-                history.emplace_back(response);
                 std::get<1>(Response[timeStamp]) = true;
                 LogInfo("ChatBot: Post canceled but partial result saved");
                 return res;
@@ -444,10 +453,6 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
         // 如果没有被取消，正常处理结果
         if (!res.empty() && res != "操作已被取消")
         {
-            json response;
-            response["content"] = res;
-            response["role"] = "assistant";
-            history.emplace_back(response);
             std::get<1>(Response[timeStamp]) = true;
             LogInfo("ChatBot: Post finished");
         }
@@ -456,6 +461,10 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
             //等待被处理完成
         }
+        json response;
+        response["content"] = lastFinalResponse;
+        response["role"] = "assistant";
+        history.emplace_back(response);
         std::get<1>(Response[timeStamp]) = true;
         return res;
     }

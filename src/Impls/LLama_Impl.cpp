@@ -209,7 +209,7 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
     }
 
     std::lock_guard<std::mutex> lock(historyAccessMutex);
-
+    lastFinalResponse = "";
     // 初始化对话历史
     if (!history.contains(convid))
     {

@@ -301,6 +301,7 @@ std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string rol
                 return "操作已被取消";
             }
         }
+        lastFinalResponse = "";
 
         json ask;
         ask["content"] = prompt;
@@ -353,6 +354,10 @@ std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string rol
             LogInfo("ClaudeBot: 请求完成");
         }
 
+        json response;
+        response["content"] = lastFinalResponse;
+        response["role"] = "assistant";
+        history.emplace_back(response);
         std::get<1>(Response[timeStamp]) = true;
         return res;
     }
@@ -436,6 +441,7 @@ std::string ClaudeInSlack::Submit(std::string text, size_t timeStamp, std::strin
     {
         std::lock_guard<std::mutex> lock(historyAccessMutex);
         Response[timeStamp] = std::make_tuple("", false);
+        lastFinalResponse = "";
         cpr::Payload payload{
             {"token", claudeData.slackToken},
             {"channel", claudeData.channelID},
@@ -487,6 +493,8 @@ std::string ClaudeInSlack::Submit(std::string text, size_t timeStamp, std::strin
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
         //等待被处理完成
     }
+    json response;
+
     std::get<1>(Response[timeStamp]) = true;
     return std::get<0>(Response[timeStamp]);
 }
