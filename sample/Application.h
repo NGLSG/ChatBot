@@ -376,7 +376,7 @@ private:
             std::lock_guard<std::mutex> lock(chat_history_mutex);
             chat_history.back()->addChild(botR);
             AddChatRecord(botR);
-            if (vits)
+            if (configure.vits.enable)
                 last_input += "(VE)";
             bot->SubmitAsync(last_input, botR->timestamp, role, convid);
             botR->talking = true;
@@ -384,7 +384,7 @@ private:
             while (!bot->Finished(botR->timestamp))
             {
                 _tmpText += bot->GetResponse(botR->timestamp);
-                if (vits)
+                if (configure.vits.enable)
                 {
                     _tmpText = StringExecutor::TTS(_tmpText);
                 }
@@ -395,7 +395,7 @@ private:
             }
             //->content = bot->GetResponse(botR->timestamp);
             _tmpText += bot->GetResponse(botR->timestamp);
-            if (vits)
+            if (configure.vits.enable)
             {
                 _tmpText = StringExecutor::TTS(_tmpText);
             }
