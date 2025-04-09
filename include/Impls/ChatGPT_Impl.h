@@ -44,7 +44,6 @@ protected:
     };
     json LastHistory;
     json defaultJson;
-    json defaultJson2;
 
     bool IsSaved();
 

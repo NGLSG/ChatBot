@@ -51,9 +51,6 @@ Claude::Claude(std::string systemrole)
         defaultJson["content"] = sys;
     defaultJson["role"] = "system";
 
-    defaultJson2["content"] = defaultJson["content"];
-    defaultJson2["role"] = "user";
-
     // 确保对话目录存在
     if (!UDirectory::Exists(ConversationPath))
     {

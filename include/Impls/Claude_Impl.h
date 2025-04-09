@@ -82,7 +82,6 @@ protected:
     const std::string suffix = ".dat";
     json LastHistory;
     json defaultJson;
-    json defaultJson2;
 
     // 检查是否已保存
     bool IsSaved();

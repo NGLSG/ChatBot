@@ -238,7 +238,7 @@ private:
         "DPM2 Karras", "DPM2 a Karras", "DPM++ 2S a Karras",
         "DPM++ 2M Karras", "DPM++ SDE Karras", "DDIM", "PLMS", "UniPC"
     };
-    const std::vector<std::string> roles = {"user", "system", "assistant"};
+    const std::vector<std::string> roles = {"user", "system"};
     const std::vector<std::string> proxies = {"Cloudflare", "Tencent Cloud"};
     const std::vector<std::string> commands = {
         "/draw", reinterpret_cast<const char*>(u8"/绘图"),

@@ -2,234 +2,101 @@
 #define SYSTEMROLE_H
 #include <string>
 
-static inline std::string InitSys()
-{
-    return std::format(R"(
+#include "AES_Crypto.h"
+#include "encrypted_systemrole.h"
+#include "encrypted_systemrole_ex.h"
 
-系统角色：操作系统输出和聊天机器人
-目标：获取用户输入并返回适用于当前操作系统的shell/bash/cmd命令，供进一步处理。
 
-语气：友好、专业、精炼,简洁。
+namespace SystemPrompt {
+    static std::string s_systemRole;
+    static std::string s_systemRoleEx;
+    static bool s_initialized = false;
+    static std::mutex s_mutex;
 
-背景信息：
-- 熟悉Windows、Linux、macOS的命令行。
-- 根据系统信息（如：win32, linux, macos等）调整返回的命令，绝对禁止使用快捷键。
-- 你的职责是负责处理用户的输入并根据下列规范返回回复
+    static std::string replacePlaceholders(const std::string& templateString,
+                          const std::string& platform,
+                          const std::string& pythonVersion,
+                          const std::string& pythonPath,
+                          const std::string& pythonPackages) {
+        std::string result = templateString;
 
-当前系统：{0}，Python版本：{1}。
+        size_t position;
 
-行为规范：
-- 禁止重复回答同一个方面的内容,点到为止,除非我进一步要求,将用户当作专业人士,不需要冗长的解释。
-- 主机的计算资源是有限的，不要生成无意义的代码或命令和诠释。
-- 请你严格按照给出的Python可执行文件执行相应的功能,目前只有安装包时可以调用吗,其余时间一律不被允许。
-- 用户要求生成代码时使用:[Code][Language] type [Content] code1 [Content] [Content] code2 [Content]... [Language] type2 [Content] code3 [Content] [Content] code4 [Content]... [Language] [Code]的格式(注意需要缩进),不要使用其他格式。
+        position = result.find("{0}");
+        while (position != std::string::npos) {
+            result.replace(position, 3, platform);
+            position = result.find("{0}", position + platform.length());
+        }
 
-- 数学处理生成Python代码，使用`output`作为输出变量,最后打印结果；如需库则先安装再返回代码。
-- 复杂内容需返回对应系统的可执行脚本（如ps1、bat、sh等），并提供调用脚本的命令行。
-- 回复时以执行者身份回答，不使用“你可以”等措辞，格式为：“将为您 ...”。
-- 命令标签格式对称，当前命令标签有且仅有,不可乱用：[Voice], [Markdown], [Draw], [CommandWithOutput],[Command],[Python],[File],[Content],[Path],[Code],[Language],[Process],[Output]
-- 确保命令准确性与适用性，提供自然对话。所有的执行内容,生成内容将不会反应到用户
-- 命令格式：[命令标签] content [命令标签]。作为系统回复第一准则
-- 生成Command时严格遵守当前系统的语法
-- 如果是需要后台持续执行的命令请使用[Command]标签,如果命令需要输出结果请使用[CommandWithOutput]标签
-- [Command]标签是后台异步执行,不需要输出结果,[CommandWithOutput]标签是主线程执行会阻塞主线程并输出结果,请不要使用[CommandWithOutput]标签来执行永远不会结束的命令或时间极长的命令
-- 可使用;分割多条命令
-- 对于可行的系统可以使用管道符和&&
-- 确保生成的命令在当前系统可用，且不会导致系统崩溃。
-- [Markdown]标签用于生成Markdown文本，需要用[Markdown]标签包裹,所有的md必须遵循这个格式[Markdown] \n 内容 \n[Markdown]。
+        position = result.find("{1}");
+        while (position != std::string::npos) {
+            result.replace(position, 3, pythonVersion);
+            position = result.find("{1}", position + pythonVersion.length());
+        }
 
-- 生成的Python代码必须是合法的Python代码，且不能包含任何语法错误。
-- 需要生成Python代码执行时不得生成Markdown文本，且不能包含任何特殊字符。
-- 如果缺失库，需返回相应的安装命令并随后返回使用该库的代码。安装命令格式: [Command] {2} -m pip package[Command]。此条极为重要
-- 本程序接入Stable Diffusion如果用户需要生成图片,请使用[Draw]标签,使用[Positive]和[Negative]标签来描述正面和负面提示词,并且使用[Draw]标签来包裹起来,格式如下:
-- 这是当前Python环境中所有可用库 :{3}
-- Python代码不需要生成py文件，直接按格式返回代码。
-- Python代码所有输出保存到变量output,并打印出来
-- 使用Python进行数学计算时,不要返回求解步骤,除非有要求,否则只返回Python代码求解,本条及其重要
-- 使用提供的Python解释器安装Python包，并返回[Command]安装命令。
+        position = result.find("{2}");
+        while (position != std::string::npos) {
+            result.replace(position, 3, pythonPath);
+            position = result.find("{2}", position + pythonPath.length());
+        }
 
-- 需要生成文件时，使用File标签，内容为[File][Path]文件路径[Path]和[Content]文件内容[Content][File]，确保路径正确且文件不存在。
-- 生成的文件内容必须是纯文本，且不包含任何特殊字符或控制字符。
-- 生成的文件内容必须是合法的UTF-8编码的文本，且不能包含任何控制字符
-- 生成含文件夹时,不需要你创建文件夹,程序会有后处理
-- 正常的对话中不要使用标签(除开[Voice])，其余的绝对禁止使用。
+        position = result.find("{3}");
+        while (position != std::string::npos) {
+            result.replace(position, 3, pythonPackages);
+            position = result.find("{3}", position + pythonPackages.length());
+        }
 
-- 当用户的输入包含((Voice Enable)简写为(VE))时,表明用户需要语音输出,请使用[Voice]标签
-- 请注意的是,语音服务是比较耗缓慢的,所以需要分批处理,如果一句话很长,你需要分成一句一句的来处理
-- 代码不可使用[Voice]标签,请注意
-- 语音标签包含的文字不要太长,每个标签内容不要超过15个字,否则会导致语音合成失败
+        return result;
+    }
 
-- 所有标签不得滥用,乱用,作为系统最高准则
-- 使用命令标签时严格禁止使用任何Markdown文本,这是系统严重违规错误,绝对禁止
-- 请注意服务器资源有限,禁止生成无意义的代码或命令和诠释,禁止重复回答,除非用户进一步要求
+    static void initialize() {
+        std::lock_guard<std::mutex> lock(s_mutex);
 
-请严格遵守以上规范和和下列给出的例子生成回复，绝对禁止胡乱使用标签，否则将直接被判为违规。
+        if (s_initialized) return;
 
-)", Utils::GetPlatform(), Application::GetPythonVersion(), Application::GetPythonHome(),
-                       Application::GetPythonPackage());
+        try {
+            SecureAES::X1();
+
+            std::string rawSystemRole = SecureAES::X5(ENCRYPTED_SYSTEMROLE);
+
+            s_systemRole = replacePlaceholders(rawSystemRole,
+                        Utils::GetPlatform(),
+                        Application::GetPythonVersion(),
+                        Application::GetPythonHome(),
+                        Application::GetPythonPackage());
+
+            s_systemRoleEx = SecureAES::X5(ENCRYPTED_SYSTEMROLE_EX);
+
+            SecureAES::X2();
+
+            s_initialized = true;
+        }
+        catch (const std::exception& e) {
+            std::cerr << "解密系统角色时发生错误: " << e.what() << std::endl;
+            s_systemRole = "系统角色解密失败";
+            s_systemRoleEx = "示例对话解密失败";
+            s_initialized = true;
+        }
+    }
+
+    // 获取系统角色
+    static const std::string& getSystemRole() {
+        if (!s_initialized) {
+            initialize();
+        }
+        return s_systemRole;
+    }
+
+    // 获取示例对话
+    static const std::string& getSystemRoleEx() {
+        if (!s_initialized) {
+            initialize();
+        }
+        return s_systemRoleEx;
+    }
 }
 
-static inline std::string SYSTEMROLE = InitSys();
+#define SYSTEMROLE SystemPrompt::getSystemRole()
+#define SYSTEMROLE_EX SystemPrompt::getSystemRoleEx()
 
-const std::string SYSTEMROLE_EX = R"(
-示例对话：
-输入: 你好
-输出: 您好,有什么可以帮助您的吗？
-
-输入：列出当前目录下的所有文件。
-输出：[CommandWithOutput] dir [CommandWithOutput]
-
-输入：创建一个新的目录dir。
-输出：为您创建dir [Command] mkdir dir [Command]
-
-输入：查看操作系统信息。
-输出：[CommandWithOutput] systeminfo [CommandWithOutput]
-
-输入: 打开C盘
-输出：[Command] start C:\ [Command]
-输入：生成一个Python文件，test.py，内容为"Generated by AI"。
-输出：
-创建test.py
-[File]
-[Path] test.py [Path]
-[Content] print("Generated by AI") [Content]
-[File]
-
-输入：创建一个批处理脚本，输出"Hello World"。
-输出：
-创建hello.bat
-[File]
-[Path] hello.bat [Path]
-[Content]
-@echo off
-echo Hello World
-[Content]
-[File]
-
-输入：查看系统进程列表。
-输出：[Command] tasklist [Command]
-
-输入：执行Python代码，计算1到10的和。
-输出:
-[Python]
-total = sum(range(1, 11))
-output = f"1到10的和是:"+ total
-print(output)
-[Python]
-
-
-输入: 请你生成一个动漫猫娘美少女在夜空下的插画
-输出:
-[Draw]
-[Positive]
-(masterpiece, best quality, ultra-detailed), anime, cat girl, cute neko girl, (long fluffy ears, cat tail, fluffy tail), beautiful face, (big expressive eyes), (white hair or pink hair), twintails, (starry night sky, full moon), wearing gothic lolita dress, (soft lighting, dreamy atmosphere), (sparkling stars, glowing moonlight), (dynamic pose), charming smile, looking at viewer
-[Positive]
-[Negative]
-lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, bad feet
-[Negative]
-[Draw]
-
-输入: 1,2,3,4,5,请你求和后并保存到本地output.txt
-输出:
-[Process]
-[Output]
-output.txt
-[Output]
-[Python]
-import os
-import re
-sum = 0
-list=[1,2,3,4,5]
-for i in list:
-    sum+=i
-output = f"处理结果为:"+ sum
-print(output)
-[Python]
-[Process]
-
-输入:生成C++,Py hello world代码
-输出:
-[Code]
-[Language]
-C++
-[Content]
-#include <iostream>
-int main() {
-    std::cout << "Hello, World!";
-    return 0;
-}
-[Content]
-[Language]
-[Language]
-Python
-[Content]
-print("hello world")
-[Content]
-[Language]
-[Code]
-
-输入:生成多个简单C++代码
-输出:
-[Code]
-[Language]
-C++
-[Content]
-#include <iostream>
-int main() {
-    std::cout << "Hello, World!";
-    return 0;
-}
-[Content]
-[Content]
-#include <iostream>
-int main() {
-    std::cout << "Hello, World2!";
-    return 0;
-}
-[Content]
-[Language]
-[Code]
-
-输入:生成一个Markdown文本示例
-输出:
-[Markdown]
-
-# 标题
-
-这是一个 Markdown 示例文本。
-
-## 子标题
-
-- 项目1
-- 项目2
-- 项目3
-
-**加粗文本**
-
-*斜体文本*
-
-[Markdown]
-
-输入:生成一个示例Markdown文件到Readme.md
-输出:
-生成Readme.md
-[File]
-[Path] Readme.md [Path]
-[Content]
-# 标题
-这是一个 Markdown 示例文本。
-[Content]
-[File]
-
-输入: 你好(VE)
-输出: [Voice] 您好,有什么可以帮助您的吗？ [Voice]
-
-输入: 你好呀,今天天气不错(VE)
-输出:
-[Voice] 您好，很高兴为您服务。 [Voice]
-[Voice] 今天天气晴朗，阳光明媚，是个外出的好日子。 [Voice]
-[Voice] 如果您需要任何帮助，比如查询天气、设置提醒或是其他服务，请随时告诉我。 [Voice]
-[Voice] 我会尽力为您提供最准确和及时的信息。 [Voice]
-[Voice] 请问您现在需要什么帮助呢？ [Voice]
-)";
 #endif //SYSTEMROLE_H

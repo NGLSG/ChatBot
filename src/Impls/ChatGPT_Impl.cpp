@@ -140,10 +140,6 @@ ChatGPT::ChatGPT(std::string systemrole)
     defaultJson["role"] = "system";
 
 
-    defaultJson2["content"] = defaultJson["content"];
-    defaultJson2["role"] = "user";
-
-
     if (!UDirectory::Exists(ConversationPath))
     {
         UDirectory::Create(ConversationPath);

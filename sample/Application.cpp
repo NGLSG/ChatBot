@@ -93,6 +93,7 @@ Application::Application(const Configure& configure, bool setting)
         text_buffers.emplace_back("outDevice");
         text_buffers.emplace_back("inputDevice");
         text_buffers.emplace_back("version");
+        text_buffers.emplace_back("curl_parser");
     }
     catch
     (exception& e)
@@ -1402,8 +1403,8 @@ void Application::RenderDownloadBox()
             if (downloader->IsRunning())
             {
                 ImGui::SameLine();
-                ImGui::PushID(("button_" +TextureCache["pause"]+ dA).c_str());
-                if (ImGui::ImageButton(("button_" +TextureCache["pause"]+ dA).c_str(), TextureCache["pause"],
+                ImGui::PushID(("button_" + TextureCache["pause"] + dA).c_str());
+                if (ImGui::ImageButton(("button_" + TextureCache["pause"] + dA).c_str(), TextureCache["pause"],
                                        ImVec2(32, 32)))
                 {
                     downloader->Pause();
@@ -1413,8 +1414,8 @@ void Application::RenderDownloadBox()
             if (downloader->GetStatus() == UPaused)
             {
                 ImGui::SameLine();
-                ImGui::PushID(("button_"+TextureCache["play"] + dA).c_str());
-                if (ImGui::ImageButton(("button_"+TextureCache["play"] + dA).c_str(), TextureCache["play"],
+                ImGui::PushID(("button_" + TextureCache["play"] + dA).c_str());
+                if (ImGui::ImageButton(("button_" + TextureCache["play"] + dA).c_str(), TextureCache["play"],
                                        ImVec2(32, 32)))
                 {
                     downloader->Resume();
@@ -1422,8 +1423,8 @@ void Application::RenderDownloadBox()
                 ImGui::PopID();
             }
             ImGui::SameLine();
-            ImGui::PushID(("button_"+TextureCache["del"] + dA).c_str());
-            if (ImGui::ImageButton(("button_"+TextureCache["del"] + dA).c_str(), TextureCache["del"],
+            ImGui::PushID(("button_" + TextureCache["del"] + dA).c_str());
+            if (ImGui::ImageButton(("button_" + TextureCache["del"] + dA).c_str(), TextureCache["del"],
                                    ImVec2(32, 32)))
             {
                 std::thread([downloader]()
@@ -2533,6 +2534,62 @@ void Application::RenderConfigBox()
         }
         else
         {
+            auto parserFromCurl = [](std::string& cmd)
+            {
+                GPTLikeCreateInfo gpt;
+                gpt.enable = true;
+                gpt.useLocalModel = false;
+
+                // 解析URL
+                size_t urlStart = cmd.find("\"") + 1;
+                size_t urlEnd = cmd.find("\"", urlStart);
+                if (urlStart != std::string::npos && urlEnd != std::string::npos)
+                {
+                    std::string url = cmd.substr(urlStart, urlEnd - urlStart);
+
+                    // 分离主机名和API路径
+                    size_t protocolEnd = url.find("://");
+                    size_t pathStart = std::string::npos;
+                    if (protocolEnd != std::string::npos)
+                    {
+                        pathStart = url.find("/", protocolEnd + 3);
+                    }
+
+                    if (pathStart != std::string::npos)
+                    {
+                        gpt.apiHost = url.substr(0, pathStart);
+                        gpt.apiPath = url.substr(pathStart);
+                    }
+                }
+
+                // 解析Authorization头部获取API密钥
+                std::string authMarker = "Authorization: Bearer ";
+                size_t authStart = cmd.find(authMarker);
+                if (authStart != std::string::npos)
+                {
+                    authStart += authMarker.length();
+                    size_t authEnd = cmd.find("\"", authStart);
+                    if (authEnd != std::string::npos)
+                    {
+                        gpt.api_key = cmd.substr(authStart, authEnd - authStart);
+                    }
+                }
+
+                // 解析JSON数据中的model字段
+                std::string modelMarker = "\"model\":\"";
+                size_t modelStart = cmd.find(modelMarker);
+                if (modelStart != std::string::npos)
+                {
+                    modelStart += modelMarker.length();
+                    size_t modelEnd = cmd.find("\"", modelStart);
+                    if (modelEnd != std::string::npos)
+                    {
+                        gpt.model = cmd.substr(modelStart, modelEnd - modelStart);
+                    }
+                }
+
+                return gpt;
+            };
             // 自定义GPT配置
             for (auto& [name, cdata] : configure.customGPTs)
             {
@@ -2544,6 +2601,32 @@ void Application::RenderConfigBox()
                     if (!cdata.useLocalModel)
                     {
                         // 远程API配置
+                        static int currentItem = 0;
+                        const char* items[] = { reinterpret_cast<const char*>(u8"手动配置"), reinterpret_cast<const char*>(u8"从Curl命令解析") };
+                        ImGui::Combo(reinterpret_cast<const char*>(u8"配置方式"), &currentItem, items, IM_ARRAYSIZE(items));
+
+                        if (currentItem == 1) // 从Curl命令解析
+                        {
+                            static std::string value;
+                            strcpy_s(GetBufferByName("curl_parser").buffer, value.c_str());
+                            if (ImGui::InputTextMultiline("##CurlParser", GetBufferByName("curl_parser").buffer,
+                                                        TEXT_BUFFER, ImVec2(-1, 64),
+                                                        ImGuiInputTextFlags_AllowTabInput |
+                                                        ImGuiInputTextFlags_CtrlEnterForNewLine))
+                            {
+                                value = GetBufferByName("curl_parser").buffer;
+                            }
+                            if (ImGui::Button(reinterpret_cast<const char*>(u8"解析Curl命令"), ImVec2(120, 30)))
+                            {
+                                cdata = parserFromCurl(value);
+                                cdata.enable = true;
+                                cdata.useLocalModel = false;
+                                configure.customGPTs[name] = cdata;
+                                currentItem = 0; // 解析完成后切换回手动配置模式显示结果
+                            }
+                        }
+
+                        // 无论哪种配置方式，都显示API配置信息
                         ShowPasswordInput(reinterpret_cast<const char*>(u8"API Key"), cdata.api_key, "api");
                         ShowTextInput(reinterpret_cast<const char*>(u8"API 主机"), cdata.apiHost, "apiHost");
                         ShowTextInput(reinterpret_cast<const char*>(u8"API 路径"), cdata.apiPath, "apiPath");
@@ -3845,7 +3928,6 @@ bool Application::Initialize()
                             PythonHome + PythonExecute),
                         Utils::GetAbsolutePath(PythonHome + "get-pip.py"));
                     LogInfo("Python 安装成功");
-                    SYSTEMROLE = InitSys();
                     CreateBot();
                 }
             });
@@ -4142,7 +4224,6 @@ void Application::RenderMarkdown(vector<char>& markdown, ImVec2 input_size)
     bool scrollFromMarkdown = false;
     bool scrollFromInput = false;
 
-    // 第一步：渲染底层Markdown内容
     {
         // 记录渲染前的光标位置
         ImVec2 pos = ImGui::GetCursorPos();
@@ -4168,20 +4249,17 @@ void Application::RenderMarkdown(vector<char>& markdown, ImVec2 input_size)
         ImGui::SetCursorPos(pos);
     }
 
-    // 第二步：渲染透明输入框，用于文本选择
     {
         // 设置样式，使输入框内容不可见但保留选择高亮效果
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 0.0f)); // 文本颜色设为透明
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f)); // 背景颜色设为透明
         ImGui::PushStyleColor(ImGuiCol_TextSelectedBg, ImVec4(0.2f, 0.4f, 0.8f, 0.3f)); // 文本选择背景设为蓝色半透明
 
-        // 创建透明多行文本输入框，用于实现文本选择功能
         if (ImGui::InputTextMultiline(("##md_selector" + std::to_string(id)).c_str(),
                                       markdown.data(), markdown.size(),
                                       input_size,
                                       ImGuiInputTextFlags_ReadOnly))
         {
-            // 当输入框状态改变时的处理（这里不需要额外操作）
         }
 
         // 同步滚动位置
