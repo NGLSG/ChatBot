@@ -38,8 +38,9 @@ struct DString
 class ChatBot
 {
 public:
+    friend class StringExecutor;
     virtual std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-                               std::string convid = "default") = 0;
+                               std::string convid = "default", bool async = false) = 0;
 
     void SubmitAsync(std::string prompt, size_t timeStamp, std::string role = Role::User,
                      std::string convid = "default")
@@ -49,7 +50,7 @@ public:
             forceStop = false;
         }
         lastFinalResponse = "";
-        std::thread([=] { Submit(prompt, timeStamp, role, convid); }).detach();
+        std::thread([=] { Submit(prompt, timeStamp, role, convid, true); }).detach();
     }
 
     void ForceStop()
@@ -90,6 +91,7 @@ public:
     std::atomic<bool> forceStop{false};
 
 protected:
+    long long lastTimeStamp = 0;
     std::mutex fileAccessMutex;
     std::mutex historyAccessMutex;
     std::string lastFinalResponse;

@@ -286,7 +286,7 @@ void Utils::playAudioAsync(const std::string& filename, std::function<void()> ca
         SNDFILE* file = sf_open(filename.c_str(), SFM_READ, &info);
         if (!file)
         {
-            std::cerr << "Failed to open file: "<< filename << std::endl;
+            std::cerr << "Failed to open file: " << filename << std::endl;
             return;
         }
 
@@ -1821,7 +1821,6 @@ std::string StringExecutor::Process(const std::string& text)
 std::string StringExecutor::PreProcess(const std::string& text, const std::shared_ptr<ChatBot>& bot)
 {
     static std::regex pattern(R"(\[Reading\]([\x01-\xFF]*?)\[Reading\])");
-    std::string replacedAnswer = text;
     std::smatch match;
     try
     {
@@ -1832,16 +1831,16 @@ std::string StringExecutor::PreProcess(const std::string& text, const std::share
             match = *i;
             std::string processedReading = _Markdown(match[1].str());
             auto res = Python(processedReading);
-            replacedAnswer = std::regex_replace(replacedAnswer, pattern, res,
-                                                std::regex_constants::format_first_only);
-            replacedAnswer = bot->Submit(replacedAnswer, Utils::GetCurrentTimestamp());
+            std::string newAsk = "File content are:\n" + res + "\n please answer the forward user`s question";
+            bot->SubmitAsync(newAsk, bot->lastTimeStamp);
+            return res;
         }
     }
     catch (const std::exception& e)
     {
         LogError("Error: {0}", e.what());
     }
-    return replacedAnswer;
+    return text;
 }
 
 std::vector<StringExecutor::Code> StringExecutor::GetCodes(std::string text)

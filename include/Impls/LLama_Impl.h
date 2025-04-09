@@ -14,7 +14,7 @@ public:
 
     ~LLama();
 
-    std::string Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid) override;
+    std::string Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, bool async=false) override;
     void Reset() override;
     void Load(std::string name) override;
     void Save(std::string name) override;

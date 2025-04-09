@@ -1,12 +1,13 @@
-
 #include "Impls/Gemini_Impl.h"
-std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
+
+std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, bool async)
 {
     try
     {
         std::lock_guard<std::mutex> lock(historyAccessMutex);
         convid_ = convid;
         lastFinalResponse = "";
+        lastTimeStamp= timeStamp;
         Response[timeStamp] = std::make_tuple("", false);
         json ask;
         ask["role"] = role;
@@ -25,7 +26,7 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
             endPoint = geminiData._endPoint;
         else
             endPoint = "https://generativelanguage.googleapis.com";
-        std::string url = endPoint + "/v1beta/models/"+geminiData.model+":generateContent?key="
+        std::string url = endPoint + "/v1beta/models/" + geminiData.model + ":generateContent?key="
             +
             geminiData._apiKey;
 
@@ -87,21 +88,27 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
 
             json response = json::parse(r.text);
             std::optional<std::string> res = response["candidates"][0]["content"]["parts"][0]["text"];
+            if (async)
+                while (!std::get<0>(Response[timeStamp]).empty())
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                    //等待被处理完成
+                }
+            else
+            {
+                lastFinalResponse = GetResponse(timeStamp);
+            }
             json ans;
             ans["role"] = "model";
             ans["parts"] = json::array();
             ans["parts"].push_back(json::object());
-            ans["parts"][0]["text"] = res.value();
+            ans["parts"][0]["text"] = lastFinalResponse;
             history.emplace_back(ans);
             Conversation[convid_] = history;
-            std::get<0>(Response[timeStamp]) = res.value_or("NA");
-            while (!std::get<0>(Response[timeStamp]).empty())
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-                //等待被处理完成
-            }
+            std::get<0>(Response[timeStamp]) = lastFinalResponse;
+
             std::get<1>(Response[timeStamp]) = true;
-            return res.value_or("NA");
+            return lastFinalResponse;
         }
 
         // 所有重试都失败
@@ -115,7 +122,7 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
         std::get<1>(Response[timeStamp]) = true;
     }
 
-    return std::get<0>(Response[timeStamp]);
+    return lastFinalResponse;
 }
 
 void Gemini::Reset()

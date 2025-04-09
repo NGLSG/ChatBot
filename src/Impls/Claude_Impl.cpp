@@ -1,5 +1,5 @@
-
 #include "Impls/Claude_Impl.h"
+
 size_t ClaudeWriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
 {
     // 基本参数转换
@@ -18,21 +18,26 @@ size_t ClaudeWriteCallback(void* contents, size_t size, size_t nmemb, void* user
     dstr->response->append(dataChunk);
 
     // 尝试解析 JSON 响应
-    try {
+    try
+    {
         json jsonData = json::parse(dataChunk);
 
         // 从 Claude API 响应中提取内容
-        if (jsonData.contains("content") && jsonData["content"].is_array() && !jsonData["content"].empty()) {
-            for (const auto& contentItem : jsonData["content"]) {
+        if (jsonData.contains("content") && jsonData["content"].is_array() && !jsonData["content"].empty())
+        {
+            for (const auto& contentItem : jsonData["content"])
+            {
                 if (contentItem.contains("type") && contentItem["type"] == "text" &&
-                    contentItem.contains("text") && contentItem["text"].is_string()) {
+                    contentItem.contains("text") && contentItem["text"].is_string())
+                {
                     std::string text = contentItem["text"].get<std::string>();
                     dstr->str2->append(text);
                 }
             }
         }
     }
-    catch (...) {
+    catch (...)
+    {
         // JSON 解析失败，可能是流式响应的一部分
         // 简单存储数据以备后续完整处理
         dstr->str1->append(dataChunk);
@@ -80,7 +85,7 @@ Claude::Claude(const ClaudeAPICreateInfo& claude_data, std::string systemrole) :
 // 获取历史记录
 map<long long, string> Claude::GetHistory()
 {
-    return map<long long, string>();  // 实际实现可能需要根据需求改进
+    return map<long long, string>(); // 实际实现可能需要根据需求改进
 }
 
 // 时间戳转换为可读时间
@@ -168,9 +173,9 @@ std::string Claude::sendRequest(std::string data, size_t ts)
 
                     // 初始化数据结构
                     DString dstr;
-                    dstr.str1 = new string();  // 用于处理缓冲区
-                    dstr.str2 = &std::get<0>(Response[ts]);  // 最终输出结果
-                    dstr.response = new string();  // 保存完整响应
+                    dstr.str1 = new string(); // 用于处理缓冲区
+                    dstr.str2 = &std::get<0>(Response[ts]); // 最终输出结果
+                    dstr.response = new string(); // 保存完整响应
                     dstr.instance = this;
                     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &dstr);
 
@@ -222,28 +227,36 @@ std::string Claude::sendRequest(std::string data, size_t ts)
                         curl_slist_free_all(headers);
 
                         // 如果响应不为空，解析完整响应
-                        if (!dstr.response->empty()) {
-                            try {
+                        if (!dstr.response->empty())
+                        {
+                            try
+                            {
                                 json responseJson = json::parse(*dstr.response);
 
                                 // 从响应中提取内容
-                                if (responseJson.contains("content") && responseJson["content"].is_array() && !responseJson["content"].empty()) {
+                                if (responseJson.contains("content") && responseJson["content"].is_array() && !
+                                    responseJson["content"].empty())
+                                {
                                     std::string fullContent;
 
-                                    for (const auto& contentItem : responseJson["content"]) {
+                                    for (const auto& contentItem : responseJson["content"])
+                                    {
                                         if (contentItem.contains("type") && contentItem["type"] == "text" &&
-                                            contentItem.contains("text") && contentItem["text"].is_string()) {
+                                            contentItem.contains("text") && contentItem["text"].is_string())
+                                        {
                                             fullContent += contentItem["text"].get<std::string>();
                                         }
                                     }
 
                                     // 更新响应内容
-                                    if (!fullContent.empty()) {
+                                    if (!fullContent.empty())
+                                    {
                                         std::get<0>(Response[ts]) = fullContent;
                                     }
                                 }
                             }
-                            catch (...) {
+                            catch (...)
+                            {
                                 // JSON解析失败，使用已处理的回复
                                 LogWarn("ClaudeBot: 响应解析失败，使用已处理的内容");
                             }
@@ -284,7 +297,7 @@ std::string Claude::sendRequest(std::string data, size_t ts)
 }
 
 // 提交用户消息并获取响应
-std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
+std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, bool async)
 {
     try
     {
@@ -299,7 +312,7 @@ std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string rol
             }
         }
         lastFinalResponse = "";
-
+        lastTimeStamp= timeStamp;
         json ask;
         ask["content"] = prompt;
         ask["role"] = role;
@@ -350,13 +363,18 @@ std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string rol
             std::get<1>(Response[timeStamp]) = true;
             LogInfo("ClaudeBot: 请求完成");
         }
-
+        if (async)
+            while (!std::get<0>(Response[timeStamp]).empty())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                //等待被处理完成
+            }
         json response;
         response["content"] = lastFinalResponse;
         response["role"] = "assistant";
         history.emplace_back(response);
         std::get<1>(Response[timeStamp]) = true;
-        return res;
+        return lastFinalResponse;
     }
     catch (exception& e)
     {
@@ -432,13 +450,14 @@ void Claude::Add(std::string name)
     Save(name);
 }
 
-std::string ClaudeInSlack::Submit(std::string text, size_t timeStamp, std::string role, std::string convid)
+std::string ClaudeInSlack::Submit(std::string text, size_t timeStamp, std::string role, std::string convid, bool async)
 {
     try
     {
         std::lock_guard<std::mutex> lock(historyAccessMutex);
         Response[timeStamp] = std::make_tuple("", false);
         lastFinalResponse = "";
+        lastTimeStamp= timeStamp;
         cpr::Payload payload{
             {"token", claudeData.slackToken},
             {"channel", claudeData.channelID},
@@ -484,16 +503,18 @@ std::string ClaudeInSlack::Submit(std::string text, size_t timeStamp, std::strin
         LogError(e.what());
         std::get<0>(Response[timeStamp]) = "发生错误: " + std::string(e.what());
     }
-
-    while (!std::get<0>(Response[timeStamp]).empty())
+    if (async)
+        while (!std::get<0>(Response[timeStamp]).empty())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            //等待被处理完成
+        }
+    else
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(16));
-        //等待被处理完成
+        lastFinalResponse = GetResponse(timeStamp);
     }
-    json response;
-
     std::get<1>(Response[timeStamp]) = true;
-    return std::get<0>(Response[timeStamp]);
+    return lastFinalResponse;
 }
 
 void ClaudeInSlack::Reset()

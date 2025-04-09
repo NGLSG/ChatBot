@@ -14,7 +14,7 @@ public:
 
     std::string
     Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-           std::string convid = "defult") override;
+           std::string convid = "defult", bool async=false) override;
 
     void Reset() override;
 

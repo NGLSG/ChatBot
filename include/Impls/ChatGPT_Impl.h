@@ -12,7 +12,7 @@ public:
 
     std::string
     Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-           std::string convid = "defult") override;
+           std::string convid = "default", bool async=false) override;
 
     void Reset() override;
 
@@ -52,6 +52,7 @@ protected:
     static long long getTimestampBefore(const int daysBefore);
 
     std::string sendRequest(std::string data, size_t ts);
+
 };
 
 class GPTLike : public ChatGPT

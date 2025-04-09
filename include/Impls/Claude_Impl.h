@@ -14,7 +14,7 @@ public:
 
     std::string
     Submit(std::string text, size_t timeStamp, std::string role = Role::User,
-           std::string convid = "defult") override;
+           std::string convid = "default", bool async=false) override;
 
     void Reset() override;;
 
@@ -45,7 +45,7 @@ public:
 
     // 提交用户消息并获取响应
     std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-                      std::string convid = "default") override;
+                       std::string convid = "default", bool async=false) override;
 
     // 重置当前对话
     void Reset() override;

@@ -199,7 +199,7 @@ LLama::LLama(const LLamaCreateInfo& data, const std::string& sysr): llamaData(da
     LogInfo("LLama: 初始化完成，上下文大小: {0}, 最大令牌数: {1}", llamaData.contextSize, llamaData.maxTokens);
 }
 
-std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
+std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, bool async)
 {
     // 检查上下文是否已初始化
     if (!ctx)
@@ -210,6 +210,7 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
 
     std::lock_guard<std::mutex> lock(historyAccessMutex);
     lastFinalResponse = "";
+    lastTimeStamp= timeStamp;
     // 初始化对话历史
     if (!history.contains(convid))
     {
@@ -423,13 +424,17 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
     }
 
     // 等待响应被处理完成
-    while (!std::get<0>(Response[timeStamp]).empty())
+    if (async)
+        while (!std::get<0>(Response[timeStamp]).empty())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+    else
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        lastFinalResponse = GetResponse(timeStamp);
     }
-
     std::get<1>(Response[timeStamp]) = true;
-    return std::get<0>(Response[timeStamp]);
+    return lastFinalResponse;
 }
 
 LLama::~LLama()

@@ -398,7 +398,7 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
     return "";
 }
 
-std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid)
+std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, bool async)
 {
     try
     {
@@ -412,6 +412,7 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
                 return "操作已被取消";
             }
         }
+        lastTimeStamp= timeStamp;
         lastFinalResponse = "";
         json ask;
         ask["content"] = prompt;
@@ -452,17 +453,22 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
             std::get<1>(Response[timeStamp]) = true;
             LogInfo("ChatBot: Post finished");
         }
-        while (!std::get<0>(Response[timeStamp]).empty())
+        if (async)
+            while (!std::get<0>(Response[timeStamp]).empty())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                //等待被处理完成
+            }
+        else
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
-            //等待被处理完成
+            lastFinalResponse = GetResponse(timeStamp);
         }
         json response;
         response["content"] = lastFinalResponse;
         response["role"] = "assistant";
         history.emplace_back(response);
         std::get<1>(Response[timeStamp]) = true;
-        return res;
+        return lastFinalResponse;
     }
     catch (exception& e)
     {
