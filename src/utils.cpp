@@ -1833,6 +1833,10 @@ std::string StringExecutor::PreProcess(const std::string& text, const std::share
             auto res = Python(processedReading);
             std::string newAsk = "File content are:\n" + res + "\n please answer the forward user`s question";
             bot->SubmitAsync(newAsk, bot->lastTimeStamp);
+            while (!bot->Finished(bot->lastTimeStamp))
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            }
             return res;
         }
     }

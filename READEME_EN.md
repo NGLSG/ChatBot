@@ -182,7 +182,6 @@ This project supports the following API types:
 - [ ] Multi-language interface support
 - [ ] Mobile adaptation
 - [ ] Plugin marketplace
-- [ ] Local large model performance optimization
 - [ ] More API support
 
 ## ⭐ Supporting the Project
