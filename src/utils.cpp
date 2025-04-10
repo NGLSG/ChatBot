@@ -1532,7 +1532,12 @@ void StringExecutor::SetDrawCallback(const DrawCallback& callback)
     drawCallback = callback;
 }
 
-std::string StringExecutor::AutoExecute(std::string text, const std::shared_ptr<ChatBot>& bot)
+void StringExecutor::SetPreProcessCallback(const PreProcessCallback& callback)
+{
+    preProcessCallback = callback;
+}
+
+std::string StringExecutor::AutoExecute(std::string& text, const std::shared_ptr<ChatBot>& bot)
 {
     auto [res, part] = EraseInRange("<think>", "</think>", text);
 
@@ -1818,10 +1823,12 @@ std::string StringExecutor::Process(const std::string& text)
     return replacedAnswer;
 }
 
-std::string StringExecutor::PreProcess(const std::string& text, const std::shared_ptr<ChatBot>& bot)
+std::string StringExecutor::PreProcess(std::string& text, const std::shared_ptr<ChatBot>& bot)
 {
     static std::regex pattern(R"(\[Reading\]([\x01-\xFF]*?)\[Reading\])");
     std::smatch match;
+    if (!preProcessCallback)
+        return text;
     try
     {
         auto reading_begin = std::sregex_iterator(text.begin(), text.end(), pattern);
@@ -1833,11 +1840,7 @@ std::string StringExecutor::PreProcess(const std::string& text, const std::share
             auto res = Python(processedReading);
             std::string newAsk = "File content are:\n" + res + "\n please answer the forward user`s question";
             bot->SubmitAsync(newAsk, bot->lastTimeStamp);
-            while (!bot->Finished(bot->lastTimeStamp))
-            {
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-            }
-            return res;
+            return preProcessCallback();
         }
     }
     catch (const std::exception& e)

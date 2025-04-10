@@ -380,28 +380,36 @@ private:
                 last_input += "(VE)";
             bot->SubmitAsync(last_input, botR->timestamp, role, convid);
             botR->talking = true;
-            std::string _tmpText = "";
-            while (!bot->Finished(botR->timestamp))
+
+            auto process = [this,botR]()
             {
+                std::string _tmpText = "";
+                while (!bot->Finished(botR->timestamp))
+                {
+                    _tmpText += bot->GetResponse(botR->timestamp);
+                    if (configure.vits.enable)
+                    {
+                        _tmpText = StringExecutor::TTS(_tmpText);
+                    }
+                    botR->content = _tmpText;
+                    botR->newMessage = true;
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                }
+                //->content = bot->GetResponse(botR->timestamp);
                 _tmpText += bot->GetResponse(botR->timestamp);
                 if (configure.vits.enable)
                 {
                     _tmpText = StringExecutor::TTS(_tmpText);
                 }
                 botR->content = _tmpText;
-                botR->newMessage = true;
+                botR->talking = false;
+                botR->content = StringExecutor::AutoExecute(botR->content, bot);
+                return botR->content;
+            };
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-            }
-            //->content = bot->GetResponse(botR->timestamp);
-            _tmpText += bot->GetResponse(botR->timestamp);
-            if (configure.vits.enable)
-            {
-                _tmpText = StringExecutor::TTS(_tmpText);
-            }
-            botR->content = _tmpText;
-            botR->talking = false;
-            botR->content = StringExecutor::AutoExecute(botR->content, bot);
+            StringExecutor::SetPreProcessCallback(process);
+            process();
 
             return botR->content;
         }).share();

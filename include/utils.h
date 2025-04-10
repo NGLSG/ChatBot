@@ -274,6 +274,8 @@ private:
     inline static DrawCallback drawCallback;
     using TTSCallback = std::function<void(const std::string&)>;
     inline static TTSCallback ttsCallback;
+    using PreProcessCallback = std::function<std::string()>;
+    inline static PreProcessCallback preProcessCallback;
 
 public:
     struct Code
@@ -297,9 +299,11 @@ public:
 
     static void SetDrawCallback(const DrawCallback& callback);
 
+    static void SetPreProcessCallback(const PreProcessCallback& callback);
 
 
-    static std::string AutoExecute(std::string text, const std::shared_ptr<ChatBot>& bot);
+
+    static std::string AutoExecute(std::string& text, const std::shared_ptr<ChatBot>& bot);
 
     static std::string CMD(const std::string& text);
     static std::string CMDWithOutput(const std::string& text);
@@ -311,7 +315,7 @@ public:
 
     static std::string Process(const std::string& text);
 
-    static std::string PreProcess(const std::string& text, const std::shared_ptr<ChatBot>& bot);
+    static std::string PreProcess(std::string& text, const std::shared_ptr<ChatBot>& bot);
 
     static std::vector<Code> GetCodes(std::string text);
 };

@@ -50,6 +50,7 @@ public:
             forceStop = false;
         }
         lastFinalResponse = "";
+        std::get<1>(Response[timeStamp]) = false;
         std::thread([=] { Submit(prompt, timeStamp, role, convid, true); }).detach();
     }
 
