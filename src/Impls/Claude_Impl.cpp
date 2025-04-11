@@ -329,7 +329,7 @@ std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string rol
         // 构建 Claude API 请求
         std::string data = "{\n"
             "  \"model\": \"" + claude_data_.model + "\",\n"
-            "  \"max_tokens\": 1024,\n"
+            "  \"max_tokens\": 4096,\n"
             "  \"messages\": " +
             Conversation[convid_].dump()
             + "}\n";

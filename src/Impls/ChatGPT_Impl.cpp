@@ -1,6 +1,6 @@
 #include "Impls/ChatGPT_Impl.h"
 
-size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp)
 {
     // 基本参数转换
     DString* dstr = static_cast<DString*>(userp);
@@ -312,7 +312,7 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                         curl_easy_cleanup(curl);
                         curl_slist_free_all(headers);
 
-                        std::stringstream stream(*dstr.response);
+                        /*std::stringstream stream(*dstr.response);
                         std::string line;
                         std::string full_response;
 
@@ -363,7 +363,7 @@ std::string ChatGPT::sendRequest(std::string data, size_t ts)
                                     full_response += content;
                                 }
                             }
-                        }
+                        }*/
                         delete dstr.str1;
                         delete dstr.response;
 
@@ -475,7 +475,7 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
         LogError(e.what());
         std::get<0>(Response[timeStamp]) = "发生错误: " + std::string(e.what());
         std::get<1>(Response[timeStamp]) = true;
-        return std::get<0>(Response[timeStamp]);
+        return lastFinalResponse;
     }
 }
 

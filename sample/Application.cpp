@@ -1158,7 +1158,7 @@ void Application::CreateBot()
         }
         else if (configure.gemini.enable)
         {
-            bot = CreateRef<Gemini>(configure.gemini);
+            bot = CreateRef<Gemini>(configure.gemini, SYSTEMROLE + SYSTEMROLE_EX);
             ConversationPath /= "Gemini/";
             if (!std::filesystem::exists(ConversationPath))
             {
@@ -2602,7 +2602,9 @@ void Application::RenderConfigBox()
                     {
                         // 远程API配置
                         static int currentItem = 0;
-                        const char* items[] = { reinterpret_cast<const char*>(u8"手动配置"), reinterpret_cast<const char*>(u8"从Curl命令解析") };
+                        const char* items[] = {
+                            reinterpret_cast<const char*>(u8"手动配置"), reinterpret_cast<const char*>(u8"从Curl命令解析")
+                        };
                         ImGui::Combo(reinterpret_cast<const char*>(u8"配置方式"), &currentItem, items, IM_ARRAYSIZE(items));
 
                         if (currentItem == 1) // 从Curl命令解析
@@ -2610,9 +2612,9 @@ void Application::RenderConfigBox()
                             static std::string value;
                             strcpy_s(GetBufferByName("curl_parser").buffer, value.c_str());
                             if (ImGui::InputTextMultiline("##CurlParser", GetBufferByName("curl_parser").buffer,
-                                                        TEXT_BUFFER, ImVec2(-1, 64),
-                                                        ImGuiInputTextFlags_AllowTabInput |
-                                                        ImGuiInputTextFlags_CtrlEnterForNewLine))
+                                                          TEXT_BUFFER, ImVec2(-1, 64),
+                                                          ImGuiInputTextFlags_AllowTabInput |
+                                                          ImGuiInputTextFlags_CtrlEnterForNewLine))
                             {
                                 value = GetBufferByName("curl_parser").buffer;
                             }
