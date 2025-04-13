@@ -4163,12 +4163,40 @@ int Application::Renderer()
     config.OversampleH = 1;
     config.OversampleV = 1;
     config.PixelSnapH = true;
+    auto fontRanges = []()
+    {
+        // 基础范围构建器
+        static ImVector<ImWchar> ranges;
+        ImFontGlyphRangesBuilder builder;
+
+        // 添加中文全字符集
+        builder.AddRanges(ImGui::GetIO().Fonts->GetGlyphRangesChineseFull());
+
+        // 添加特殊数学符号 (包括积分符号∫ - Unicode: 0x222B)
+        static const ImWchar math_symbols[] = {
+            0x2200, 0x22FF, // 数学运算符范围
+            0x2600, 0x26FF, // 杂项符号
+            0x2700, 0x27BF, // 装饰符号
+            0
+        };
+        builder.AddRanges(math_symbols);
+
+        // 也可以直接添加单个符号
+        builder.AddChar(0x222B); // 积分符号 ∫
+        builder.AddChar(0x221E); // 无穷符号 ∞
+        builder.AddChar(0x2211); // 求和符号 ∑
+        builder.AddChar(0x221A); // 平方根 √
+
+        // 构建最终范围
+        builder.BuildRanges(&ranges);
+        return ranges;
+    };
     font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
-                                        io.Fonts->GetGlyphRangesChineseFull());
+                                        fontRanges().Data);
     H1 = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
-                                      io.Fonts->GetGlyphRangesChineseFull());
+                                      fontRanges().Data);
     H2 = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
-                                      io.Fonts->GetGlyphRangesChineseFull());
+                                      fontRanges().Data);
     H3 = mdConfig.headingFormats[1].font;
 
 
