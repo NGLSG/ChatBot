@@ -35,10 +35,8 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
     std::string remainingBuffer;
     size_t processedLength = 0;
 
-    // Gemini API返回的是JSON数组，每个元素是一个部分的响应
     try
     {
-        // 尝试解析整个缓冲区作为一个完整的JSON数组
         auto jsonArray = json::parse(buffer);
 
         // 成功解析，处理每个元素
@@ -244,7 +242,10 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
         }
         if (history.empty())
         {
-            history.push_back(SystemPrompt);
+            for (auto& i : SystemPrompt)
+            {
+                history.push_back(i);
+            }
         }
         history.emplace_back(ask);
         Conversation[convid] = history;

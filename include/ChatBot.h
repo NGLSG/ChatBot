@@ -54,6 +54,13 @@ public:
         std::thread([=] { Submit(prompt, timeStamp, role, convid, true); }).detach();
     }
 
+    std::string GetLastRawResponse()
+    {
+        std::string response = lastRawResponse;
+        lastRawResponse = "";
+        return response;
+    }
+
     void ForceStop()
     {
         std::lock_guard<std::mutex> lock(forceStopMutex);
@@ -96,6 +103,7 @@ protected:
     std::mutex fileAccessMutex;
     std::mutex historyAccessMutex;
     std::string lastFinalResponse;
+    std::string lastRawResponse;
     std::unordered_map<size_t, std::tuple<std::string, bool>> Response; //ts,response,finished
 
     std::mutex forceStopMutex;

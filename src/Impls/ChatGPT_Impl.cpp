@@ -163,11 +163,6 @@ std::string ChatGPT::Stamp2Time(long long timestamp)
     return str;
 }
 
-bool ChatGPT::IsSaved()
-{
-    return LastHistory == history;
-}
-
 ChatGPT::ChatGPT(const OpenAIBotCreateInfo& chat_data, std::string systemrole) : chat_data_(chat_data)
 {
     Logger::Init();
@@ -182,20 +177,6 @@ ChatGPT::ChatGPT(const OpenAIBotCreateInfo& chat_data, std::string systemrole) :
         UDirectory::Create(ConversationPath);
         Add("default");
     }
-}
-
-long long ChatGPT::getCurrentTimestamp()
-{
-    auto currentTime = std::chrono::system_clock::now();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(currentTime.time_since_epoch()).count();
-}
-
-long long ChatGPT::getTimestampBefore(const int daysBefore)
-{
-    auto currentTime = std::chrono::system_clock::now();
-    auto days = std::chrono::hours(24 * daysBefore);
-    auto targetTime = currentTime - days;
-    return std::chrono::duration_cast<std::chrono::milliseconds>(targetTime.time_since_epoch()).count();
 }
 
 std::string ChatGPT::sendRequest(std::string data, size_t ts)

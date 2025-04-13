@@ -113,6 +113,20 @@ bool UDirectory::Remove(const std::string& dir)
     }
 }
 
+std::vector<std::string> UDirectory::GetSubFiles(const std::string& dirPath)
+{
+    std::filesystem::path path(dirPath);
+    std::vector<std::string> files;
+    for (const auto& entry : std::filesystem::directory_iterator(path))
+    {
+        if (std::filesystem::is_regular_file(entry))
+        {
+            files.push_back(entry.path().filename().string());
+        }
+    }
+    return files;
+}
+
 std::vector<std::string> UDirectory::GetSubDirectories(const std::string& dirPath)
 {
     std::filesystem::path path(dirPath);
@@ -1541,7 +1555,7 @@ std::string StringExecutor::AutoExecute(std::string& text, const std::shared_ptr
 {
     auto [res, part] = EraseInRange("<think>", "</think>", text);
 
-    return part + "\n" + Python(Draw(CMDWithOutput(CMD(File(Process(PreProcess(res, bot)))))));
+    return part + "\n" + Python(Draw(Callback(Register(CMDWithOutput(CMD(File(Process(PreProcess(res, bot)))))))));
 }
 
 std::string StringExecutor::CMD(const std::string& text)
@@ -1662,6 +1676,223 @@ std::string StringExecutor::Draw(const std::string& text)
                                         std::regex_constants::format_first_only);
 
     return replacedAnswer; // 添加返回语句，之前的代码缺少返回值
+}
+
+std::string StringExecutor::Register(const std::string& text)
+{
+    // 定义用于提取各个部分的正则表达式
+    static std::regex pattern1(R"(\[Register\]([\x01-\xFF]*?)\[Register\])");
+    static std::regex pattern3(R"(\[Content\]([\x01-\xFF]*?)\[Content\])");
+    static std::regex pattern4(R"(\[Deps\]([\x01-\xFF]*?)\[Deps\])");
+    static std::regex pattern2(R"(\[Name\]([\x01-\xFF]*?)\[Name\])");
+    static std::regex pattern5(R"(\[Params\]([\x01-\xFF]*?)\[Params\])");
+    // 添加描述提取的正则表达式
+    static std::regex patternDes(R"(\[Des\]([\x01-\xFF]*?)\[Des\])");
+
+    std::string replacedAnswer = text;
+
+    // 提取整个注册块
+    std::smatch registerMatch;
+    if (!std::regex_search(replacedAnswer, registerMatch, pattern1))
+    {
+        return text;
+    }
+
+    std::string registerBlock = registerMatch[1].str();
+
+    // 提取方法名
+    std::smatch nameMatch;
+    if (!std::regex_search(registerBlock, nameMatch, pattern2))
+    {
+        return text;
+    }
+    std::string methodName = nameMatch[1].str();
+
+    // 提取描述
+    std::smatch desMatch;
+    std::string description;
+    if (std::regex_search(registerBlock, desMatch, patternDes))
+    {
+        description = desMatch[1].str();
+    }
+
+
+    // 提取依赖
+    std::smatch depsMatch;
+    std::string dependencies;
+    if (std::regex_search(registerBlock, depsMatch, pattern4))
+    {
+        dependencies = depsMatch[1].str();
+    }
+    Application::InstallPythonPackage(dependencies);
+
+    // 提取参数列表
+    std::smatch paramsMatch;
+    std::vector<ToolInfo::Param> paramsList;
+    if (std::regex_search(registerBlock, paramsMatch, pattern5))
+    {
+        std::string paramsBlock = paramsMatch[1].str();
+        std::istringstream paramsStream(paramsBlock);
+        std::string paramLine;
+
+        // 逐行处理参数
+        while (std::getline(paramsStream, paramLine))
+        {
+            // 跳过空行
+            if (paramLine.empty())
+            {
+                continue;
+            }
+
+            // 分割参数信息
+            std::vector<std::string> paramParts;
+            size_t pos = 0;
+            std::string token;
+            while ((pos = paramLine.find(":")) != std::string::npos)
+            {
+                token = paramLine.substr(0, pos);
+                paramParts.push_back(token);
+                paramLine.erase(0, pos + 1);
+            }
+            paramParts.push_back(paramLine); // 添加最后一部分
+
+            // 确保有足够的部分
+            if (paramParts.size() >= 3)
+            {
+                ToolInfo::Param param;
+                param.name = paramParts[0];
+                // 检查第三个部分是否是"must"，确定参数是否必需
+                param.isRequired = (paramParts[2] == "must");
+                paramsList.push_back(param);
+            }
+        }
+    }
+
+    std::smatch contentMatch;
+    if (!std::regex_search(registerBlock, contentMatch, pattern3))
+    {
+        LogError("错误: 未找到方法内容");
+        return text;
+    }
+    std::string content = contentMatch[1].str();
+
+    _WriteToFile(ToolsPath + methodName + ".py", content);
+    // 创建工具信息
+    ToolInfo toolInfo;
+    toolInfo.name = methodName;
+    toolInfo.description = description;
+    toolInfo.params = paramsList;
+
+    toolsManifest[methodName] = toolInfo;
+    Utils::SaveYaml(ToolsManifestPath, Utils::toYaml(toolsManifest));
+
+    replacedAnswer = std::regex_replace(replacedAnswer, pattern1, "[Registered Tool " + methodName + "]",
+                                        std::regex_constants::format_first_only);
+    ToolsUpdated = true;
+    NewTools += GetTool(methodName);
+    return replacedAnswer;
+}
+
+std::string StringExecutor::Callback(const std::string& text)
+{
+    static std::regex pattern2(R"(\[Name\]([\x01-\xFF]*?)\[Name\])");
+    static std::regex pattern1(R"(\[Tool\]([\x01-\xFF]*?)\[Tool\])");
+    static std::regex pattern5(R"(\[Params\]([\x01-\xFF]*?)\[Params\])");
+
+    // 提取整个工具调用块
+    std::smatch toolMatch;
+    if (!std::regex_search(text, toolMatch, pattern1))
+    {
+        return text;
+    }
+
+    std::string toolBlock = toolMatch[1].str();
+
+    // 提取方法名
+    std::smatch nameMatch;
+    if (!std::regex_search(toolBlock, nameMatch, pattern2))
+    {
+        return text;
+    }
+    std::string methodName = nameMatch[1].str();
+
+    if (!toolsManifest.contains(methodName))
+    {
+        return text;
+    }
+
+    // 提取参数部分
+    std::smatch paramsMatch;
+    std::unordered_map<std::string, std::string> paramsMap;
+
+    if (std::regex_search(toolBlock, paramsMatch, pattern5))
+    {
+        std::string paramsBlock = paramsMatch[1].str();
+
+        // 解析参数
+        size_t pos = 0;
+        while (pos < paramsBlock.length())
+        {
+            // 寻找参数开始标记 "--"
+            size_t paramStart = paramsBlock.find("--", pos);
+            if (paramStart == std::string::npos)
+            {
+                break;
+            }
+
+            // 查找参数名结束（由空格或结尾标记）
+            // 注意：不再跳过"--"前缀，保留完整的参数名（包括前缀）
+            size_t nameEnd = paramsBlock.find(" ", paramStart);
+            if (nameEnd == std::string::npos)
+            {
+                break;
+            }
+
+            // 提取完整参数名（包括"--"前缀）
+            std::string paramName = paramsBlock.substr(paramStart, nameEnd - paramStart);
+
+            // 跳过名称后的空格
+            size_t valueStart = nameEnd + 1;
+
+            // 查找值的结束位置（下一个参数开始或结尾）
+            size_t valueEnd = paramsBlock.find("--", valueStart);
+            if (valueEnd == std::string::npos)
+            {
+                // 如果没有下一个参数，则值一直到参数块结束
+                valueEnd = paramsBlock.length();
+            }
+
+            // 提取并清理参数值
+            std::string paramValue = paramsBlock.substr(valueStart, valueEnd - valueStart);
+            // 去除尾部空白
+            while (!paramValue.empty() && std::isspace(paramValue.back()))
+            {
+                paramValue.pop_back();
+            }
+
+            // 存储完整参数名（包含"--"前缀）
+            paramsMap[paramName] = paramValue;
+
+            // 移动到下一个参数
+            pos = valueEnd;
+        }
+    }
+
+    // 构建回调结果
+    std::string result = "";
+
+    for (const auto& param : paramsMap)
+    {
+        result += "  " + param.first + ": " + param.second;
+    }
+    std::erase_if(
+        methodName,
+        [](char c) { return c == ' ' || c == '\n' || c == '\r'; }
+    );
+    auto res = Application::ExecutePython(ToolsPath + methodName + ".py", result);
+    std::string replacedAnswer = std::regex_replace(text, pattern1, res,
+                                                    std::regex_constants::format_first_only);
+    return replacedAnswer;
 }
 
 std::string StringExecutor::File(const std::string& text)

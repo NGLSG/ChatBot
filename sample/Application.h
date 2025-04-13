@@ -215,6 +215,7 @@ private:
     const std::string Live2DPath = "Live2D/";
     const std::string PluginPath = "Plugins/";
     const std::string Conversation = "Conversations/ChatHistory/";
+    const std::string CustomRulesPath = "CustomRules/";
     const std::string special_chars = R"(~!@#$%^&*()_+`-={}|[]\:";'<>?,./)";
 
     const int sampleRate = 16000;
@@ -223,7 +224,7 @@ private:
     const std::vector<std::string> dirs = {
         PluginPath, Conversation, bin, bin + VitsConvertor, bin + WhisperPath,
         bin + ChatGLMPath, bin + Live2DPath, model, model + VitsPath,
-        model + WhisperPath, model + Live2DPath,
+        model + WhisperPath, model + Live2DPath, CustomRulesPath,
         Resources
     };
     const std::vector<std::string> whisperModel = {"tiny", "base", "small", "medium", "large"};
@@ -249,9 +250,10 @@ private:
     std::string title = reinterpret_cast<const char*>(u8"文件选择");
     std::vector<std::string> typeFilters;
     bool fileBrowser = false;
+    ConfirmDelegate PathOnConfirm = nullptr;
     inline static bool PyInstalled = false;
     std::string BrowserPath;
-    ConfirmDelegate PathOnConfirm = nullptr;
+
     std::filesystem::path ConversationPath = "Conversations/";
 
     std::vector<std::string> forbidLuaPlugins;
@@ -259,6 +261,7 @@ private:
     std::vector<std::string> speakers = {reinterpret_cast<const char*>(u8"空空如也")};
     std::vector<std::string> vitsModels = {reinterpret_cast<const char*>(u8"空空如也")};
     std::map<std::string, std::vector<std::string>> codes;
+    std::unordered_map<std::string, CustomRule> customRuleTemplates;
     map<string, GLuint> TextureCache = {
         {"eye", 0},
         {"del", 0},
@@ -366,6 +369,486 @@ private:
 
     void CreateBot();
 
+    void EditCustomRule(CustomRule& rule)
+    {
+        if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"基本信息"), ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::BeginGroup();
+
+            ImGui::Checkbox(reinterpret_cast<const char*>(u8"启用规则"), &rule.enable);
+            ImGui::SameLine(200);
+            ImGui::Checkbox(reinterpret_cast<const char*>(u8"支持系统角色"), &rule.supportSystemRole);
+
+            strcpy_s(GetBufferByName("ruleName").buffer, TEXT_BUFFER, rule.name.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"规则名称"), GetBufferByName("ruleName").buffer,
+                                 TEXT_BUFFER))
+                rule.name = GetBufferByName("ruleName").buffer;
+            ImGui::PopStyleVar();
+
+            strcpy_s(GetBufferByName("author").buffer, TEXT_BUFFER, rule.author.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"作者"), GetBufferByName("author").buffer, TEXT_BUFFER))
+                rule.author = GetBufferByName("author").buffer;
+            ImGui::PopStyleVar();
+
+            strcpy_s(GetBufferByName("version").buffer, TEXT_BUFFER, rule.version.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"版本"), GetBufferByName("version").buffer, TEXT_BUFFER))
+                rule.version = GetBufferByName("version").buffer;
+            ImGui::PopStyleVar();
+
+            ImGui::Text(reinterpret_cast<const char*>(u8"描述:"));
+            strcpy_s(GetBufferByName("description").buffer, TEXT_BUFFER, rule.description.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputTextMultiline("##Description", GetBufferByName("description").buffer, TEXT_BUFFER,
+                                          ImVec2(0, 80)))
+                rule.description = GetBufferByName("description").buffer;
+            ImGui::PopStyleVar();
+
+            ImGui::EndGroup();
+            ImGui::Separator();
+
+            strcpy_s(GetBufferByName("apiPath").buffer, TEXT_BUFFER, rule.apiPath.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"API路径"), GetBufferByName("apiPath").buffer,
+                                 TEXT_BUFFER))
+                rule.apiPath = GetBufferByName("apiPath").buffer;
+            ImGui::PopStyleVar();
+
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                               reinterpret_cast<const char*>(u8"支持变量: ${MODEL}, ${API_KEY}"));
+        }
+
+        if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"API密钥配置")))
+        {
+            const char* roleTypes[] = {"HEADERS", "URL", "NONE"};
+            int currentRoleIndex = 0;
+
+            for (int i = 0; i < IM_ARRAYSIZE(roleTypes); i++)
+                if (rule.apiKeyRole.role == roleTypes[i])
+                {
+                    currentRoleIndex = i;
+                    break;
+                }
+
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"密钥位置:"));
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f),
+                               reinterpret_cast<const char*>(u8"HEADERS=请求头 URL=URL参数 NONE=不使用"));
+
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::Combo(reinterpret_cast<const char*>(u8"密钥方式"), &currentRoleIndex, roleTypes,
+                             IM_ARRAYSIZE(roleTypes)))
+                rule.apiKeyRole.role = roleTypes[currentRoleIndex];
+            ImGui::PopStyleVar();
+
+
+            if (rule.apiKeyRole.role == "HEADERS")
+            {
+                strcpy_s(GetBufferByName("header").buffer, TEXT_BUFFER, rule.apiKeyRole.header.c_str());
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"请求头前缀"), GetBufferByName("header").buffer,
+                                     TEXT_BUFFER))
+                    rule.apiKeyRole.header = GetBufferByName("header").buffer;
+                ImGui::PopStyleVar();
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                                   reinterpret_cast<const char*>(u8"常见格式: Authorization: Bearer "));
+            }
+        }
+
+        if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"提示角色配置")))
+        {
+            ImGui::TextColored(ImVec4(0.1f, 0.8f, 0.2f, 1.0f), reinterpret_cast<const char*>(u8"提示内容配置:"));
+
+            strcpy_s(GetBufferByName("promptPath").buffer, TEXT_BUFFER, rule.promptRole.prompt.path.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"提示路径"), GetBufferByName("promptPath").buffer,
+                                 TEXT_BUFFER))
+                rule.promptRole.prompt.path = GetBufferByName("promptPath").buffer;
+            ImGui::PopStyleVar();
+
+            strcpy_s(GetBufferByName("promptSuffix").buffer, TEXT_BUFFER, rule.promptRole.prompt.suffix.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"提示前缀"), GetBufferByName("promptSuffix").buffer,
+                                 TEXT_BUFFER))
+                rule.promptRole.prompt.suffix = GetBufferByName("promptSuffix").buffer;
+            ImGui::PopStyleVar();
+
+            ImGui::TextColored(ImVec4(0.1f, 0.8f, 0.2f, 1.0f), reinterpret_cast<const char*>(u8"角色配置:"));
+
+            strcpy_s(GetBufferByName("rolePath").buffer, TEXT_BUFFER, rule.promptRole.role.path.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"角色路径"), GetBufferByName("rolePath").buffer,
+                                 TEXT_BUFFER))
+                rule.promptRole.role.path = GetBufferByName("rolePath").buffer;
+            ImGui::PopStyleVar();
+
+            strcpy_s(GetBufferByName("roleSuffix").buffer, TEXT_BUFFER, rule.promptRole.role.suffix.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"角色前缀"), GetBufferByName("roleSuffix").buffer,
+                                 TEXT_BUFFER))
+                rule.promptRole.role.suffix = GetBufferByName("roleSuffix").buffer;
+            ImGui::PopStyleVar();
+
+            ImGui::TextWrapped(
+                reinterpret_cast<const char*>(u8"提示: 对于大多数API，提示路径设为'content'，提示前缀设为'messages'，角色路径设为'role'即可"));
+        }
+
+        if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"参数配置")))
+        {
+            ImGui::TextColored(ImVec4(0.1f, 0.8f, 0.2f, 1.0f), reinterpret_cast<const char*>(u8"添加请求参数:"));
+
+            ImGui::BeginChild("##ParamsList", ImVec2(0, 150), true);
+            if (rule.params.empty())
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                                   reinterpret_cast<const char*>(u8"暂无参数，点击下方添加按钮增加参数"));
+
+            for (int i = 0; i < rule.params.size(); i++)
+            {
+                ImGui::PushID(i);
+                ImGui::BeginGroup();
+                ImGui::Text(reinterpret_cast<const char*>(u8"参数 %d:"), i + 1);
+
+                strcpy_s(GetBufferByName("paramSuffix").buffer, TEXT_BUFFER, rule.params[i].suffix.c_str());
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.8f);
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"JSON键##suffix"),
+                                     GetBufferByName("paramSuffix").buffer, TEXT_BUFFER))
+                    rule.params[i].suffix = GetBufferByName("paramSuffix").buffer;
+                ImGui::PopStyleVar();
+
+                strcpy_s(GetBufferByName("paramPath").buffer, TEXT_BUFFER, rule.params[i].path.c_str());
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.8f);
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"JSON路径##path"),
+                                     GetBufferByName("paramPath").buffer, TEXT_BUFFER))
+                    rule.params[i].path = GetBufferByName("paramPath").buffer;
+                ImGui::PopStyleVar();
+
+                strcpy_s(GetBufferByName("paramContent").buffer, TEXT_BUFFER, rule.params[i].content.c_str());
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.8f);
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"内容##content"),
+                                     GetBufferByName("paramContent").buffer, TEXT_BUFFER))
+                    rule.params[i].content = GetBufferByName("paramContent").buffer;
+                ImGui::PopStyleVar();
+
+                ImGui::Checkbox(reinterpret_cast<const char*>(u8"是否为字符串值"), &rule.params[i].isStr);
+                ImGui::Separator();
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.2f, 0.2f, 0.8f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.3f, 0.9f));
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"删除参数"), ImVec2(100, 25)))
+                {
+                    rule.params.erase(rule.params.begin() + i);
+                    ImGui::PopStyleColor(2);
+                    ImGui::EndGroup();
+                    ImGui::PopID();
+                    continue;
+                }
+                ImGui::PopStyleColor(2);
+                ImGui::EndGroup();
+                ImGui::PopID();
+            }
+            ImGui::EndChild();
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"添加参数"), ImVec2(120, 28)))
+            {
+                ParamsRole newParam;
+                newParam.suffix = "messages";
+                newParam.path = "content";
+                newParam.content = "content";
+                newParam.isStr = false;
+                rule.params.push_back(newParam);
+            }
+            ImGui::PopStyleColor(2);
+
+            ImGui::BeginChild("##参数说明", ImVec2(0, 90), true);
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"参数说明："));
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"JSON键: 表示JSON中的键名"));
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                               reinterpret_cast<const char*>(u8"JSON路径: 指定在JSON中的访问路径"));
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"内容: 参数的实际内容值"));
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                               reinterpret_cast<const char*>(u8"是否为字符串值: 决定内容是否需要使用引号"));
+            ImGui::EndChild();
+        }
+
+        if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"请求头配置")))
+        {
+            ImGui::TextColored(ImVec4(0.1f, 0.8f, 0.2f, 1.0f), reinterpret_cast<const char*>(u8"自定义HTTP请求头:"));
+            std::string headerToDelete = "";
+
+            ImGui::BeginChild("##HeadersList", ImVec2(0, 150), true);
+            if (rule.headers.empty())
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"暂无自定义请求头"));
+
+            int idx = 0;
+            for (auto& header : rule.headers)
+            {
+                ImGui::PushID(idx++);
+                strcpy_s(GetBufferByName("headerKey").buffer, TEXT_BUFFER, header.first.c_str());
+                strcpy_s(GetBufferByName("headerValue").buffer, TEXT_BUFFER, header.second.c_str());
+
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
+                bool keyChanged = false;
+                std::string newKey = header.first;
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"请求头名"), GetBufferByName("headerKey").buffer,
+                                     TEXT_BUFFER))
+                {
+                    keyChanged = true;
+                    newKey = GetBufferByName("headerKey").buffer;
+                }
+
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+                if (ImGui::InputText(reinterpret_cast<const char*>(u8"请求头值"), GetBufferByName("headerValue").buffer,
+                                     TEXT_BUFFER))
+                    header.second = GetBufferByName("headerValue").buffer;
+                ImGui::PopStyleVar();
+
+                if (keyChanged)
+                {
+                    rule.headers[newKey] = header.second;
+                    headerToDelete = header.first;
+                }
+
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.2f, 0.2f, 0.8f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.3f, 0.9f));
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"删除##header"), ImVec2(60, 0)))
+                    headerToDelete = header.first;
+                ImGui::PopStyleColor(2);
+                ImGui::PopID();
+            }
+
+            if (!headerToDelete.empty())
+                rule.headers.erase(headerToDelete);
+            ImGui::EndChild();
+
+            ImGui::BeginGroup();
+            static char newHeaderKey[256] = {0};
+            static char newHeaderValue[256] = {0};
+
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
+            ImGui::InputText(reinterpret_cast<const char*>(u8"新请求头"), newHeaderKey, sizeof(newHeaderKey));
+
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
+            ImGui::InputText(reinterpret_cast<const char*>(u8"值"), newHeaderValue, sizeof(newHeaderValue));
+            ImGui::PopStyleVar();
+
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"添加"), ImVec2(60, 0)))
+            {
+                if (strlen(newHeaderKey) > 0)
+                {
+                    rule.headers[newHeaderKey] = newHeaderValue;
+                    memset(newHeaderKey, 0, sizeof(newHeaderKey));
+                    memset(newHeaderValue, 0, sizeof(newHeaderValue));
+                }
+            }
+            ImGui::PopStyleColor(2);
+            ImGui::EndGroup();
+
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                               reinterpret_cast<const char*>(u8"常见请求头示例: Content-Type: application/json"));
+        }
+
+        if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"角色映射配置")))
+        {
+            ImGui::TextColored(ImVec4(0.1f, 0.8f, 0.2f, 1.0f), reinterpret_cast<const char*>(u8"配置不同角色的映射:"));
+
+            ImGui::BeginChild("##RoleMapping", ImVec2(0, 120), true);
+
+            strcpy_s(GetBufferByName("systemRole").buffer, TEXT_BUFFER, rule.roles["system"].c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"系统角色"), GetBufferByName("systemRole").buffer,
+                                 TEXT_BUFFER))
+                rule.roles["system"] = GetBufferByName("systemRole").buffer;
+            ImGui::PopStyleVar();
+
+            strcpy_s(GetBufferByName("userRole").buffer, TEXT_BUFFER, rule.roles["user"].c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"用户角色"), GetBufferByName("userRole").buffer,
+                                 TEXT_BUFFER))
+                rule.roles["user"] = GetBufferByName("userRole").buffer;
+            ImGui::PopStyleVar();
+
+            strcpy_s(GetBufferByName("assistantRole").buffer, TEXT_BUFFER, rule.roles["assistant"].c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"助手角色"), GetBufferByName("assistantRole").buffer,
+                                 TEXT_BUFFER))
+                rule.roles["assistant"] = GetBufferByName("assistantRole").buffer;
+            ImGui::PopStyleVar();
+
+            ImGui::EndChild();
+
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                               reinterpret_cast<const char*>(u8"典型设置: 系统=system, 用户=user, 助手=assistant"));
+        }
+
+        if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"响应配置")))
+        {
+            ImGui::TextColored(ImVec4(0.1f, 0.8f, 0.2f, 1.0f), reinterpret_cast<const char*>(u8"响应解析配置:"));
+
+            strcpy_s(GetBufferByName("respSuffix").buffer, TEXT_BUFFER, rule.responseRole.suffix.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"响应前缀"), GetBufferByName("respSuffix").buffer,
+                                 TEXT_BUFFER))
+                rule.responseRole.suffix = GetBufferByName("respSuffix").buffer;
+            ImGui::PopStyleVar();
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"响应前缀示例: data: "));
+
+            strcpy_s(GetBufferByName("respContent").buffer, TEXT_BUFFER, rule.responseRole.content.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"内容路径"), GetBufferByName("respContent").buffer,
+                                 TEXT_BUFFER))
+                rule.responseRole.content = GetBufferByName("respContent").buffer;
+            ImGui::PopStyleVar();
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                               reinterpret_cast<const char*>(u8"内容路径示例: choices/delta/content"));
+
+            const char* callbackTypes[] = {"RESPONSE", "NONE"};
+            int currentCallbackIndex = 0;
+            for (int i = 0; i < IM_ARRAYSIZE(callbackTypes); i++)
+                if (rule.responseRole.callback == callbackTypes[i])
+                {
+                    currentCallbackIndex = i;
+                    break;
+                }
+
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::Combo(reinterpret_cast<const char*>(u8"类型"), &currentCallbackIndex, callbackTypes,
+                             IM_ARRAYSIZE(callbackTypes)))
+                rule.responseRole.callback = callbackTypes[currentCallbackIndex];
+            ImGui::PopStyleVar();
+
+            strcpy_s(GetBufferByName("stopFlag").buffer, TEXT_BUFFER, rule.responseRole.stopFlag.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"停止标记"), GetBufferByName("stopFlag").buffer,
+                                 TEXT_BUFFER))
+                rule.responseRole.stopFlag = GetBufferByName("stopFlag").buffer;
+            ImGui::PopStyleVar();
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"停止标记示例: [DONE]"));
+        }
+
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), reinterpret_cast<const char*>(u8"注意：此规则只配置流式响应规则"));
+    }
+
+    void ExportCustomRuleTemplates(const std::string& filePath)
+    {
+        std::ofstream file(filePath, std::ios::binary);
+        if (!file.is_open())
+        {
+            LogError("无法打开导出文件: {}", filePath);
+            return;
+        }
+
+        try
+        {
+            size_t templateCount = customRuleTemplates.size();
+            file.write(reinterpret_cast<char*>(&templateCount), sizeof(templateCount));
+
+            for (const auto& [name, rule] : customRuleTemplates)
+            {
+                size_t nameLen = name.size();
+                file.write(reinterpret_cast<char*>(&nameLen), sizeof(nameLen));
+                file.write(name.c_str(), nameLen);
+
+                YAML::Node node = YAML::convert<CustomRule>::encode(rule);
+                std::string yamlStr = YAML::Dump(node);
+
+                size_t strLen = yamlStr.size();
+                file.write(reinterpret_cast<char*>(&strLen), sizeof(strLen));
+                file.write(yamlStr.c_str(), strLen);
+            }
+
+            file.close();
+            LogInfo("成功导出{}个自定义API模板", templateCount);
+        }
+        catch (const std::exception& e)
+        {
+            LogError("导出模板时发生错误: {}", e.what());
+        }
+    }
+
+    bool ImportCustomRuleTemplates(const std::string& filePath)
+    {
+        std::ifstream file(filePath, std::ios::binary);
+        if (!file.is_open())
+        {
+            LogError("无法打开导入文件: {}", filePath);
+            return false;
+        }
+
+        try
+        {
+            size_t templateCount;
+            file.read(reinterpret_cast<char*>(&templateCount), sizeof(templateCount));
+
+            std::unordered_map<std::string, CustomRule> importedTemplates;
+
+            for (size_t i = 0; i < templateCount; i++)
+            {
+                size_t nameLen;
+                file.read(reinterpret_cast<char*>(&nameLen), sizeof(nameLen));
+
+                std::string name(nameLen, '\0');
+                file.read(&name[0], nameLen);
+
+                size_t strLen;
+                file.read(reinterpret_cast<char*>(&strLen), sizeof(strLen));
+
+                std::string yamlStr(strLen, '\0');
+                file.read(&yamlStr[0], strLen);
+
+                YAML::Node node = YAML::Load(yamlStr);
+                CustomRule rule = node.as<CustomRule>();
+
+                importedTemplates[name] = rule;
+            }
+
+            file.close();
+
+            for (const auto& [name, rule] : importedTemplates)
+            {
+                customRuleTemplates[name] = rule;
+            }
+
+            LogInfo("成功导入{}个自定义API模板", templateCount);
+            return true;
+        }
+        catch (const std::exception& e)
+        {
+            LogError("导入模板时发生错误: {}", e.what());
+            return false;
+        }
+    }
+
+    static bool isNonNormalChar(char c)
+    {
+        return std::isspace(static_cast<unsigned char>(c));
+    }
+
+    static bool isContentInvalid(const std::string& content)
+    {
+        if (content.empty())
+        {
+            return true;
+        }
+
+        return std::all_of(content.begin(), content.end(), isNonNormalChar);
+    }
+
     void AddSubmit()
     {
         std::shared_future<std::string> submit_future = std::async(std::launch::async, [&]()
@@ -378,6 +861,18 @@ private:
             AddChatRecord(botR);
             if (configure.vits.enable)
                 last_input += "(VE)";
+            if (packageUpdate)
+            {
+                last_input += "Python deps Updated: \n" + newPackage;
+                newPackage = "";
+                packageUpdate = false;
+            }
+            if (StringExecutor::ToolsUpdated)
+            {
+                last_input += "Tools Updated: \n" + StringExecutor::NewTools;
+                StringExecutor::NewTools = "";
+                StringExecutor::ToolsUpdated = false;
+            }
             bot->SubmitAsync(last_input, botR->timestamp, role, convid);
             botR->talking = true;
 
@@ -410,6 +905,11 @@ private:
 
             StringExecutor::SetPreProcessCallback(process);
             process();
+            if (isContentInvalid(botR->content))
+            {
+                botR->content = bot->GetLastRawResponse();
+            }
+
 
             return botR->content;
         }).share();
@@ -532,6 +1032,8 @@ private:
                 return it;
             }
         }
+        text_buffers.emplace_back(name);
+        return text_buffers.back();
     }
 
     void ShowConfirmationDialog(const char* title, const char* content, bool& mstate,
@@ -590,8 +1092,27 @@ public:
     static std::string ExecutePython(const std::string& pyPath, Args&&... args)
     {
         if (IsPythonInstalled())
-            return Utils::ExecuteShell(PythonHome + PythonExecute, pyPath, args...);
-        return std::format("Wrong there is no python executable in your path {0}", PythonHome);
+        {
+            std::string pythonCommand = PythonHome + PythonExecute;
+
+            return Utils::ExecuteShell(pythonCommand, pyPath, std::forward<Args>(args)...);
+        }
+        return std::format("错误：在路径 {0} 中找不到Python可执行文件", PythonHome);
+    }
+
+    inline static bool packageUpdate = false;
+    inline static std::string newPackage = "";
+
+    template <typename... Args>
+    static std::string InstallPythonPackage(Args&&... args)
+    {
+        if (IsPythonInstalled())
+        {
+            packageUpdate = true;
+            newPackage = std::forward<std::string>(args...);
+            return Utils::ExecuteShell(PythonHome + PythonExecute, "-m", "pip", "install", newPackage);
+        }
+        return "";
     }
 
     static std::string GetPythonPackage()

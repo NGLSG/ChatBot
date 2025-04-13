@@ -39,17 +39,8 @@ protected:
     const std::string ConversationPath = "Conversations/";
     const std::string sys = "You are ChatGPT, a large language model trained by OpenAI. Respond conversationally.";
     const std::string suffix = ".dat";
-    const std::vector<std::string> WebProxies{
 
-    };
-    json LastHistory;
     json defaultJson;
-
-    bool IsSaved();
-
-    static long long getCurrentTimestamp();
-
-    static long long getTimestampBefore(const int daysBefore);
 
     std::string sendRequest(std::string data, size_t ts);
 

@@ -67,6 +67,8 @@ public:
 
     static bool Remove(const std::string& dir);
 
+    static std::vector<std::string> GetSubFiles(const std::string& dirPath);
+
 
     static std::vector<std::string> GetSubDirectories(const std::string& dirPath);
 };
@@ -107,16 +109,14 @@ private:
         int length;
     } paUserData;
 
-
-
     static bool CheckFileSize(const std::string& file_path, int expected_size);
 
 public:
     static int paCallback(const void* inputBuffer, void* outputBuffer,
-                         unsigned long framesPerBuffer,
-                         const PaStreamCallbackTimeInfo* timeInfo,
-                         PaStreamCallbackFlags statusFlags,
-                         void* userData);
+                          unsigned long framesPerBuffer,
+                          const PaStreamCallbackTimeInfo* timeInfo,
+                          PaStreamCallbackFlags statusFlags,
+                          void* userData);
 #ifdef WIN32
     inline static std::atomic<HANDLE> childProcessHandle{nullptr};
 
@@ -261,6 +261,146 @@ public:
     static std::string WStringInsert(const std::string& str, int pos, const std::string& insertStr);
 };
 
+struct ToolInfo
+{
+    struct Param
+    {
+        std::string name;
+        bool isRequired;
+    };
+
+    std::string name;
+    std::string description;
+    std::vector<Param> params;
+};
+
+using ToolsManifest = std::unordered_map<std::string, ToolInfo>;
+
+namespace YAML
+{
+    template <>
+    struct convert<ToolInfo::Param>
+    {
+        static bool decode(const Node& node, ToolInfo::Param& param)
+        {
+            if (!node.IsMap())
+            {
+                return false;
+            }
+
+            if (!node["name"] || !node["name"].IsScalar())
+            {
+                return false;
+            }
+            param.name = node["name"].as<std::string>();
+
+            if (node["isRequired"])
+            {
+                param.isRequired = node["isRequired"].as<bool>();
+            }
+            else
+            {
+                param.isRequired = false;
+            }
+
+            return true;
+        }
+
+        static Node encode(const ToolInfo::Param& param)
+        {
+            Node node;
+            node["name"] = param.name;
+            node["isRequired"] = param.isRequired;
+            return node;
+        }
+    };
+
+    template <>
+    struct convert<ToolInfo>
+    {
+        static bool decode(const Node& node, ToolInfo& toolInfo)
+        {
+            if (!node.IsMap())
+            {
+                return false;
+            }
+
+            if (!node["name"] || !node["name"].IsScalar())
+            {
+                return false;
+            }
+            toolInfo.name = node["name"].as<std::string>();
+
+            if (!node["description"] || !node["description"].IsScalar())
+            {
+                return false;
+            }
+            toolInfo.description = node["description"].as<std::string>();
+
+            if (node["params"] && node["params"].IsSequence())
+            {
+                toolInfo.params = node["params"].as<std::vector<ToolInfo::Param>>();
+            }
+            else
+            {
+                toolInfo.params.clear();
+            }
+
+            return true;
+        }
+
+        static Node encode(const ToolInfo& toolInfo)
+        {
+            Node node;
+            node["name"] = toolInfo.name;
+            node["description"] = toolInfo.description;
+
+            if (!toolInfo.params.empty())
+            {
+                node["params"] = toolInfo.params;
+            }
+
+            return node;
+        }
+    };
+
+    template <>
+    struct convert<ToolsManifest>
+    {
+        static bool decode(const Node& node, ToolsManifest& manifest)
+        {
+            if (!node.IsMap())
+            {
+                return false;
+            }
+
+            manifest.clear();
+
+            // 遍历所有工具项
+            for (const auto& pair : node)
+            {
+                std::string key = pair.first.as<std::string>();
+                ToolInfo info = pair.second.as<ToolInfo>();
+                manifest[key] = info;
+            }
+
+            return true;
+        }
+
+        static Node encode(const ToolsManifest& manifest)
+        {
+            Node node;
+
+            for (const auto& pair : manifest)
+            {
+                node[pair.first] = pair.second;
+            }
+
+            return node;
+        }
+    };
+}
+
 class StringExecutor
 {
 private:
@@ -276,7 +416,37 @@ private:
     inline static TTSCallback ttsCallback;
     using PreProcessCallback = std::function<std::string()>;
     inline static PreProcessCallback preProcessCallback;
+    inline static std::unordered_map<std::string, ToolInfo> tools;
+    inline static const std::string ToolsPath = "Tools/";
+    inline static const std::string ToolsManifestPath = "ToolsManifest.yaml";
+    inline static ToolsManifest toolsManifest;
+    static std::string FormatToolInfo(const std::string& toolID, const ToolInfo& toolInfo)
+    {
+        std::string result = "";
 
+        result += "工具ID: " + toolID + "\n";
+        result += "名称: " + toolInfo.name + "\n";
+        result += "描述: " + toolInfo.description + "\n";
+
+        if (!toolInfo.params.empty())
+        {
+            result += "参数列表:\n";
+            for (const auto& param : toolInfo.params)
+            {
+                result += "  - " + param.name;
+                result += (param.isRequired ? " (必需)" : " (可选)");
+                result += "\n";
+            }
+        }
+        else
+        {
+            result += "无参数\n";
+        }
+
+        result += "--------------------\n";
+
+        return result;
+    }
 public:
     struct Code
     {
@@ -284,8 +454,46 @@ public:
         std::vector<std::string> Content;
     };
 
+
+    inline static bool ToolsUpdated = false;
+    inline static std::string NewTools;
+
+    static void Init()
+    {
+        toolsManifest = Utils::LoadYaml<ToolsManifest>(ToolsManifestPath).value();
+    }
+
     static std::pair<std::string, std::string> EraseInRange(const std::string& str1, const std::string& str2,
                                                             const std::string& text);
+
+
+    static std::string GetTool(const std::string& toolID)
+    {
+        auto it = toolsManifest.find(toolID);
+        if (it == toolsManifest.end())
+        {
+            return "错误: 未找到ID为 '" + toolID + "' 的工具";
+        }
+
+        return FormatToolInfo(toolID, it->second);
+    }
+
+    static std::string GetTools()
+    {
+        std::string res = "";
+        for (const auto& [key, value] : toolsManifest)
+        {
+            res += FormatToolInfo(key, value);
+        }
+
+        // 如果没有工具，则返回相应信息
+        if (res.empty())
+        {
+            return "当前没有注册的工具";
+        }
+
+        return res;
+    }
 
     // 使用正则表达式检测字符串是否为规范化的Markdown格式
     static bool HasMarkdown(const std::string& str);
@@ -301,13 +509,13 @@ public:
 
     static void SetPreProcessCallback(const PreProcessCallback& callback);
 
-
-
     static std::string AutoExecute(std::string& text, const std::shared_ptr<ChatBot>& bot);
 
     static std::string CMD(const std::string& text);
     static std::string CMDWithOutput(const std::string& text);
     static std::string Draw(const std::string& text);
+    static std::string Register(const std::string& text);
+    static std::string Callback(const std::string& text);
 
     static std::string File(const std::string& text);
 

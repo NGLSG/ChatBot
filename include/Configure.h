@@ -145,6 +145,56 @@ struct Live2D
     std::string bin = "bin/Live2D/DesktopPet.exe";
 };
 
+struct ResponseRole
+{
+    std::string suffix = "";
+    std::string content = "";
+    std::string callback = "";
+    std::string stopFlag = "[DONE]";
+};
+
+struct APIKeyRole
+{
+    std::string key = "";
+    std::string role = "HEADERS";
+    std::string header = "Authorization: Bearer ";
+};
+
+struct ParamsRole
+{
+    std::string suffix = "messages"; //json的key
+    std::string path = "content"; //json的路径
+    std::string content = "content"; //
+    bool isStr = false;
+};
+
+struct PromptRole
+{
+    ParamsRole role;
+    ParamsRole prompt;
+};
+
+struct CustomRule
+{
+    bool enable = false;
+    bool supportSystemRole = false;
+    std::string author = "Ryoshi";
+    std::string version = "1.0";
+    std::string description = "自定义规则";
+    std::string name = "";
+    std::string model = "";
+    std::string apiPath =
+        "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?key=${API_KEY}";
+
+    APIKeyRole apiKeyRole;
+    //SYSTEM,USER,ASSISTANT
+    PromptRole promptRole;
+    std::vector<ParamsRole> params;
+    std::unordered_map<std::string, std::string> headers;
+    std::unordered_map<std::string, std::string> roles{{"system", ""}, {"user", ""}, {"assistant", ""}};
+    ResponseRole responseRole{"data: ", "choices/delta/content", "RESPONSE", "[DONE"};
+};
+
 struct Configure
 {
     std::string MicroPhoneID = "default";
@@ -166,12 +216,274 @@ struct Configure
     GPTLikeCreateInfo huoshan;
     ClaudeAPICreateInfo claudeAPI;
     std::unordered_map<std::string, GPTLikeCreateInfo> customGPTs;
+    std::vector<CustomRule> customRules;
     StableDiffusionData stableDiffusion;
-
 };
 
 namespace YAML
 {
+    // ResponseRole 结构体的转换模板
+    template <>
+    struct convert<ResponseRole>
+    {
+        // 从 YAML 节点转换为 ResponseRole 结构体
+        static bool decode(const Node& node, ResponseRole& rhs)
+        {
+            // 检查节点是否为映射类型
+            if (!node.IsMap())
+            {
+                return false;
+            }
+
+            // 解析各个字段，如果字段不存在则保留默认值
+            if (node["suffix"])
+                rhs.suffix = node["suffix"].as<std::string>();
+            if (node["content"])
+                rhs.content = node["content"].as<std::string>();
+            if (node["callback"])
+                rhs.callback = node["callback"].as<std::string>();
+            if (node["stopFlag"])
+                rhs.stopFlag = node["stopFlag"].as<std::string>();
+
+            return true;
+        }
+
+        // 从 ResponseRole 结构体转换为 YAML 节点
+        static Node encode(const ResponseRole& rhs)
+        {
+            Node node;
+            // 将结构体各个字段写入 YAML 节点
+            node["suffix"] = rhs.suffix;
+            node["content"] = rhs.content;
+            node["callback"] = rhs.callback;
+            node["stopFlag"] = rhs.stopFlag;
+            return node;
+        }
+    };
+
+    // APIKeyRole 结构体的转换模板
+    template <>
+    struct convert<APIKeyRole>
+    {
+        static bool decode(const Node& node, APIKeyRole& rhs)
+        {
+            // 检查节点是否为映射类型
+            if (!node.IsMap())
+            {
+                return false;
+            }
+
+            // 解析各个字段
+            if (node["key"])
+                rhs.key = node["key"].as<std::string>();
+            if (node["role"])
+                rhs.role = node["role"].as<std::string>();
+            if (node["header"])
+                rhs.header = node["header"].as<std::string>();
+
+            return true;
+        }
+
+        static Node encode(const APIKeyRole& rhs)
+        {
+            Node node;
+            node["key"] = rhs.key;
+            node["role"] = rhs.role;
+            node["header"] = rhs.header;
+            return node;
+        }
+    };
+
+    // ParamsRole 结构体的转换模板
+    template <>
+    struct convert<ParamsRole>
+    {
+        static bool decode(const Node& node, ParamsRole& rhs)
+        {
+            // 检查节点是否为映射类型
+            if (!node.IsMap())
+            {
+                return false;
+            }
+
+            // 解析各个字段
+            if (node["suffix"])
+                rhs.suffix = node["suffix"].as<std::string>();
+            if (node["path"])
+                rhs.path = node["path"].as<std::string>();
+            if (node["content"])
+                rhs.content = node["content"].as<std::string>();
+            if (node["isStr"])
+                rhs.isStr = node["isStr"].as<bool>();
+
+            return true;
+        }
+
+        static Node encode(const ParamsRole& rhs)
+        {
+            Node node;
+            node["suffix"] = rhs.suffix;
+            node["path"] = rhs.path;
+            node["content"] = rhs.content;
+            node["isStr"] = rhs.isStr;
+            return node;
+        }
+    };
+
+    // PromptRole 结构体的转换模板
+    template <>
+    struct convert<PromptRole>
+    {
+        static bool decode(const Node& node, PromptRole& rhs)
+        {
+            // 检查节点是否为映射类型
+            if (!node.IsMap())
+            {
+                return false;
+            }
+
+            // 解析各个字段
+            if (node["role"])
+                rhs.role = node["role"].as<ParamsRole>();
+            if (node["prompt"])
+                rhs.prompt = node["prompt"].as<ParamsRole>();
+
+            return true;
+        }
+
+        static Node encode(const PromptRole& rhs)
+        {
+            Node node;
+            node["role"] = rhs.role;
+            node["prompt"] = rhs.prompt;
+            return node;
+        }
+    };
+
+    // CustomRule 结构体的转换模板
+    template <>
+    struct convert<CustomRule>
+    {
+        static bool decode(const Node& node, CustomRule& rhs)
+        {
+            // 检查节点是否为映射类型
+            if (!node.IsMap())
+            {
+                return false;
+            }
+
+            // 解析各个字段
+            if (node["enable"])
+                rhs.enable = node["enable"].as<bool>();
+            if (node["supportSystemRole"])
+                rhs.supportSystemRole = node["supportSystemRole"].as<bool>();
+            if (node["name"])
+                rhs.name = node["name"].as<std::string>();
+            if (node["model"])
+                rhs.model = node["model"].as<std::string>();
+            if (node["apiPath"])
+                rhs.apiPath = node["apiPath"].as<std::string>();
+
+            // 解析嵌套结构
+            if (node["apiKeyRole"])
+                rhs.apiKeyRole = node["apiKeyRole"].as<APIKeyRole>();
+
+            // 解析 headers 映射
+            if (node["headers"] && node["headers"].IsMap())
+            {
+                for (const auto& header : node["headers"])
+                {
+                    rhs.headers[header.first.as<std::string>()] = header.second.as<std::string>();
+                }
+            }
+
+            // 解析 roles 映射
+            if (node["roles"] && node["roles"].IsMap())
+            {
+                for (const auto& role : node["roles"])
+                {
+                    rhs.roles[role.first.as<std::string>()] = role.second.as<std::string>();
+                }
+            }
+
+            // 解析 promptRole
+            if (node["promptRole"])
+                rhs.promptRole = node["promptRole"].as<PromptRole>();
+
+            // 解析 params 数组
+            if (node["params"] && node["params"].IsSequence())
+            {
+                rhs.params.clear();
+                for (const auto& param : node["params"])
+                {
+                    rhs.params.push_back(param.as<ParamsRole>());
+                }
+            }
+
+
+            // 解析 responseRole
+            if (node["responseRole"])
+                rhs.responseRole = node["responseRole"].as<ResponseRole>();
+            if (node["author"])
+                rhs.author = node["author"].as<std::string>();
+            if (node["version"])
+                rhs.version = node["version"].as<std::string>();
+            if (node["description"])
+                rhs.description = node["description"].as<std::string>();
+
+            return true;
+        }
+
+        static Node encode(const CustomRule& rhs)
+        {
+            Node node;
+            // 基本字段
+            node["enable"] = rhs.enable;
+            node["supportSystemRole"] = rhs.supportSystemRole;
+            node["name"] = rhs.name;
+            node["model"] = rhs.model;
+            node["apiPath"] = rhs.apiPath;
+
+            // 嵌套结构
+            node["apiKeyRole"] = rhs.apiKeyRole;
+
+            // headers 映射
+            Node headersNode;
+            for (const auto& header : rhs.headers)
+            {
+                headersNode[header.first] = header.second;
+            }
+            node["headers"] = headersNode;
+
+            // roles 映射
+            Node rolesNode;
+            for (const auto& role : rhs.roles)
+            {
+                rolesNode[role.first] = role.second;
+            }
+            node["roles"] = rolesNode;
+
+            // promptRole
+            node["promptRole"] = rhs.promptRole;
+
+            // params 数组
+            Node paramsNode(NodeType::Sequence);
+            for (const auto& param : rhs.params)
+            {
+                paramsNode.push_back(param);
+            }
+            node["params"] = paramsNode;
+
+            // responseRole
+            node["responseRole"] = rhs.responseRole;
+            node["author"] = rhs.author;
+            node["version"] = rhs.version;
+            node["description"] = rhs.description;
+
+            return node;
+        }
+    };
+
     template <>
     struct convert<ClaudeAPICreateInfo>
     {
@@ -589,6 +901,7 @@ namespace YAML
             node["huoshan"] = config.huoshan;
             node["claudeAPI"] = config.claudeAPI;
             node["customGPTs"] = config.customGPTs;
+            node["customRules"] = config.customRules;
             return node;
         }
 
@@ -645,6 +958,8 @@ namespace YAML
                 config.grok = node["grok"].as<GPTLikeCreateInfo>();
             if (node["customGPTs"])
                 config.customGPTs = node["customGPTs"].as<std::unordered_map<std::string, GPTLikeCreateInfo>>();
+            if (node["customRules"])
+                config.customRules = node["customRules"].as<std::vector<CustomRule>>();
             config.baiDuTranslator = node["baiDuTranslator"].as<TranslateData>();
             config.vits = node["vits"].as<VITSData>();
             config.whisper = node["whisper"].as<WhisperCreateInfo>();

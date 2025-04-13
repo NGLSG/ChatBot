@@ -1,7 +1,5 @@
 #include "Application.h"
 #include "StableDiffusion.h"
-#include <filesystem> // 文件系统库
-
 #include "AES_Crypto.h"
 
 using namespace std;
@@ -78,7 +76,9 @@ int main(int argc, char* argv[])
     {
         std::locale::global(std::locale(""));
 
-        if (!UDirectory::Exists("Logs")) {
+
+        if (!UDirectory::Exists("Logs"))
+        {
             UDirectory::Create("Logs");
         }
 
@@ -93,7 +93,8 @@ int main(int argc, char* argv[])
         Utils::SaveYaml("template.yaml", Utils::toYaml(Configure()));
 
         // 检查配置文件是否存在
-        if (!UFile::Exists("config.yaml")) {
+        if (!UFile::Exists("config.yaml"))
+        {
             LogWarn("应用程序警告：请配置config.yaml！然后再次运行此程序");
             Utils::SaveYaml("config.yaml", Utils::toYaml(Configure()));
             setting = true;

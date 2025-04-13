@@ -1083,28 +1083,40 @@ void Application::CreateBot()
         }
 
         // 检查是否没有选择任何模型
-        if (!configure.openAi.enable && !configure.claude.enable &&
-            !configure.gemini.enable && !configure.grok.enable &&
-            !configure.mistral.enable && !configure.qianwen.enable &&
-            !configure.sparkdesk.enable && !configure.chatglm.enable &&
-            !configure.hunyuan.enable && !configure.baichuan.enable &&
-            !configure.claudeAPI.enable && !configure.huoshan.enable)
+        bool hasAnyModelEnabled = configure.openAi.enable || configure.claude.enable ||
+            configure.gemini.enable || configure.grok.enable ||
+            configure.mistral.enable || configure.qianwen.enable ||
+            configure.sparkdesk.enable || configure.chatglm.enable ||
+            configure.hunyuan.enable || configure.baichuan.enable ||
+            configure.claudeAPI.enable || configure.huoshan.enable;
+
+        bool hasCustomGPT = false;
+        for (const auto& [name, cconfig] : configure.customGPTs)
         {
-            bool hasCustomGPT = false;
-            for (const auto& [name, cconfig] : configure.customGPTs)
+            if (cconfig.enable)
             {
-                if (cconfig.enable)
-                {
-                    hasCustomGPT = true;
-                    break;
-                }
+                hasCustomGPT = true;
+                break;
             }
-            if (!hasCustomGPT)
+        }
+
+        // 检查是否有启用的自定义规则
+        bool hasCustomRule = false;
+        for (const auto& rule : configure.customRules)
+        {
+            if (rule.enable)
             {
-                OnlySetting = true;
-                state = State::NO_BOT_KEY;
-                bot = CreateRef<GPTLike>(GPTLikeCreateInfo());
+                hasCustomRule = true;
+                break;
             }
+        }
+
+        // 如果没有启用任何类型的模型，设置错误状态
+        if (!hasAnyModelEnabled && !hasCustomGPT && !hasCustomRule)
+        {
+            OnlySetting = true;
+            state = State::NO_BOT_KEY;
+            bot = CreateRef<GPTLike>(GPTLikeCreateInfo());
         }
 
         // 检查自定义模型配置
@@ -1132,6 +1144,25 @@ void Application::CreateBot()
                         OnlySetting = true;
                         state = State::NO_BOT_KEY;
                     }
+                }
+            }
+        }
+
+        // 检查自定义规则配置
+        for (const auto& rule : configure.customRules)
+        {
+            if (rule.enable)
+            {
+                // 检查自定义规则是否有有效的API密钥
+                if (isMissingKey(rule.apiKeyRole.key))
+                {
+                    OnlySetting = true;
+                    state = State::NO_BOT_KEY;
+                }
+                else
+                {
+                    OnlySetting = false;
+                    state = State::OK;
                 }
             }
         }
@@ -1240,18 +1271,53 @@ void Application::CreateBot()
         }
         else
         {
-            // 创建自定义GPT或本地模型
-            for (const auto& [name, cconfig] : configure.customGPTs)
+            bool botCreated = false;
+
+            // 首先尝试使用自定义规则创建机器人
+            for (const auto& rule : configure.customRules)
             {
-                if (cconfig.enable)
+                if (rule.enable)
                 {
-                    if (!cconfig.useLocalModel)
-                        bot = CreateRef<GPTLike>(cconfig, SYSTEMROLE + SYSTEMROLE_EX);
-                    else
+                    // 使用自定义规则创建机器人
+                    bot = CreateRef<CustomRule_Impl>(rule, SYSTEMROLE + SYSTEMROLE_EX);
+
+                    // 创建存储会话的目录
+                    std::string dirName = "CustomRule_" + rule.name + "/";
+                    ConversationPath /= dirName;
+                    if (!std::filesystem::exists(ConversationPath))
                     {
-                        bot = CreateRef<LLama>(cconfig.llamaData, SYSTEMROLE + SYSTEMROLE_EX);
+                        std::filesystem::create_directories(ConversationPath);
                     }
-                    break; // 使用第一个可用的自定义GPT
+
+                    botCreated = true;
+                    break; // 使用第一个启用的自定义规则
+                }
+            }
+
+            // 如果没有通过自定义规则创建机器人，尝试创建自定义GPT或本地模型
+            if (!botCreated)
+            {
+                for (const auto& [name, cconfig] : configure.customGPTs)
+                {
+                    if (cconfig.enable)
+                    {
+                        if (!cconfig.useLocalModel)
+                            bot = CreateRef<GPTLike>(cconfig, SYSTEMROLE + SYSTEMROLE_EX);
+                        else
+                        {
+                            bot = CreateRef<LLama>(cconfig.llamaData, SYSTEMROLE + SYSTEMROLE_EX);
+                        }
+
+                        // 创建自定义GPT的会话存储路径
+                        std::string dirName = "CustomGPT_" + name + "/";
+                        ConversationPath /= dirName;
+                        if (!std::filesystem::exists(ConversationPath))
+                        {
+                            std::filesystem::create_directories(ConversationPath);
+                        }
+
+                        break; // 使用第一个可用的自定义GPT
+                    }
                 }
             }
         }
@@ -2056,6 +2122,10 @@ void Application::RenderConfigBox()
     if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"LLM功能")))
     {
         // ========== 第一部分：LLM 选择区域 ==========
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.6f, 1.0f, 1.0f));
+        ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"选择大语言模型"));
+        ImGui::PopStyleColor();
+        ImGui::Separator();
 
         // LLM 选择的辅助函数
         auto SelectLLM = [&](const char* name, bool& enabled, bool isBeta = false)
@@ -2097,36 +2167,111 @@ void Application::RenderConfigBox()
                 {
                     it.second.enable = false;
                 }
+
+                // 禁用所有自定义规则
+                for (auto& rule : configure.customRules)
+                {
+                    rule.enable = false;
+                }
             }
         };
 
-        // 内置模型选择
+        // 使用两列布局来显示模型选择
+        const float columnWidth = ImGui::GetContentRegionAvail().x * 0.5f - 10.0f;
+
+        ImGui::BeginChild("##ModelSelectLeft", ImVec2(columnWidth, 140), false);
+        // 第一列内置模型选择
+        SelectLLM(reinterpret_cast<const char*>(u8"使用OpenAI"), configure.openAi.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用Claude (Slack接口)"), configure.claude.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用ClaudeAPI"), configure.claudeAPI.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用Gemini"), configure.gemini.enable);
-        SelectLLM(reinterpret_cast<const char*>(u8"使用OpenAI"), configure.openAi.enable);
-        SelectLLM(reinterpret_cast<const char*>(u8"使用Mistral AI"), configure.mistral.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用Grok"), configure.grok.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用Mistral AI"), configure.mistral.enable);
+        ImGui::EndChild();
+
+        ImGui::SameLine();
+
+        ImGui::BeginChild("##ModelSelectRight", ImVec2(columnWidth, 140), false);
+        // 第二列内置模型选择 - 国内模型
         SelectLLM(reinterpret_cast<const char*>(u8"使用通义千问"), configure.qianwen.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用讯飞星火"), configure.sparkdesk.enable);
         //SelectLLM(reinterpret_cast<const char*>(u8"使用ChatGLM"), configure.chatglm.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用腾讯混元"), configure.hunyuan.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用百川AI"), configure.baichuan.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用火山引擎"), configure.huoshan.enable);
+        ImGui::EndChild();
 
         // ========== 第二部分：自定义API选择区域 ==========
-        static int filteredItemCount = 0;
-        float lineHeight = ImGui::GetTextLineHeightWithSpacing() * 1.5;
-        float childHeight = (filteredItemCount < 10 ? filteredItemCount : 10) * lineHeight + lineHeight;
-
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.0f, 1.0f)); // 橙色
-        ImGui::Text("自定义API: ");
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.6f, 1.0f, 1.0f));
+        ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"自定义API"));
         ImGui::PopStyleColor();
+        ImGui::Separator();
 
-        ImGui::BeginChild("##自定义API", ImVec2(0, childHeight), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        // 添加自定义API按钮和下拉菜单
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 0.9f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
+
+        // 添加API下拉菜单
+        if (ImGui::Button(reinterpret_cast<const char*>(u8"+ 添加自定义API"), ImVec2(150, 28)))
         {
+            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"添加API选项"));
+        }
+
+        // 创建下拉菜单
+        static bool showAddAPIMenu = false;
+        static bool showAddAPITemplateMenu = false;
+        if (ImGui::BeginPopup(reinterpret_cast<const char*>(u8"添加API选项")))
+        {
+            if (ImGui::MenuItem(reinterpret_cast<const char*>(u8"创建标准GPT接口")))
+            {
+                showAddAPIMenu = true;
+            }
+
+            if (ImGui::MenuItem(reinterpret_cast<const char*>(u8"从规则模板创建")))
+            {
+                showAddAPITemplateMenu = true;
+            }
+
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleColor(3);
+
+        ImGui::SameLine();
+        // 应用按钮
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.1f, 1.0f));
+        if (ImGui::Button(reinterpret_cast<const char*>(u8"应用当前模型"), ImVec2(150, 28)))
+        {
+            CreateBot();
+            Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+        }
+        ImGui::PopStyleColor(3);
+
+        // ========== 第三部分：APIs列表（标准GPT和自定义规则） ==========
+
+        // 创建两个标签页：标准GPT接口和自定义规则
+        static int currentTab = 0;
+        ImGui::BeginTabBar("##APITabs", ImGuiTabBarFlags_None);
+
+        // ============ 标准GPT接口标签页 ============
+        if (ImGui::BeginTabItem(reinterpret_cast<const char*>(u8"标准GPT接口")))
+        {
+            // 计算动态高度
+            static int filteredItemCount = 0;
+            float lineHeight = ImGui::GetTextLineHeightWithSpacing() * 1.5;
+            float childHeight = (filteredItemCount < 8 ? filteredItemCount : 8) * lineHeight + lineHeight;
+
             // 搜索框
-            ImGui::InputText("##", GetBufferByName("search").buffer, TEXT_BUFFER);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.15f, 0.5f));
+            ImGui::InputTextWithHint("##搜索", reinterpret_cast<const char*>(u8"搜索API..."),
+                                     GetBufferByName("search").buffer, TEXT_BUFFER);
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
+
             std::string searchStr(GetBufferByName("search").buffer);
 
             // 过滤函数
@@ -2147,55 +2292,273 @@ void Application::RenderConfigBox()
                 }
             }
 
-            // 显示自定义API选项
-            for (auto& pair : configure.customGPTs)
+            // 自定义API列表
+            ImGui::BeginChild("##自定义API", ImVec2(0, childHeight), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
             {
-                // 只显示匹配搜索条件的项目
-                if (!filterMatch(pair.first))
-                    continue;
-
-                if (ImGui::Checkbox(pair.first.c_str(), &pair.second.enable))
+                // 显示自定义API选项
+                for (auto& pair : configure.customGPTs)
                 {
-                    if (pair.second.enable)
+                    // 只显示匹配搜索条件的项目
+                    if (!filterMatch(pair.first))
+                        continue;
+
+                    // 添加选择高亮（修复：先存储状态，只有真正推送样式时才弹出）
+                    bool isEnabled = pair.second.enable;
+                    if (isEnabled)
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+
+                    if (ImGui::Checkbox(pair.first.c_str(), &pair.second.enable))
                     {
-                        // 当启用某个自定义GPT时，禁用所有其他模型
-                        configure.claude.enable = false;
-                        configure.claudeAPI.enable = false;
-                        configure.gemini.enable = false;
-                        configure.openAi.enable = false;
-                        configure.mistral.enable = false;
-                        configure.qianwen.enable = false;
-                        configure.sparkdesk.enable = false;
-                        configure.chatglm.enable = false;
-                        configure.hunyuan.enable = false;
-                        configure.baichuan.enable = false;
-                        configure.huoshan.enable = false;
-
-                        configure.grok.enable = false;
-
-                        // 禁用其他自定义GPT
-                        for (auto& pair2 : configure.customGPTs)
+                        if (pair.second.enable)
                         {
-                            if (pair2.first != pair.first)
+                            // 当启用某个自定义GPT时，禁用所有其他模型
+                            configure.claude.enable = false;
+                            configure.claudeAPI.enable = false;
+                            configure.gemini.enable = false;
+                            configure.openAi.enable = false;
+                            configure.mistral.enable = false;
+                            configure.qianwen.enable = false;
+                            configure.sparkdesk.enable = false;
+                            configure.chatglm.enable = false;
+                            configure.hunyuan.enable = false;
+                            configure.baichuan.enable = false;
+                            configure.huoshan.enable = false;
+                            configure.grok.enable = false;
+
+                            // 禁用其他自定义GPT
+                            for (auto& pair2 : configure.customGPTs)
                             {
-                                pair2.second.enable = false;
+                                if (pair2.first != pair.first)
+                                {
+                                    pair2.second.enable = false;
+                                }
+                            }
+
+                            // 禁用所有自定义规则
+                            for (auto& rule : configure.customRules)
+                            {
+                                rule.enable = false;
                             }
                         }
                     }
+
+                    // 确保只有当真正推送了样式时才弹出
+                    if (isEnabled)
+                        ImGui::PopStyleColor();
                 }
             }
-        }
-        ImGui::EndChild();
+            ImGui::EndChild();
 
-        // 添加自定义API按钮
-        if (ImGui::Button(reinterpret_cast<const char*>(u8"添加自定义API"), ImVec2(120, 30)))
+            ImGui::EndTabItem();
+        }
+
+        // ============ 自定义规则标签页 ============
+        if (ImGui::BeginTabItem(reinterpret_cast<const char*>(u8"自定义规则")))
         {
-            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"请输入新的配置名字"));
-        }
+            // 搜索框
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.15f, 0.5f));
+            ImGui::InputTextWithHint("##规则搜索", reinterpret_cast<const char*>(u8"搜索规则..."),
+                                     GetBufferByName("ruleSearch").buffer, TEXT_BUFFER);
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
 
-        // ========== 第三部分：API配置区域 ==========
-        ImGui::Text("API配置: ");
-        ImGui::BeginChild("##API配置", ImVec2(0, 160), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            std::string ruleSearchStr(GetBufferByName("ruleSearch").buffer);
+
+            // 过滤函数
+            auto ruleFilterMatch = [&ruleSearchStr](const std::string& name) -> bool
+            {
+                if (ruleSearchStr.empty())
+                    return true;
+                return name.find(ruleSearchStr) != std::string::npos;
+            };
+
+            // 自定义规则列表
+            ImGui::BeginChild("##自定义规则列表", ImVec2(0, 120), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+            {
+                for (int i = 0; i < configure.customRules.size(); i++)
+                {
+                    auto& rule = configure.customRules[i];
+
+                    // 应用搜索过滤
+                    if (!ruleFilterMatch(rule.name))
+                        continue;
+
+                    ImGui::PushID(i);
+
+                    // 创建一行包含选择框和基本信息
+                    ImGui::BeginGroup();
+
+                    // 添加选择高亮
+                    bool isEnabled = rule.enable;
+                    if (isEnabled)
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+
+                    // 复选框和规则名
+                    if (ImGui::Checkbox("##选择", &rule.enable))
+                    {
+                        if (rule.enable)
+                        {
+                            // 当启用某个自定义规则时，禁用所有其他模型
+                            configure.claude.enable = false;
+                            configure.claudeAPI.enable = false;
+                            configure.gemini.enable = false;
+                            configure.openAi.enable = false;
+                            configure.mistral.enable = false;
+                            configure.qianwen.enable = false;
+                            configure.sparkdesk.enable = false;
+                            configure.chatglm.enable = false;
+                            configure.hunyuan.enable = false;
+                            configure.baichuan.enable = false;
+                            configure.huoshan.enable = false;
+                            configure.grok.enable = false;
+
+                            // 禁用所有自定义API
+                            for (auto& pair2 : configure.customGPTs)
+                            {
+                                pair2.second.enable = false;
+                            }
+
+                            // 禁用其他自定义规则
+                            for (int j = 0; j < configure.customRules.size(); j++)
+                            {
+                                if (j != i)
+                                {
+                                    configure.customRules[j].enable = false;
+                                }
+                            }
+                        }
+                    }
+                    ImGui::SameLine();
+
+                    // 规则名称
+                    ImGui::Text("%s", rule.name.c_str());
+                    ImGui::SameLine();
+
+                    // 添加模型信息标签
+                    if (!rule.model.empty())
+                    {
+                        ImGui::TextDisabled("[%s]", rule.model.c_str());
+                    }
+
+                    // 确保只有当真正推送了样式时才弹出
+                    if (isEnabled)
+                        ImGui::PopStyleColor();
+
+                    // 添加右侧编辑和删除按钮
+                    float buttonWidth = 60.0f;
+                    float rightAlignPos = ImGui::GetContentRegionAvail().x - buttonWidth * 2 - 8.0f;
+                    ImGui::SameLine(rightAlignPos);
+
+                    // 编辑按钮
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 0.8f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 0.9f));
+                    if (ImGui::Button(reinterpret_cast<const char*>(u8"编辑##edit"), ImVec2(buttonWidth, 0)))
+                    {
+                        ImGui::OpenPopup(
+                            (std::string(reinterpret_cast<const char*>(u8"编辑规则##")) + std::to_string(i)).c_str());
+                    }
+                    ImGui::PopStyleColor(2);
+
+                    // 编辑弹窗
+                    if (ImGui::BeginPopupModal(
+                        (std::string(reinterpret_cast<const char*>(u8"编辑规则##")) + std::to_string(i)).c_str(), NULL,
+                        ImGuiWindowFlags_AlwaysAutoResize))
+                    {
+                        // 获取屏幕高度的70%作为滚动区域的高度
+                        float availableHeight = ImGui::GetIO().DisplaySize.y * 0.7f;
+
+                        // 创建一个可滚动区域
+                        ImGui::BeginChild("##滚动区域编辑", ImVec2(500, availableHeight),
+                                          true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+                        ImGui::Indent(20.0f);
+                        EditCustomRule(rule);
+                        ImGui::Unindent(20.0f);
+
+                        ImGui::EndChild();
+
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+                        if (ImGui::Button(reinterpret_cast<const char*>(u8"保存"), ImVec2(120, 28)))
+                        {
+                            Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::PopStyleColor(2);
+
+                        ImGui::SameLine();
+
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.5f, 0.8f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.6f, 0.6f, 0.9f));
+                        if (ImGui::Button(reinterpret_cast<const char*>(u8"取消"), ImVec2(120, 28)))
+                        {
+                            ImGui::CloseCurrentPopup();
+                        }
+                        ImGui::PopStyleColor(2);
+
+                        ImGui::EndPopup();
+                    }
+
+                    ImGui::SameLine();
+
+                    // 删除按钮
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.2f, 0.2f, 0.8f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.3f, 0.9f));
+                    if (ImGui::Button(reinterpret_cast<const char*>(u8"删除##delete"), ImVec2(buttonWidth, 0)))
+                    {
+                        rule.enable = false;
+                        configure.customRules.erase(configure.customRules.begin() + i);
+                        Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+                        ImGui::PopStyleColor(2);
+                        ImGui::EndGroup();
+                        ImGui::PopID();
+                        break;
+                    }
+                    ImGui::PopStyleColor(2);
+
+                    ImGui::EndGroup();
+                    ImGui::PopID();
+
+                    // 添加分隔线
+                    ImGui::Separator();
+                }
+            }
+            ImGui::EndChild();
+
+            // 操作按钮区域
+            float buttonWidth = ImGui::GetContentRegionAvail().x * 0.48f;
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"从模板创建规则"), ImVec2(buttonWidth, 28)))
+            {
+                showAddAPITemplateMenu = true;
+            }
+            ImGui::PopStyleColor(2);
+
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"刷新规则列表"), ImVec2(buttonWidth, 28)))
+            {
+                // 保存配置并加载
+                Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+            }
+            ImGui::PopStyleColor(2);
+
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+
+        // ========== 第四部分：API配置区域 ==========
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.6f, 1.0f, 1.0f));
+        ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"API配置"));
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+
+        ImGui::BeginChild("##API配置", ImVec2(0, 180), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
         // 显示密码输入框的辅助函数
         auto ShowPasswordInput = [&](const char* label, std::string& value, const char* buffer_name)
@@ -2224,6 +2587,9 @@ void Application::RenderConfigBox()
                 showPasswords[key] = false;
             }
 
+            // 设置输入框的样式
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+
             // 根据状态显示输入框
             if (showPasswords[key] || clicked[key])
             {
@@ -2243,6 +2609,8 @@ void Application::RenderConfigBox()
                 }
             }
 
+            ImGui::PopStyleVar();
+
             // 眼睛按钮（切换密码显示）
             ImGui::SameLine();
             ImGui::PushID(("button_eye_" + key).c_str());
@@ -2259,444 +2627,882 @@ void Application::RenderConfigBox()
         auto ShowTextInput = [&](const char* label, std::string& value, const char* buffer_name)
         {
             strcpy_s(GetBufferByName(buffer_name).buffer, value.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
             if (ImGui::InputText(label, GetBufferByName(buffer_name).buffer, TEXT_BUFFER))
             {
                 value = GetBufferByName(buffer_name).buffer;
             }
+            ImGui::PopStyleVar();
         };
 
         // 根据当前选择的模型显示相应配置
-        if (configure.openAi.enable)
+        bool configDisplayed = false;
+
+        // 检查是否有自定义规则被启用
+        for (auto& rule : configure.customRules)
         {
-            // OpenAI配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"OpenAI API Key"), configure.openAi.api_key, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"OpenAI 模型"), configure.openAi.model, "model");
-
-            ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用远程代理"), &configure.openAi.useWebProxy);
-
-            if (configure.openAi.useWebProxy)
+            if (rule.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"对OpenAI使用的代理"), configure.openAi.proxy, "proxy");
+                // 自定义规则配置UI
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.8f, 0.3f, 1.0f));
+                ImGui::TextUnformatted((reinterpret_cast<const char*>(u8"自定义规则: ") + rule.name).c_str());
+                ImGui::PopStyleColor();
+
+                /*// 基本信息部分
+                if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"基本信息")))
+                {
+                    // 允许修改名称
+                    ShowTextInput(reinterpret_cast<const char*>(u8"规则名称"), rule.name, "ruleName");
+                                        ShowTextInput(reinterpret_cast<const char*>(u8"API路径"), rule.apiPath, "ruleApiPath");
+
+                    ImGui::Checkbox(reinterpret_cast<const char*>(u8"支持系统角色"), &rule.supportSystemRole);
+                }*/
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), rule.model, "ruleModel");
+
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), rule.apiKeyRole.key, "ruleApiKey");
+
+                /*// API密钥配置部分
+                if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"API密钥配置")))
+                {
+                                        ShowTextInput(reinterpret_cast<const char*>(u8"角色"), rule.apiKeyRole.role, "ruleApiRole");
+                    ShowTextInput(reinterpret_cast<const char*>(u8"请求头"), rule.apiKeyRole.header, "ruleApiHeader");
+                }*/
+
+                /*
+                // 响应配置部分
+                if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"响应配置")))
+                {
+                    ShowTextInput(reinterpret_cast<const char*>(u8"后缀"), rule.responseRole.suffix, "ruleRespSuffix");
+                    ShowTextInput(reinterpret_cast<const char*>(u8"内容路径"), rule.responseRole.content,
+                                  "ruleRespContent");
+                    ShowTextInput(reinterpret_cast<const char*>(u8"回调"), rule.responseRole.callback,
+                                  "ruleRespCallback");
+                    ShowTextInput(reinterpret_cast<const char*>(u8"停止标记"), rule.responseRole.stopFlag,
+                                  "ruleRespStopFlag");
+                }
+
+                // 提示角色配置部分
+                if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"提示角色配置")))
+                {
+                    ShowTextInput(reinterpret_cast<const char*>(u8"提示路径"), rule.promptRole.prompt.path,
+                                  "rulePromptPath");
+                    ShowTextInput(reinterpret_cast<const char*>(u8"提示后缀"), rule.promptRole.prompt.suffix,
+                                  "rulePromptSuffix");
+                    ShowTextInput(reinterpret_cast<const char*>(u8"角色路径"), rule.promptRole.role.path, "ruleRolePath");
+                    ShowTextInput(reinterpret_cast<const char*>(u8"角色后缀"), rule.promptRole.role.suffix,
+                                  "ruleRoleSuffix");
+                }
+                */
+
+                // 删除按钮
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.2f, 0.2f, 0.8f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.3f, 0.9f));
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"删除此规则"), ImVec2(120, 28)))
+                {
+                    rule.enable = false;
+                    // 标记要删除的规则索引
+                    int ruleIndexToDelete = &rule - &configure.customRules[0];
+                    if (ruleIndexToDelete >= 0 && ruleIndexToDelete < configure.customRules.size())
+                    {
+                        configure.customRules.erase(configure.customRules.begin() + ruleIndexToDelete);
+                    }
+                }
+                ImGui::PopStyleColor(2);
+
+                configDisplayed = true;
+                break; // 只显示当前启用的规则
             }
+        }
+
+        // 如果没有自定义规则被启用，检查是否有标准API被启用
+        if (!configDisplayed)
+        {
+            // 原有的标准API配置代码...例如：
+            if (configure.openAi.enable)
+            {
+                // OpenAI配置
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.8f, 0.3f, 1.0f));
+                ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"OpenAI 配置"));
+                ImGui::PopStyleColor();
+
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"OpenAI API Key"), configure.openAi.api_key, "api");
+                ShowTextInput(reinterpret_cast<const char*>(u8"OpenAI 模型"), configure.openAi.model, "model");
+
+                ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用远程代理"), &configure.openAi.useWebProxy);
+
+                if (configure.openAi.useWebProxy)
+                {
+                    ShowTextInput(reinterpret_cast<const char*>(u8"对OpenAI使用的代理"), configure.openAi.proxy, "proxy");
+                }
+                else
+                {
+                    ShowTextInput(reinterpret_cast<const char*>(u8"远程接入点"), configure.openAi._endPoint, "endPoint");
+                }
+
+                configDisplayed = true;
+            }
+            else if (configure.qianwen.enable)
+            {
+                // 通义千问配置
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.8f, 0.3f, 1.0f));
+                ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"通义千问配置"));
+                ImGui::PopStyleColor();
+
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"通义千问 API Key"), configure.qianwen.api_key, "api");
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), configure.qianwen.model, "model");
+
+                // 添加通义千问模型选择下拉菜单
+                const char* models[] = {
+                    "qwen-max", "qwen-plus", "qwen-turbo", "qwen-max-longcontext"
+                };
+                static int currentModel = 0;
+
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentModel]))
+                {
+                    for (int i = 0; i < IM_ARRAYSIZE(models); i++)
+                    {
+                        bool isSelected = (currentModel == i);
+                        if (ImGui::Selectable(models[i], isSelected))
+                        {
+                            currentModel = i;
+                            configure.qianwen.model = models[i];
+                            strcpy_s(GetBufferByName("model").buffer, configure.qianwen.model.c_str());
+                        }
+
+                        if (isSelected)
+                        {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::PopStyleVar();
+
+                // 自定义端点设置
+                ShowTextInput(reinterpret_cast<const char*>(u8"API 端点 (可选)"), configure.qianwen.apiHost, "apiHost");
+
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
+                ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：通义千问API需要阿里云DashScope API密钥，非通义大模型API密钥"));
+                ImGui::PopStyleColor();
+
+                configDisplayed = true;
+            }
+            // 检查自定义GPT
             else
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"远程接入点"), configure.openAi._endPoint, "endPoint");
-            }
-        }
-        else if (configure.qianwen.enable)
-        {
-            // 通义千问配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"通义千问 API Key"), configure.qianwen.api_key, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), configure.qianwen.model, "model");
-
-            // 添加通义千问模型选择下拉菜单
-            const char* models[] = {
-                "qwen-max", "qwen-plus", "qwen-turbo", "qwen-max-longcontext"
-            };
-            static int currentModel = 0;
-
-            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentModel]))
-            {
-                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
+                for (auto& [name, cdata] : configure.customGPTs)
                 {
-                    bool isSelected = (currentModel == i);
-                    if (ImGui::Selectable(models[i], isSelected))
+                    if (cdata.enable)
                     {
-                        currentModel = i;
-                        configure.qianwen.model = models[i];
-                        strcpy_s(GetBufferByName("model").buffer, configure.qianwen.model.c_str());
-                    }
+                        // 自定义GPT标题
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.8f, 0.3f, 1.0f));
+                        ImGui::TextUnformatted((reinterpret_cast<const char*>(u8"自定义API: ") + name).c_str());
+                        ImGui::PopStyleColor();
 
-                    if (isSelected)
-                    {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-                ImGui::EndCombo();
-            }
+                        // 本地模型切换
+                        ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用本地模型"), &cdata.useLocalModel);
 
-            // 自定义端点设置
-            ShowTextInput(reinterpret_cast<const char*>(u8"API 端点 (可选)"), configure.qianwen.apiHost, "apiHost");
-
-            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：通义千问API需要阿里云DashScope API密钥，非通义大模型API密钥"));
-        }
-        else if (configure.mistral.enable)
-        {
-            // Mistral配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"Mistral API Key"), configure.mistral.api_key, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"Mistral 模型"), configure.mistral.model, "model");
-
-            // 模型选择下拉菜单
-            const char* models[] = {
-                "mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "open-mixtral-8x7b"
-            };
-            static int currentModel = 0;
-
-            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentModel]))
-            {
-                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
-                {
-                    bool isSelected = (currentModel == i);
-                    if (ImGui::Selectable(models[i], isSelected))
-                    {
-                        currentModel = i;
-                        configure.mistral.model = models[i];
-                        strcpy_s(GetBufferByName("model").buffer, configure.mistral.model.c_str());
-                    }
-
-                    if (isSelected)
-                    {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-        }
-        else if (configure.huoshan.enable)
-        {
-            // Mistral配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"火山引擎 API Key"), configure.huoshan.api_key, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.huoshan.model, "model");
-        }
-        else if (configure.sparkdesk.enable)
-        {
-            // 星火配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"星火 API Key"), configure.sparkdesk.api_key, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"模型版本"), configure.sparkdesk.model, "model");
-
-            // 添加星火模型选择下拉菜单
-            const char* models[] = {
-                "v1.5", "v2.0", "v3.0", "v3.5"
-            };
-            static int currentModel = 0;
-
-            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型版本"), models[currentModel]))
-            {
-                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
-                {
-                    bool isSelected = (currentModel == i);
-                    if (ImGui::Selectable(models[i], isSelected))
-                    {
-                        currentModel = i;
-                        configure.sparkdesk.model = models[i];
-                        strcpy_s(GetBufferByName("model").buffer, configure.sparkdesk.model.c_str());
-                    }
-
-                    if (isSelected)
-                    {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-
-            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：星火API需要在讯飞开放平台申请，使用时需提供AppId、APIKey和APISecret"));
-        }
-        else if (configure.claude.enable)
-        {
-            // Claude Slack接口配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"Claude Token"), configure.claude.slackToken, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"Claude ID"), configure.claude.channelID, "channelID");
-        }
-        else if (configure.chatglm.enable)
-        {
-            // ChatGLM配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"ChatGLM API Key"), configure.chatglm.api_key, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"模型版本"), configure.chatglm.model, "model");
-
-            // 添加ChatGLM模型选择下拉菜单
-            const char* models[] = {
-                "chatglm_turbo", "chatglm_pro", "chatglm_std", "glm-4", "glm-4v"
-            };
-            static int currentGLMModel = 0;
-
-            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentGLMModel]))
-            {
-                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
-                {
-                    bool isSelected = (currentGLMModel == i);
-                    if (ImGui::Selectable(models[i], isSelected))
-                    {
-                        currentGLMModel = i;
-                        configure.chatglm.model = models[i];
-                        strcpy_s(GetBufferByName("model").buffer, configure.chatglm.model.c_str());
-                    }
-
-                    if (isSelected)
-                    {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-
-            // 自定义端点设置
-            ShowTextInput(reinterpret_cast<const char*>(u8"自定义API端点"), configure.chatglm.apiHost, "apiHost");
-
-            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：ChatGLM API需要在智谱AI开放平台申请"));
-        }
-        // 在配置部分添加腾讯混元的配置界面
-        else if (configure.hunyuan.enable)
-        {
-            // 腾讯混元配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"腾讯云SecretId"), configure.hunyuan.api_key, "api");
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"腾讯云SecretKey"), configure.hunyuan.apiPath, "apiPath");
-            ShowTextInput(reinterpret_cast<const char*>(u8"应用AppId"), configure.hunyuan.apiHost, "apiHost");
-            ShowTextInput(reinterpret_cast<const char*>(u8"模型版本"), configure.hunyuan.model, "model");
-
-            // 添加混元模型选择下拉菜单
-            const char* models[] = {
-                "hunyuan-pro", "hunyuan-standard", "hunyuan-lite"
-            };
-            static int currentHunyuanModel = 0;
-
-            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentHunyuanModel]))
-            {
-                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
-                {
-                    bool isSelected = (currentHunyuanModel == i);
-                    if (ImGui::Selectable(models[i], isSelected))
-                    {
-                        currentHunyuanModel = i;
-                        configure.hunyuan.model = models[i];
-                        strcpy_s(GetBufferByName("model").buffer, configure.hunyuan.model.c_str());
-                    }
-
-                    if (isSelected)
-                    {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-
-            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：腾讯混元API需要腾讯云账号和开通的混元服务"));
-        }
-        // 在配置部分添加百川AI的配置界面
-        else if (configure.baichuan.enable)
-        {
-            // 百川AI配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"百川 API Key"), configure.baichuan.api_key, "api");
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"百川 Secret Key"), configure.baichuan.apiPath, "apiPath");
-            ShowTextInput(reinterpret_cast<const char*>(u8"模型版本"), configure.baichuan.model, "model");
-
-            // 添加百川模型选择下拉菜单
-            const char* models[] = {
-                "Baichuan4", "Baichuan3-Turbo", "Baichuan2-Turbo", "Baichuan2-53B"
-            };
-            static int currentBaichuanModel = 0;
-
-            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentBaichuanModel]))
-            {
-                for (int i = 0; i < IM_ARRAYSIZE(models); i++)
-                {
-                    bool isSelected = (currentBaichuanModel == i);
-                    if (ImGui::Selectable(models[i], isSelected))
-                    {
-                        currentBaichuanModel = i;
-                        configure.baichuan.model = models[i];
-                        strcpy_s(GetBufferByName("model").buffer, configure.baichuan.model.c_str());
-                    }
-
-                    if (isSelected)
-                    {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-
-            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：百川AI需要在百川大模型开放平台申请并创建应用获取密钥"));
-        }
-        else if (configure.claudeAPI.enable)
-        {
-            // Claude API配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"Claude API Key"), configure.claudeAPI.apiKey, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"Claude 模型"), configure.claudeAPI.model, "model");
-            ShowTextInput(reinterpret_cast<const char*>(u8"API 版本"), configure.claudeAPI.apiVersion, "version");
-            ShowTextInput(reinterpret_cast<const char*>(u8"API 端点"), configure.claudeAPI._endPoint, "endPoint");
-
-            // 添加提示信息
-            ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：Claude API 必须提供 API 版本号，默认为 2023-06-01"));
-        }
-        else if (configure.gemini.enable)
-        {
-            // Gemini配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"API Key"), configure.gemini._apiKey, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"远程接入点"), configure.gemini._endPoint, "endPoint");
-            ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), configure.gemini.model, "model");
-        }
-        else if (configure.grok.enable)
-        {
-            // Grok配置
-            ShowPasswordInput(reinterpret_cast<const char*>(u8"API Key"), configure.grok.api_key, "api");
-            ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), configure.grok.model, "model");
-        }
-        else
-        {
-            auto parserFromCurl = [](std::string& cmd)
-            {
-                GPTLikeCreateInfo gpt;
-                gpt.enable = true;
-                gpt.useLocalModel = false;
-
-                // 解析URL
-                size_t urlStart = cmd.find("\"") + 1;
-                size_t urlEnd = cmd.find("\"", urlStart);
-                if (urlStart != std::string::npos && urlEnd != std::string::npos)
-                {
-                    std::string url = cmd.substr(urlStart, urlEnd - urlStart);
-
-                    // 分离主机名和API路径
-                    size_t protocolEnd = url.find("://");
-                    size_t pathStart = std::string::npos;
-                    if (protocolEnd != std::string::npos)
-                    {
-                        pathStart = url.find("/", protocolEnd + 3);
-                    }
-
-                    if (pathStart != std::string::npos)
-                    {
-                        gpt.apiHost = url.substr(0, pathStart);
-                        gpt.apiPath = url.substr(pathStart);
-                    }
-                }
-
-                // 解析Authorization头部获取API密钥
-                std::string authMarker = "Authorization: Bearer ";
-                size_t authStart = cmd.find(authMarker);
-                if (authStart != std::string::npos)
-                {
-                    authStart += authMarker.length();
-                    size_t authEnd = cmd.find("\"", authStart);
-                    if (authEnd != std::string::npos)
-                    {
-                        gpt.api_key = cmd.substr(authStart, authEnd - authStart);
-                    }
-                }
-
-                // 解析JSON数据中的model字段
-                std::string modelMarker = "\"model\":\"";
-                size_t modelStart = cmd.find(modelMarker);
-                if (modelStart != std::string::npos)
-                {
-                    modelStart += modelMarker.length();
-                    size_t modelEnd = cmd.find("\"", modelStart);
-                    if (modelEnd != std::string::npos)
-                    {
-                        gpt.model = cmd.substr(modelStart, modelEnd - modelStart);
-                    }
-                }
-
-                return gpt;
-            };
-            // 自定义GPT配置
-            for (auto& [name, cdata] : configure.customGPTs)
-            {
-                if (cdata.enable)
-                {
-                    // 本地模型切换
-                    ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用本地模型"), &cdata.useLocalModel);
-
-                    if (!cdata.useLocalModel)
-                    {
-                        // 远程API配置
-                        static int currentItem = 0;
-                        const char* items[] = {
-                            reinterpret_cast<const char*>(u8"手动配置"), reinterpret_cast<const char*>(u8"从Curl命令解析")
-                        };
-                        ImGui::Combo(reinterpret_cast<const char*>(u8"配置方式"), &currentItem, items, IM_ARRAYSIZE(items));
-
-                        if (currentItem == 1) // 从Curl命令解析
+                        if (!cdata.useLocalModel)
                         {
-                            static std::string value;
-                            strcpy_s(GetBufferByName("curl_parser").buffer, value.c_str());
-                            if (ImGui::InputTextMultiline("##CurlParser", GetBufferByName("curl_parser").buffer,
-                                                          TEXT_BUFFER, ImVec2(-1, 64),
-                                                          ImGuiInputTextFlags_AllowTabInput |
-                                                          ImGuiInputTextFlags_CtrlEnterForNewLine))
+                            // 远程API配置
+                            static int currentItem = 0;
+                            const char* items[] = {
+                                reinterpret_cast<const char*>(u8"手动配置"),
+                                reinterpret_cast<const char*>(u8"从Curl命令解析")
+                            };
+
+                            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                            ImGui::Combo(reinterpret_cast<const char*>(u8"配置方式"), &currentItem, items,
+                                         IM_ARRAYSIZE(items));
+                            ImGui::PopStyleVar();
+
+                            if (currentItem == 1) // 从Curl命令解析
                             {
-                                value = GetBufferByName("curl_parser").buffer;
+                                static std::string value;
+                                strcpy_s(GetBufferByName("curl_parser").buffer, value.c_str());
+
+                                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                                if (ImGui::InputTextMultiline("##CurlParser", GetBufferByName("curl_parser").buffer,
+                                                              TEXT_BUFFER, ImVec2(-1, 64),
+                                                              ImGuiInputTextFlags_AllowTabInput |
+                                                              ImGuiInputTextFlags_CtrlEnterForNewLine))
+                                {
+                                    value = GetBufferByName("curl_parser").buffer;
+                                }
+                                ImGui::PopStyleVar();
+
+                                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 0.8f));
+                                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 0.9f));
+                                if (ImGui::Button(reinterpret_cast<const char*>(u8"解析Curl命令"), ImVec2(120, 28)))
+                                {
+                                    auto parserFromCurl = [](std::string& cmd)
+                                    {
+                                        GPTLikeCreateInfo gpt;
+                                        gpt.enable = true;
+                                        gpt.useLocalModel = false;
+
+                                        // 解析URL
+                                        size_t urlStart = cmd.find("\"") + 1;
+                                        size_t urlEnd = cmd.find("\"", urlStart);
+                                        if (urlStart != std::string::npos && urlEnd != std::string::npos)
+                                        {
+                                            std::string url = cmd.substr(urlStart, urlEnd - urlStart);
+
+                                            // 分离主机名和API路径
+                                            size_t protocolEnd = url.find("://");
+                                            size_t pathStart = std::string::npos;
+                                            if (protocolEnd != std::string::npos)
+                                            {
+                                                pathStart = url.find("/", protocolEnd + 3);
+                                            }
+
+                                            if (pathStart != std::string::npos)
+                                            {
+                                                gpt.apiHost = url.substr(0, pathStart);
+                                                gpt.apiPath = url.substr(pathStart);
+                                            }
+                                        }
+
+                                        // 解析Authorization头部获取API密钥
+                                        std::string authMarker = "Authorization: Bearer ";
+                                        size_t authStart = cmd.find(authMarker);
+                                        if (authStart != std::string::npos)
+                                        {
+                                            authStart += authMarker.length();
+                                            size_t authEnd = cmd.find("\"", authStart);
+                                            if (authEnd != std::string::npos)
+                                            {
+                                                gpt.api_key = cmd.substr(authStart, authEnd - authStart);
+                                            }
+                                        }
+
+                                        // 解析JSON数据中的model字段
+                                        std::string modelMarker = "\"model\":\"";
+                                        size_t modelStart = cmd.find(modelMarker);
+                                        if (modelStart != std::string::npos)
+                                        {
+                                            modelStart += modelMarker.length();
+                                            size_t modelEnd = cmd.find("\"", modelStart);
+                                            if (modelEnd != std::string::npos)
+                                            {
+                                                gpt.model = cmd.substr(modelStart, modelEnd - modelStart);
+                                            }
+                                        }
+
+                                        return gpt;
+                                    };
+                                    cdata = parserFromCurl(value);
+                                    cdata.enable = true;
+                                    cdata.useLocalModel = false;
+                                    configure.customGPTs[name] = cdata;
+                                    currentItem = 0; // 解析完成后切换回手动配置模式显示结果
+                                }
+                                ImGui::PopStyleColor(2);
                             }
-                            if (ImGui::Button(reinterpret_cast<const char*>(u8"解析Curl命令"), ImVec2(120, 30)))
+
+                            // 无论哪种配置方式，都显示API配置信息
+                            ShowPasswordInput(reinterpret_cast<const char*>(u8"API Key"), cdata.api_key, "api");
+                            ShowTextInput(reinterpret_cast<const char*>(u8"API 主机"), cdata.apiHost, "apiHost");
+                            ShowTextInput(reinterpret_cast<const char*>(u8"API 路径"), cdata.apiPath, "apiPath");
+                            ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), cdata.model, "model");
+                        }
+                        else
+                        {
+                            // 本地模型配置
+                            ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), cdata.llamaData.model, "model");
+
+                            // 上下文大小设置
+                            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                            ImGui::InputInt(reinterpret_cast<const char*>(u8"上下文大小"), &cdata.llamaData.contextSize);
+                            ImGui::PopStyleVar();
+
+                            if (cdata.llamaData.contextSize < 512)
                             {
-                                cdata = parserFromCurl(value);
-                                cdata.enable = true;
-                                cdata.useLocalModel = false;
-                                configure.customGPTs[name] = cdata;
-                                currentItem = 0; // 解析完成后切换回手动配置模式显示结果
+                                cdata.llamaData.contextSize = 512;
+                            }
+
+                            // 最大生成长度设置
+                            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                            ImGui::InputInt(reinterpret_cast<const char*>(u8"最大生成长度"), &cdata.llamaData.maxTokens);
+                            ImGui::PopStyleVar();
+
+                            if (cdata.llamaData.maxTokens < 256)
+                            {
+                                cdata.llamaData.maxTokens = 256;
                             }
                         }
 
-                        // 无论哪种配置方式，都显示API配置信息
-                        ShowPasswordInput(reinterpret_cast<const char*>(u8"API Key"), cdata.api_key, "api");
-                        ShowTextInput(reinterpret_cast<const char*>(u8"API 主机"), cdata.apiHost, "apiHost");
-                        ShowTextInput(reinterpret_cast<const char*>(u8"API 路径"), cdata.apiPath, "apiPath");
-                        ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), cdata.model, "model");
-                    }
-                    else
-                    {
-                        // 本地模型配置
-                        ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), cdata.llamaData.model, "model");
-
-                        // 上下文大小设置
-                        ImGui::InputInt(reinterpret_cast<const char*>(u8"上下文大小"), &cdata.llamaData.contextSize);
-                        if (cdata.llamaData.contextSize < 512)
+                        // 删除按钮
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.2f, 0.2f, 0.8f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.3f, 0.9f));
+                        if (ImGui::Button(reinterpret_cast<const char*>(u8"删除此API"), ImVec2(120, 28)))
                         {
-                            cdata.llamaData.contextSize = 512;
+                            cdata.enable = false;
+                            configure.customGPTs.erase(name);
                         }
+                        ImGui::PopStyleColor(2);
 
-                        // 最大生成长度设置
-                        ImGui::InputInt(reinterpret_cast<const char*>(u8"最大生成长度"), &cdata.llamaData.maxTokens);
-                        if (cdata.llamaData.maxTokens < 256)
-                        {
-                            cdata.llamaData.maxTokens = 256;
-                        }
+                        configDisplayed = true;
+                        break; // 只显示当前启用的自定义API
                     }
-
-                    // 删除按钮
-                    if (ImGui::Button(reinterpret_cast<const char*>(u8"删除此API"), ImVec2(120, 30)))
-                    {
-                        cdata.enable = false;
-                        configure.customGPTs.erase(name);
-                    }
-
-                    break; // 只显示当前启用的自定义API
                 }
             }
+        }
+
+        // 如果没有任何配置被启用，显示提示
+        if (!configDisplayed)
+        {
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                               reinterpret_cast<const char*>(u8"请选择一个模型或自定义API以查看配置"));
         }
 
         ImGui::EndChild();
 
-        // 应用按钮
-        if (ImGui::Button(reinterpret_cast<const char*>(u8"切换模型"), ImVec2(120, 30)))
+        // 标准GPT接口创建弹窗
+        if (showAddAPIMenu)
         {
-            CreateBot();
-            Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"请输入新的配置名字"));
+            showAddAPIMenu = false;
         }
 
-        // 弹出窗口：添加新配置
         if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"请输入新的配置名字"), NULL,
                                    ImGuiWindowFlags_AlwaysAutoResize))
         {
             ImGui::InputText(reinterpret_cast<const char*>(u8"配置名字"), GetBufferByName("newName").buffer, TEXT_BUFFER);
 
-            if (ImGui::Button(reinterpret_cast<const char*>(u8"确定"), ImVec2(120, 0)))
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"确定"), ImVec2(120, 28)))
             {
                 std::string name = GetBufferByName("newName").buffer;
                 if (name.empty())
                 {
-                    name = "NewConfig_" + std::to_string(configure.customGPTs.size());
+                    name = reinterpret_cast<const char*>(u8"新配置_") + std::to_string(configure.customGPTs.size());
                 }
                 configure.customGPTs[name] = GPTLikeCreateInfo();
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::PopStyleColor(2);
 
             ImGui::SameLine();
-            if (ImGui::Button(reinterpret_cast<const char*>(u8"取消"), ImVec2(120, 0)))
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.5f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.6f, 0.6f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"取消"), ImVec2(120, 28)))
             {
                 ImGui::CloseCurrentPopup();
             }
+            ImGui::PopStyleColor(2);
+
+            ImGui::EndPopup();
+        }
+
+        // 从模板创建自定义规则弹窗
+        if (showAddAPITemplateMenu)
+        {
+            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"从模板创建API"));
+            showAddAPITemplateMenu = false;
+        }
+
+        if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"从模板创建API"), NULL,
+                                   ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            static int selectedTemplateIdx = -1;
+            static char newApiName[256] = {0};
+
+            ImGui::InputText(reinterpret_cast<const char*>(u8"新API名称"), newApiName, sizeof(newApiName));
+
+            ImGui::Text(reinterpret_cast<const char*>(u8"选择模板:"));
+            ImGui::BeginChild("##模板选择列表", ImVec2(400, 200), true);
+
+            int idx = 0;
+            for (const auto& [name, rule] : customRuleTemplates)
+            {
+                if (ImGui::Selectable(name.c_str(), selectedTemplateIdx == idx))
+                {
+                    selectedTemplateIdx = idx;
+                }
+                idx++;
+            }
+
+            ImGui::EndChild();
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"创建"), ImVec2(120, 28)))
+            {
+                if (selectedTemplateIdx >= 0)
+                {
+                    // 获取选中的模板
+                    idx = 0;
+                    for (const auto& [tplName, rule] : customRuleTemplates)
+                    {
+                        if (idx == selectedTemplateIdx)
+                        {
+                            // 获取新API名称
+                            std::string apiName = newApiName;
+                            if (apiName.empty())
+                            {
+                                apiName = reinterpret_cast<const char*>(u8"从模板创建_") + std::to_string(
+                                    configure.customRules.size());
+                            }
+
+                            // 直接复制模板并添加到自定义规则
+                            CustomRule newRule = rule;
+                            newRule.name = apiName; // 设置新的名称
+
+                            // 添加到自定义规则集
+                            configure.customRules.push_back(newRule);
+
+                            // 保存配置
+                            Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+
+                            // 清空输入
+                            memset(newApiName, 0, sizeof(newApiName));
+                            break;
+                        }
+                        idx++;
+                    }
+
+                    selectedTemplateIdx = -1;
+                }
+
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(2);
+
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.5f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.6f, 0.6f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"取消"), ImVec2(120, 28)))
+            {
+                memset(newApiName, 0, sizeof(newApiName));
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(2);
+
+            ImGui::EndPopup();
+        }
+
+        // ========== 第五部分：自定义API模板管理 ==========
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.6f, 1.0f, 1.0f));
+        ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"自定义API模板管理"));
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+
+        // 左右两列布局
+        const float columnWidthTemplates = ImGui::GetContentRegionAvail().x * 0.55f;
+        ImGui::BeginChild("##模板管理左侧", ImVec2(columnWidthTemplates, 250), false);
+
+        // 模板列表标题
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+        ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"模板列表"));
+        ImGui::PopStyleColor();
+
+        // 显示当前模板列表
+        ImGui::BeginChild("##模板列表", ImVec2(0, 180), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+        static int selectedTemplateIndex = -1;
+        int index = 0;
+        static std::vector<std::string> templateNames;
+        templateNames.clear();
+
+        for (const auto& [name, rule] : customRuleTemplates)
+        {
+            templateNames.push_back(name);
+
+            // 如果是选中项，使用高亮样式（修复：只有真正选中时才推送和弹出样式）
+            bool isSelected = selectedTemplateIndex == index;
+            if (isSelected)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+
+            if (ImGui::Selectable(name.c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick))
+            {
+                selectedTemplateIndex = index;
+
+                // 双击应用模板
+                if (ImGui::IsMouseDoubleClicked(0))
+                {
+                    std::string selectedName = templateNames[selectedTemplateIndex];
+                    configure.customRules.push_back(customRuleTemplates[selectedName]);
+                    Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+                }
+            }
+
+            // 确保只有当真正推送样式时才弹出
+            if (isSelected)
+                ImGui::PopStyleColor();
+
+            index++;
+        }
+
+        ImGui::EndChild();
+
+        // 模板操作按钮 - 使用水平均匀布局
+        const float buttonWidth = (ImGui::GetContentRegionAvail().x - 10.0f) / 3.0f;
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 0.9f));
+        if (ImGui::Button(reinterpret_cast<const char*>(u8"导入模板"), ImVec2(buttonWidth, 28)))
+        {
+            typeFilters = {".bin"};
+            title = reinterpret_cast<const char*>(u8"选择模板导入文件");
+            fileBrowser = true;
+            PathOnConfirm = [this]()
+            {
+                std::string selectedFile = BrowserPath;
+                if (!selectedFile.empty())
+                {
+                    ImportCustomRuleTemplates(selectedFile);
+                }
+            };
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+        if (ImGui::Button(reinterpret_cast<const char*>(u8"导出模板"), ImVec2(buttonWidth, 28)))
+        {
+            typeFilters = {".bin"};
+            title = reinterpret_cast<const char*>(u8"选择模板导出位置");
+            fileBrowser = true;
+            PathOnConfirm = [this]()
+            {
+                std::string selectedFile = BrowserPath;
+                if (!selectedFile.empty())
+                {
+                    // 确保文件有.bin后缀
+                    if (selectedFile.find(".bin") == std::string::npos)
+                    {
+                        selectedFile += ".bin";
+                    }
+                    ExportCustomRuleTemplates(selectedFile);
+                }
+            };
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.5f, 0.1f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.6f, 0.2f, 0.9f));
+        static bool isCreatingTemplate = false;
+        if (ImGui::Button(reinterpret_cast<const char*>(u8"添加模板"), ImVec2(buttonWidth, 28)))
+        {
+            isCreatingTemplate = true;
+        }
+        ImGui::PopStyleColor(2);
+
+        ImGui::EndChild();
+
+        ImGui::SameLine();
+
+        // 右侧部分
+        ImGui::BeginChild("##模板管理右侧", ImVec2(0, 250), false);
+
+        // 显示模板详情
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+        ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"模板详情"));
+        ImGui::PopStyleColor();
+
+        ImGui::BeginChild("##模板详情", ImVec2(0, 180), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+        // 显示选中模板的详情 - 仅展示核心信息
+        if (selectedTemplateIndex >= 0 && selectedTemplateIndex < templateNames.size())
+        {
+            std::string selectedName = templateNames[selectedTemplateIndex];
+            const auto& rule = customRuleTemplates[selectedName];
+
+            // 显示模板名称
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.8f, 0.3f, 1.0f));
+            ImGui::TextUnformatted((reinterpret_cast<const char*>(u8"模板名称: ") + selectedName).c_str());
+            ImGui::PopStyleColor();
+            ImGui::Separator();
+
+            // 只展示三个核心属性
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                               reinterpret_cast<const char*>(u8"作者: %s"), rule.author.c_str());
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                               reinterpret_cast<const char*>(u8"版本: %s"), rule.version.c_str());
+
+            // 描述信息使用 TextWrapped 支持多行显示
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f),
+                               reinterpret_cast<const char*>(u8"描述:"));
+            ImGui::TextWrapped("%s", rule.description.c_str());
+
+            // 添加分隔线
+            ImGui::Separator();
+
+            // 显示模型和API路径作为额外参考信息
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 0.8f),
+                               reinterpret_cast<const char*>(u8"模型: %s"), rule.model.c_str());
+        }
+        else
+        {
+            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
+                               reinterpret_cast<const char*>(u8"请选择一个模板查看详情"));
+        }
+
+        ImGui::EndChild();
+
+        // 如果有选择的模板，显示操作按钮
+        if (selectedTemplateIndex >= 0 && selectedTemplateIndex < templateNames.size())
+        {
+            const float actionButtonWidth = (ImGui::GetContentRegionAvail().x - 10.0f) / 2.0f;
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.9f, 0.2f, 0.2f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.3f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"删除选中模板"), ImVec2(actionButtonWidth, 28)))
+            {
+                std::string selectedName = templateNames[selectedTemplateIndex];
+                customRuleTemplates.erase(selectedName);
+                selectedTemplateIndex = -1;
+            }
+            ImGui::PopStyleColor(2);
+
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"应用选中模板"), ImVec2(actionButtonWidth, 28)))
+            {
+                std::string selectedName = templateNames[selectedTemplateIndex];
+                // 将模板添加到已激活的自定义规则
+                configure.customRules.push_back(customRuleTemplates[selectedName]);
+                // 保存配置
+                Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
+            }
+            ImGui::PopStyleColor(2);
+        }
+
+        ImGui::EndChild();
+
+        // 新建模板弹窗
+        if (isCreatingTemplate)
+        {
+            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"新建模板"));
+            isCreatingTemplate = false;
+        }
+
+        if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"新建模板"), NULL))
+        {
+            static CustomRule newRule;
+
+            // 获取屏幕高度的70%作为滚动区域的高度
+            float availableHeight = ImGui::GetIO().DisplaySize.y * 0.7f;
+
+            // 创建一个可滚动区域，使用鼠标滚轮滑动
+            ImGui::BeginChild("##滚动区域", ImVec2(ImGui::GetContentRegionAvail().x, availableHeight),
+                              true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+            // 首先显示模板的核心属性
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.6f, 1.0f, 1.0f));
+            ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"基本信息"));
+            ImGui::PopStyleColor();
+            ImGui::Separator();
+
+            // 名称输入
+            char nameBuffer[256] = {0};
+            strcpy_s(nameBuffer, sizeof(nameBuffer), newRule.name.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"模板名称"), nameBuffer, sizeof(nameBuffer)))
+            {
+                newRule.name = nameBuffer;
+            }
+            ImGui::PopStyleVar();
+
+            // 作者输入
+            char authorBuffer[256] = {0};
+            strcpy_s(authorBuffer, sizeof(authorBuffer), newRule.author.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"作者"), authorBuffer, sizeof(authorBuffer)))
+            {
+                newRule.author = authorBuffer;
+            }
+            ImGui::PopStyleVar();
+
+            // 版本输入
+            char versionBuffer[256] = {0};
+            strcpy_s(versionBuffer, sizeof(versionBuffer), newRule.version.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            if (ImGui::InputText(reinterpret_cast<const char*>(u8"版本"), versionBuffer, sizeof(versionBuffer)))
+            {
+                newRule.version = versionBuffer;
+            }
+            ImGui::PopStyleVar();
+
+            // 描述输入 - 使用多行输入框
+            char descriptionBuffer[1024] = {0};
+            strcpy_s(descriptionBuffer, sizeof(descriptionBuffer), newRule.description.c_str());
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            ImGui::Text(reinterpret_cast<const char*>(u8"描述"));
+            if (ImGui::InputTextMultiline("##描述", descriptionBuffer, sizeof(descriptionBuffer),
+                                          ImVec2(ImGui::GetContentRegionAvail().x, 80)))
+            {
+                newRule.description = descriptionBuffer;
+            }
+            ImGui::PopStyleVar();
+
+            ImGui::Separator();
+
+            // 继续显示详细配置
+            ImGui::Indent(20.0f);
+            EditCustomRule(newRule);
+            ImGui::Unindent(20.0f);
+
+            ImGui::EndChild();
+
+            // 按钮区域保持在滚动区域外部
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"确定"), ImVec2(120, 28)))
+            {
+                // 检查模板名称是否为空
+                if (newRule.name.empty())
+                {
+                    // 如果名称为空，生成默认名称
+                    newRule.name = reinterpret_cast<const char*>(u8"模板_") +
+                        std::to_string(customRuleTemplates.size() + 1);
+                }
+
+                // 添加到模板库
+                customRuleTemplates[newRule.name] = newRule;
+
+                // 重置并关闭弹窗
+                newRule = CustomRule();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(2);
+
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.5f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.6f, 0.6f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"取消"), ImVec2(120, 28)))
+            {
+                // 直接关闭弹窗，不保存任何内容
+                newRule = CustomRule(); // 重置规则内容
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(2);
+
+            ImGui::EndPopup();
+        }
+
+        // 从现有配置创建模板弹窗
+        static bool isCreatingFromExisting = false;
+        if (ImGui::Button(reinterpret_cast<const char*>(u8"从现有配置创建模板"), ImVec2(ImGui::GetContentRegionAvail().x, 28)))
+        {
+            isCreatingFromExisting = true;
+            ImGui::OpenPopup(reinterpret_cast<const char*>(u8"选择配置来源"));
+        }
+
+        if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(u8"选择配置来源"), NULL,
+                                   ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"请选择要转换为模板的配置："));
+
+            static int selectedConfigIndex = -1;
+            int idx = 0;
+
+            // 显示所有自定义GPT配置
+            ImGui::BeginChild("##ConfigList", ImVec2(300, 200), true);
+            for (const auto& [name, gpt] : configure.customGPTs)
+            {
+                if (!gpt.useLocalModel) // 只显示远程API配置
+                {
+                    if (ImGui::Selectable(name.c_str(), selectedConfigIndex == idx))
+                    {
+                        selectedConfigIndex = idx;
+                    }
+                    idx++;
+                }
+            }
+            ImGui::EndChild();
+
+            // 额外的元数据输入字段
+            static char metaAuthor[256] = "Ryoshi";
+            static char metaVersion[256] = "1.0";
+            static char metaDescription[1024] = "自定义规则";
+
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+            ImGui::InputText(reinterpret_cast<const char*>(u8"作者"), metaAuthor, sizeof(metaAuthor));
+            ImGui::InputText(reinterpret_cast<const char*>(u8"版本"), metaVersion, sizeof(metaVersion));
+            ImGui::InputTextMultiline(reinterpret_cast<const char*>(u8"描述"), metaDescription, sizeof(metaDescription),
+                                      ImVec2(ImGui::GetContentRegionAvail().x, 60));
+            ImGui::PopStyleVar();
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"创建模板"), ImVec2(120, 28)))
+            {
+                if (selectedConfigIndex >= 0)
+                {
+                    // 找到选中的配置并创建模板
+                    idx = 0;
+                    for (const auto& [name, gpt] : configure.customGPTs)
+                    {
+                        if (!gpt.useLocalModel)
+                        {
+                            if (idx == selectedConfigIndex)
+                            {
+                                // 创建新的模板
+                                CustomRule newTemplate;
+                                newTemplate.enable = true;
+                                newTemplate.name = name;
+                                newTemplate.model = gpt.model;
+                                newTemplate.supportSystemRole = true;
+
+                                // 设置元数据
+                                newTemplate.author = metaAuthor;
+                                newTemplate.version = metaVersion;
+                                newTemplate.description = metaDescription;
+
+                                // 构建API路径
+                                newTemplate.apiPath = gpt.apiHost + gpt.apiPath;
+
+                                // API密钥配置
+                                newTemplate.apiKeyRole.key = gpt.api_key;
+                                newTemplate.apiKeyRole.role = "HEADERS";
+                                newTemplate.apiKeyRole.header = "Authorization: Bearer ";
+
+                                // 响应配置 - 默认OpenAI格式
+                                newTemplate.responseRole.suffix = "data: ";
+                                newTemplate.responseRole.content = "choices/delta/content";
+                                newTemplate.responseRole.callback = "RESPONSE";
+                                newTemplate.responseRole.stopFlag = "[DONE]";
+
+                                // 设置提示角色配置
+                                newTemplate.promptRole.prompt.path = "content";
+                                newTemplate.promptRole.prompt.suffix = "messages";
+                                newTemplate.promptRole.role.path = "role";
+                                newTemplate.promptRole.role.suffix = "messages";
+
+                                // 添加到模板库
+                                customRuleTemplates[name + "_模板"] = newTemplate;
+                                break;
+                            }
+                            idx++;
+                        }
+                    }
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(2);
+
+            ImGui::SameLine();
+
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.5f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.6f, 0.6f, 0.9f));
+            if (ImGui::Button(reinterpret_cast<const char*>(u8"取消"), ImVec2(120, 28)))
+            {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(2);
 
             ImGui::EndPopup();
         }
@@ -3065,6 +3871,10 @@ void Application::RenderConfigBox()
     {
         Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
         Utils::SaveYaml("Lconfig.yml", Utils::toYaml(lConfigure));
+        for (auto& it : customRuleTemplates)
+        {
+            Utils::SaveYaml(CustomRulesPath + "/" + it.first + ".yaml", Utils::toYaml(it.second));
+        }
         should_restart = true;
     }
 
@@ -4038,6 +4848,17 @@ bool Application::Initialize()
         {
             Vits(text);
         });
+    }
+    auto files = UDirectory::GetSubFiles(CustomRulesPath);
+    for (auto& file : files)
+    {
+        auto c = Utils::LoadYaml<CustomRule>(CustomRulesPath + file);
+        if (c == nullopt)
+        {
+            LogError("Custom Role Error: Failed to load {0}", file);
+            continue;
+        }
+        customRuleTemplates[c->name] = c.value();
     }
     mdConfig.linkCallback = LinkCallback;
     mdConfig.imageCallback = ImageCallback;
