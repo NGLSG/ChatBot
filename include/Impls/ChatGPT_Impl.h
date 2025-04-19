@@ -54,7 +54,6 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-        chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
         chat_data_._endPoint = data.apiHost + data.apiPath;
     }
@@ -68,7 +67,6 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-        chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
         chat_data_._endPoint = "https://api.x.ai/v1/chat/completions";
     }
@@ -84,7 +82,6 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-        chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
 
         // 设置 Mistral API 端点
@@ -101,7 +98,6 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-        chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
 
         // 设置通义千问API端点
@@ -124,7 +120,6 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-        chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
 
         // 设置星火API端点
@@ -152,7 +147,6 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-        chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
 
         // 设置百川API端点
@@ -180,8 +174,7 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-        chat_data_.useLocalModel = false;
-        chat_data_.useWebProxy = true;
+    chat_data_.useWebProxy = true;
 
         // 设置腾讯混元API端点
         chat_data_._endPoint = "https://api.hunyuan.cloud.tencent.com/v1/chat/completions";
@@ -207,7 +200,6 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-        chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
 
         // 设置火山API端点
@@ -235,7 +227,6 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-        chat_data_.useLocalModel = false;
         chat_data_.useWebProxy = true;
 
         // 设置ChatGLM API端点

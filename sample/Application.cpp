@@ -2182,8 +2182,8 @@ void Application::RenderConfigBox()
         ImGui::BeginChild("##ModelSelectLeft", ImVec2(columnWidth, 140), false);
         // 第一列内置模型选择
         SelectLLM(reinterpret_cast<const char*>(u8"使用OpenAI"), configure.openAi.enable);
-        SelectLLM(reinterpret_cast<const char*>(u8"使用Claude (Slack接口)"), configure.claude.enable);
-        SelectLLM(reinterpret_cast<const char*>(u8"使用ClaudeAPI"), configure.claudeAPI.enable);
+        //SelectLLM(reinterpret_cast<const char*>(u8"使用Claude (Slack接口)"), configure.claude.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用Claude"), configure.claudeAPI.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用Gemini"), configure.gemini.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用Grok"), configure.grok.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用Mistral AI"), configure.mistral.enable);
@@ -2195,7 +2195,7 @@ void Application::RenderConfigBox()
         // 第二列内置模型选择 - 国内模型
         SelectLLM(reinterpret_cast<const char*>(u8"使用通义千问"), configure.qianwen.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用讯飞星火"), configure.sparkdesk.enable);
-        //SelectLLM(reinterpret_cast<const char*>(u8"使用ChatGLM"), configure.chatglm.enable);
+        SelectLLM(reinterpret_cast<const char*>(u8"使用ChatGLM"), configure.chatglm.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用腾讯混元"), configure.hunyuan.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用百川AI"), configure.baichuan.enable);
         SelectLLM(reinterpret_cast<const char*>(u8"使用火山引擎"), configure.huoshan.enable);
@@ -2717,78 +2717,79 @@ void Application::RenderConfigBox()
         // 如果没有自定义规则被启用，检查是否有标准API被启用
         if (!configDisplayed)
         {
-            // 原有的标准API配置代码...例如：
             if (configure.openAi.enable)
             {
-                // OpenAI配置
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.8f, 0.3f, 1.0f));
-                ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"OpenAI 配置"));
-                ImGui::PopStyleColor();
-
-                ShowPasswordInput(reinterpret_cast<const char*>(u8"OpenAI API Key"), configure.openAi.api_key, "api");
-                ShowTextInput(reinterpret_cast<const char*>(u8"OpenAI 模型"), configure.openAi.model, "model");
-
-                ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用远程代理"), &configure.openAi.useWebProxy);
-
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.openAi.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.openAi.api_key, "apiKey");
+                ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用远程接入点"), &configure.openAi.useWebProxy);
                 if (configure.openAi.useWebProxy)
                 {
-                    ShowTextInput(reinterpret_cast<const char*>(u8"对OpenAI使用的代理"), configure.openAi.proxy, "proxy");
+                    ShowTextInput(reinterpret_cast<const char*>(u8"接入点"), configure.openAi._endPoint, "endPoint");
                 }
                 else
                 {
-                    ShowTextInput(reinterpret_cast<const char*>(u8"远程接入点"), configure.openAi._endPoint, "endPoint");
+                    ShowTextInput(reinterpret_cast<const char*>(u8"代理"), configure.openAi.proxy, "proxy");
                 }
-
-                configDisplayed = true;
             }
+            else if (configure.claudeAPI.enable)
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.claudeAPI.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.claudeAPI.apiKey, "apiKey");
+                ShowTextInput(reinterpret_cast<const char*>(u8"API版本"), configure.claudeAPI.apiVersion, "apiVersion");
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"API版本必填不可留空"));
+            }
+            else if (configure.gemini.enable)
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.gemini.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.gemini._apiKey, "apiKey");
+            }
+            else if (configure.grok.enable)
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.grok.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.grok.api_key, "apiKey");
+            }
+
+            else if (configure.mistral.enable)
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.mistral.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.mistral.api_key, "apiKey");
+            }
+
             else if (configure.qianwen.enable)
             {
-                // 通义千问配置
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.8f, 0.3f, 1.0f));
-                ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"通义千问配置"));
-                ImGui::PopStyleColor();
-
-                ShowPasswordInput(reinterpret_cast<const char*>(u8"通义千问 API Key"), configure.qianwen.api_key, "api");
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), configure.qianwen.model, "model");
-
-                // 添加通义千问模型选择下拉菜单
-                const char* models[] = {
-                    "qwen-max", "qwen-plus", "qwen-turbo", "qwen-max-longcontext"
-                };
-                static int currentModel = 0;
-
-                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
-                if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"预设模型"), models[currentModel]))
-                {
-                    for (int i = 0; i < IM_ARRAYSIZE(models); i++)
-                    {
-                        bool isSelected = (currentModel == i);
-                        if (ImGui::Selectable(models[i], isSelected))
-                        {
-                            currentModel = i;
-                            configure.qianwen.model = models[i];
-                            strcpy_s(GetBufferByName("model").buffer, configure.qianwen.model.c_str());
-                        }
-
-                        if (isSelected)
-                        {
-                            ImGui::SetItemDefaultFocus();
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-                ImGui::PopStyleVar();
-
-                // 自定义端点设置
-                ShowTextInput(reinterpret_cast<const char*>(u8"API 端点 (可选)"), configure.qianwen.apiHost, "apiHost");
-
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.0f, 1.0f));
-                ImGui::TextWrapped(reinterpret_cast<const char*>(u8"注意：通义千问API需要阿里云DashScope API密钥，非通义大模型API密钥"));
-                ImGui::PopStyleColor();
-
-                configDisplayed = true;
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.qianwen.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.qianwen.api_key, "apiKey");
             }
-            // 检查自定义GPT
+
+            else if (configure.baichuan.enable)
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.baichuan.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.baichuan.api_key, "apiKey");
+            }
+
+            else if (configure.chatglm.enable)
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.chatglm.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.chatglm.api_key, "apiKey");
+            }
+
+            else if (configure.huoshan.enable)
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.huoshan.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.huoshan.api_key, "apiKey");
+            }
+
+            else if (configure.hunyuan.enable)
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.hunyuan.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.hunyuan.api_key, "apiKey");
+            }
+
+            else if (configure.sparkdesk.enable)
+            {
+                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.sparkdesk.model, "model");
+                ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.sparkdesk.api_key, "apiKey");
+            }
             else
             {
                 for (auto& [name, cdata] : configure.customGPTs)
@@ -3972,9 +3973,19 @@ void Application::RenderConfigBox()
                     configure.gemini.enable = false;
                     configure.claude.enable = false;
                     configure.grok.enable = false;
-                    for (auto& [name,cdata] : configure.customGPTs)
+                    configure.chatglm.enable = false;
+                    configure.hunyuan.enable = false;
+                    configure.huoshan.enable = false;
+                    configure.baichuan.enable = false;
+                    configure.sparkdesk.enable = false;
+                    configure.mistral.enable = false;
+                    for (auto& cdata : configure.customGPTs | views::values)
                     {
                         cdata.enable = false;
+                    }
+                    for (auto& it : configure.customRules)
+                    {
+                        it.enable = false;
                     }
                     configure.customGPTs.insert({"qwen2.5:3b", GPTLikeCreateInfo()});
                     configure.customGPTs["qwen2.5:3b"].enable = true;
@@ -4163,7 +4174,7 @@ int Application::Renderer()
     config.OversampleH = 1;
     config.OversampleV = 1;
     config.PixelSnapH = true;
-    auto fontRanges = []()
+    /*auto fontRanges = []()
     {
         // 基础范围构建器
         static ImVector<ImWchar> ranges;
@@ -4190,13 +4201,13 @@ int Application::Renderer()
         // 构建最终范围
         builder.BuildRanges(&ranges);
         return ranges;
-    };
+    };*/
     font = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
-                                        fontRanges().Data);
+                                        io.Fonts->GetGlyphRangesChineseFull());
     H1 = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
-                                      fontRanges().Data);
+                                      io.Fonts->GetGlyphRangesChineseFull());
     H2 = io.Fonts->AddFontFromFileTTF("Resources/font/default.otf", fontSize, &config,
-                                      fontRanges().Data);
+                                      io.Fonts->GetGlyphRangesChineseFull());
     H3 = mdConfig.headingFormats[1].font;
 
 

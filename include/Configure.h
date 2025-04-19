@@ -32,9 +32,7 @@ struct ClaudeAPICreateInfo
 struct OpenAIBotCreateInfo
 {
     bool enable = true;
-    bool useLocalModel = false;
     bool useWebProxy = false;
-    std::string modelPath = "model/ChatGLM/";
     std::string api_key = "";
     std::string model = "gpt-4o";
     std::string proxy = "";
@@ -659,8 +657,6 @@ namespace YAML
         {
             Node node;
             node["enable"] = data.enable;
-            node["useLocalModel"] = data.useLocalModel;
-            node["modelPath"] = data.modelPath;
             node["api_key"] = data.api_key;
             node["model"] = data.model;
             node["proxy"] = data.proxy;
@@ -674,8 +670,6 @@ namespace YAML
         {
             data.enable = node["enable"].as<bool>();
             data.api_key = node["api_key"].as<std::string>();
-            data.modelPath = node["modelPath"].as<std::string>();
-            data.useLocalModel = node["useLocalModel"].as<bool>();
             data.useWebProxy = node["useWebProxy"].as<bool>();
             if (node["model"])
             {
