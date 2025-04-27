@@ -1856,7 +1856,7 @@ void Application::RenderInputBox()
         ImGui::Begin("##", NULL,
                      ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground |
                      ImGuiWindowFlags_NoTitleBar);
-        if (ImGui::BeginMenuBar())
+        /*if (ImGui::BeginMenuBar())
         {
             if (ImGui::BeginMenu(reinterpret_cast<const char*>(u8"指令")))
             {
@@ -1873,7 +1873,7 @@ void Application::RenderInputBox()
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
-        }
+        }*/
         ImVec2 size(50, 0);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.85f, 0.85f, 0.85f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
@@ -3299,56 +3299,6 @@ void Application::RenderConfigBox()
             // 创建一个可滚动区域，使用鼠标滚轮滑动
             ImGui::BeginChild("##滚动区域", ImVec2(ImGui::GetContentRegionAvail().x, availableHeight),
                               true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
-
-            // 首先显示模板的核心属性
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.6f, 1.0f, 1.0f));
-            ImGui::TextUnformatted(reinterpret_cast<const char*>(u8"基本信息"));
-            ImGui::PopStyleColor();
-            ImGui::Separator();
-
-            // 名称输入
-            char nameBuffer[256] = {0};
-            strcpy_s(nameBuffer, sizeof(nameBuffer), newRule.name.c_str());
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"模板名称"), nameBuffer, sizeof(nameBuffer)))
-            {
-                newRule.name = nameBuffer;
-            }
-            ImGui::PopStyleVar();
-
-            // 作者输入
-            char authorBuffer[256] = {0};
-            strcpy_s(authorBuffer, sizeof(authorBuffer), newRule.author.c_str());
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"作者"), authorBuffer, sizeof(authorBuffer)))
-            {
-                newRule.author = authorBuffer;
-            }
-            ImGui::PopStyleVar();
-
-            // 版本输入
-            char versionBuffer[256] = {0};
-            strcpy_s(versionBuffer, sizeof(versionBuffer), newRule.version.c_str());
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
-            if (ImGui::InputText(reinterpret_cast<const char*>(u8"版本"), versionBuffer, sizeof(versionBuffer)))
-            {
-                newRule.version = versionBuffer;
-            }
-            ImGui::PopStyleVar();
-
-            // 描述输入 - 使用多行输入框
-            char descriptionBuffer[1024] = {0};
-            strcpy_s(descriptionBuffer, sizeof(descriptionBuffer), newRule.description.c_str());
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
-            ImGui::Text(reinterpret_cast<const char*>(u8"描述"));
-            if (ImGui::InputTextMultiline("##描述", descriptionBuffer, sizeof(descriptionBuffer),
-                                          ImVec2(ImGui::GetContentRegionAvail().x, 80)))
-            {
-                newRule.description = descriptionBuffer;
-            }
-            ImGui::PopStyleVar();
-
-            ImGui::Separator();
 
             // 继续显示详细配置
             ImGui::Indent(20.0f);
