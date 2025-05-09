@@ -47,10 +47,10 @@ sol::object Script::Invoke(const std::string&funcName, Args&&... args) {
             return ret;
         }
         sol::error err = ret;
-        std::cerr << "Error call function failed:" << funcName << " due to: " << err.what() << std::endl;
+        //std::cerr << "Error call function failed:" << funcName << " due to: " << err.what() << std::endl;
         return sol::nil;
     }
-    std::cerr << "Function not found: " << funcName << std::endl;
+    //std::cerr << "Function not found: " << funcName << std::endl;
     return sol::nil;
 }
 

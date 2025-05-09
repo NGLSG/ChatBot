@@ -369,6 +369,40 @@ private:
 
     void CreateBot();
 
+    template <typename... Args>
+    void PluginRun(const std::string& method, Args... args)
+    {
+        for (auto& [name, script] : PluginsScript1)
+        {
+            // 检查是否在禁止插件列表中
+            if (ranges::find(forbidLuaPlugins, name) != forbidLuaPlugins.end())
+            {
+                continue;
+            }
+            script->Invoke(method, std::forward<Args>(args)...);
+        }
+    }
+
+    template <typename T, typename... Args>
+    T PluginRunWithRes(const std::string& method, Args... args)
+    {
+        for (auto& [name, script] : PluginsScript1)
+        {
+            // 检查是否在禁止插件列表中
+            if (ranges::find(forbidLuaPlugins, name) != forbidLuaPlugins.end())
+            {
+                continue;
+            }
+            sol::object t = script->Invoke(method, std::forward<Args>(args)...);
+            if (t.is<T>())
+            {
+                return t.as<T>();
+            }
+            return T();
+        }
+        return T();
+    }
+
     void EditCustomRule(CustomRule& rule)
     {
         if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"基本信息"), ImGuiTreeNodeFlags_DefaultOpen))
@@ -409,12 +443,12 @@ private:
             ImGui::EndGroup();
             ImGui::Separator();
 
-            strcpy_s(GetBufferByName("apiPath").buffer, TEXT_BUFFER, rule.apiPath.c_str());
+            /*strcpy_s(GetBufferByName("apiPath").buffer, TEXT_BUFFER, rule.apiPath.c_str());
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
             if (ImGui::InputText(reinterpret_cast<const char*>(u8"API路径"), GetBufferByName("apiPath").buffer,
                                  TEXT_BUFFER))
                 rule.apiPath = GetBufferByName("apiPath").buffer;
-            ImGui::PopStyleVar();
+            ImGui::PopStyleVar();*/
 
             ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f),
                                reinterpret_cast<const char*>(u8"支持变量: ${MODEL}, ${API_KEY}"));
@@ -881,13 +915,24 @@ private:
                 std::string _tmpText = "";
                 while (!bot->Finished(botR->timestamp))
                 {
-                    _tmpText += bot->GetResponse(botR->timestamp);
+                    std::string msg = bot->GetResponse(botR->timestamp);
+                    std::string res;
+                    if (msg != "")
+                    {
+                        res = PluginRunWithRes<std::string>("OnChat", msg);
+                        if (!isContentInvalid(res))
+                        {
+                            res = msg;
+                        }
+                    }
+                    _tmpText += res;
                     if (configure.vits.enable)
                     {
                         _tmpText = StringExecutor::TTS(_tmpText);
                     }
                     botR->content = _tmpText;
                     botR->newMessage = true;
+
 
                     std::this_thread::sleep_for(std::chrono::milliseconds(16));
                 }

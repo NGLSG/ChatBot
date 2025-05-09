@@ -14,6 +14,7 @@ ImFont* H2 = NULL;
 ImFont* H3 = NULL;
 Application* s_instance = nullptr;
 
+
 ImGui::MarkdownImageData ImageCallback(ImGui::MarkdownLinkCallbackData data)
 {
     return s_instance->md_ImageCallback(data);
@@ -2635,6 +2636,56 @@ void Application::RenderConfigBox()
             ImGui::PopStyleVar();
         };
 
+        auto ModelController = [&](const char* label, std::string& model, std::vector<std::string>& models)
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+
+            // Check if current model is in the list
+            bool modelInList = std::find(models.begin(), models.end(), model) != models.end();
+
+            // Create a horizontal group for the combo and button
+            ImGui::BeginGroup();
+
+            // Display combo box with model list
+            if (ImGui::BeginCombo(reinterpret_cast<const char*>(u8"可用模型"), model.c_str()))
+            {
+                for (const auto& m : models)
+                {
+                    bool isSelected = (model == m);
+                    if (ImGui::Selectable(m.c_str(), isSelected))
+                    {
+                        model = m;
+                    }
+                    if (isSelected)
+                    {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            strcpy_s(GetBufferByName("model").buffer, model.c_str());
+
+            if (ImGui::InputText(label, GetBufferByName("model").buffer, TEXT_BUFFER))
+
+            {
+                model = GetBufferByName("model").buffer;
+            }
+
+            if (!modelInList && model.length() > 0)
+            {
+                ImGui::SameLine();
+                if (ImGui::Button(reinterpret_cast<const char*>(u8"添加"), ImVec2(60, 28)))
+                {
+                    models.push_back(model);
+                }
+            }
+
+            ImGui::EndGroup();
+
+            ImGui::PopStyleVar();
+        };
+
         // 根据当前选择的模型显示相应配置
         bool configDisplayed = false;
 
@@ -2657,7 +2708,9 @@ void Application::RenderConfigBox()
 
                     ImGui::Checkbox(reinterpret_cast<const char*>(u8"支持系统角色"), &rule.supportSystemRole);
                 }*/
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), rule.model, "ruleModel");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), rule.model, "ruleModel");
+                ShowTextInput(reinterpret_cast<const char*>(u8"API地址"), rule.apiPath, "api");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), rule.model, rule.supportModels);
 
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), rule.apiKeyRole.key, "ruleApiKey");
 
@@ -2719,7 +2772,10 @@ void Application::RenderConfigBox()
         {
             if (configure.openAi.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.openAi.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.openAi.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.openAi.model,
+                                configure.openAi.supportModels);
+
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.openAi.api_key, "apiKey");
                 ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用远程接入点"), &configure.openAi.useWebProxy);
                 if (configure.openAi.useWebProxy)
@@ -2733,61 +2789,81 @@ void Application::RenderConfigBox()
             }
             else if (configure.claudeAPI.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.claudeAPI.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.claudeAPI.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.claudeAPI.model,
+                                configure.claudeAPI.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.claudeAPI.apiKey, "apiKey");
                 ShowTextInput(reinterpret_cast<const char*>(u8"API版本"), configure.claudeAPI.apiVersion, "apiVersion");
                 ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"API版本必填不可留空"));
             }
             else if (configure.gemini.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.gemini.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.gemini.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.gemini.model,
+                                configure.gemini.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.gemini._apiKey, "apiKey");
             }
             else if (configure.grok.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.grok.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.grok.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.grok.model,
+                                configure.grok.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.grok.api_key, "apiKey");
             }
 
             else if (configure.mistral.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.mistral.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.mistral.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.mistral.model,
+                                configure.mistral.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.mistral.api_key, "apiKey");
             }
 
             else if (configure.qianwen.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.qianwen.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.qianwen.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.qianwen.model,
+                                configure.qianwen.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.qianwen.api_key, "apiKey");
             }
 
             else if (configure.baichuan.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.baichuan.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.baichuan.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.baichuan.model,
+                                configure.baichuan.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.baichuan.api_key, "apiKey");
             }
 
             else if (configure.chatglm.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.chatglm.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.chatglm.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.chatglm.model,
+                                configure.chatglm.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.chatglm.api_key, "apiKey");
             }
 
             else if (configure.huoshan.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.huoshan.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.huoshan.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.huoshan.model,
+                                configure.huoshan.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.huoshan.api_key, "apiKey");
             }
 
             else if (configure.hunyuan.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.hunyuan.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.hunyuan.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.hunyuan.model,
+                                configure.hunyuan.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.hunyuan.api_key, "apiKey");
             }
 
             else if (configure.sparkdesk.enable)
             {
-                ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.sparkdesk.model, "model");
+                //ShowTextInput(reinterpret_cast<const char*>(u8"模型"), configure.sparkdesk.model, "model");
+                ModelController(reinterpret_cast<const char*>(u8"模型"), configure.sparkdesk.model,
+                                configure.sparkdesk.supportModels);
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), configure.sparkdesk.api_key, "apiKey");
             }
             else
@@ -2906,7 +2982,8 @@ void Application::RenderConfigBox()
                             ShowPasswordInput(reinterpret_cast<const char*>(u8"API Key"), cdata.api_key, "api");
                             ShowTextInput(reinterpret_cast<const char*>(u8"API 主机"), cdata.apiHost, "apiHost");
                             ShowTextInput(reinterpret_cast<const char*>(u8"API 路径"), cdata.apiPath, "apiPath");
-                            ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), cdata.model, "model");
+                            //ShowTextInput(reinterpret_cast<const char*>(u8"模型名称"), cdata.model, "model");
+                            ModelController(reinterpret_cast<const char*>(u8"模型"), cdata.model, cdata.supportModels);
                         }
                         else
                         {
@@ -3460,7 +3537,17 @@ void Application::RenderConfigBox()
     }
 
     // 显示百度翻译配置
-    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"百度翻译(如果需要)")))
+    if
+    (ImGui::CollapsingHeader
+        (
+            reinterpret_cast
+            <
+                const char*>
+            (
+                u8"百度翻译(如果需要)"
+            )
+        )
+    )
     {
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"启用百度翻译"), &configure.baiDuTranslator.enable);
         ImGui::InputText("BaiDu App ID", configure.baiDuTranslator.appId.data(),
@@ -3514,7 +3601,17 @@ void Application::RenderConfigBox()
     }
 
     // 显示 VITS 配置
-    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"语音聊天功能(基于VITS)")))
+    if
+    (ImGui::CollapsingHeader
+        (
+            reinterpret_cast
+            <
+                const char*>
+            (
+                u8"语音聊天功能(基于VITS)"
+            )
+        )
+    )
     {
         strcpy_s(GetBufferByName("lan").buffer, configure.vits.lanType.c_str());
         strcpy_s(GetBufferByName("endPoint").buffer, configure.vits.apiEndPoint.c_str());
@@ -3660,7 +3757,17 @@ void Application::RenderConfigBox()
     }
 
 #ifdef WIN32
-    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"桌面宠物(基于Live2D)")))
+    if
+    (ImGui::CollapsingHeader
+        (
+            reinterpret_cast
+            <
+                const char*>
+            (
+                u8"桌面宠物(基于Live2D)"
+            )
+        )
+    )
     {
         //live2dModel = Utils::GetDirectories(model + Live2DPath);
         /*auto it = std::find(live2dModel.begin(), live2dModel.end(), configure.live2D.model);
@@ -3711,7 +3818,17 @@ void Application::RenderConfigBox()
     }
 #endif
     // 显示 Whisper 配置
-    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"语音识别(基于Whisper)")))
+    if
+    (ImGui::CollapsingHeader
+        (
+            reinterpret_cast
+            <
+                const char*>
+            (
+                u8"语音识别(基于Whisper)"
+            )
+        )
+    )
     {
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"启用Whisper"), &configure.whisper.enable);
         ImGui::Checkbox(reinterpret_cast<const char*>(u8"使用本地模型"), &configure.whisper.useLocalModel);
@@ -3741,7 +3858,17 @@ void Application::RenderConfigBox()
     }
 
     //显示Stable Diffusion配置
-    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"AI绘图(基于Stable Diffusion)")))
+    if
+    (ImGui::CollapsingHeader
+        (
+            reinterpret_cast
+            <
+                const char*>
+            (
+                u8"AI绘图(基于Stable Diffusion)"
+            )
+        )
+    )
     {
         static char search_text[256] = "";
         ImGui::InputText(reinterpret_cast<const char*>(u8"Http API"), configure.stableDiffusion.apiPath.data(),
@@ -3787,7 +3914,17 @@ void Application::RenderConfigBox()
         }
     }
 
-    if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"插件列表")))
+    if
+    (ImGui::CollapsingHeader
+        (
+            reinterpret_cast
+            <
+                const char*>
+            (
+                u8"插件列表"
+            )
+        )
+    )
     {
         auto dirs = UDirectory::GetSubDirectories(PluginPath);
         static std::vector<bool> enablePlugins(dirs.size(), true);
@@ -3818,7 +3955,17 @@ void Application::RenderConfigBox()
     }
 
     // 保存配置
-    if (ImGui::Button(reinterpret_cast<const char*>(u8"保存配置")))
+    if
+    (ImGui::Button
+        (
+            reinterpret_cast
+            <
+                const char*>
+            (
+                u8"保存配置"
+            )
+        )
+    )
     {
         Utils::SaveYaml("config.yaml", Utils::toYaml(configure));
         Utils::SaveYaml("Lconfig.yml", Utils::toYaml(lConfigure));
@@ -4204,6 +4351,7 @@ int Application::Renderer()
     {
         try
         {
+            PluginRun("PreRender");
             glfwPollEvents();
             glClear(GL_COLOR_BUFFER_BIT);
 
@@ -4213,16 +4361,7 @@ int Application::Renderer()
 
             RenderUI();
 
-            // 在Lua中调用ImGui函数
-            for (auto& [name, script] : PluginsScript1)
-            {
-                // 检查是否在禁止插件列表中
-                if (ranges::find(forbidLuaPlugins, name) != forbidLuaPlugins.end())
-                {
-                    continue;
-                }
-                script->Invoke("UIRenderer");
-            }
+            PluginRun("UIRenderer");
             ImGui::Render();
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(window);

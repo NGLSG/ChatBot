@@ -27,6 +27,7 @@ struct ClaudeAPICreateInfo
     std::string model = "claude-3.5";
     std::string apiVersion = "2023-06-01";
     std::string _endPoint = "https://api.anthropic.com/v1/complete";
+    std::vector<std::string> supportModels = {"claude-3.7-sonnet", "claude-3.5-sonnet", "claude-3.7-sonnet-thinking"};
 };
 
 struct OpenAIBotCreateInfo
@@ -37,6 +38,9 @@ struct OpenAIBotCreateInfo
     std::string model = "gpt-4o";
     std::string proxy = "";
     std::string _endPoint = "";
+    std::vector<std::string> supportModels = {
+        "gpt3.5-turbo", "gpt4o", "gpt4.1", "gpt4.5", "o3", "o1", "o3-mini", "o4-mini"
+    };
 };
 
 struct GPTLikeCreateInfo
@@ -47,6 +51,7 @@ struct GPTLikeCreateInfo
     std::string model = ""; //Must be set
     std::string apiHost = "";
     std::string apiPath = "";
+    std::vector<std::string> supportModels;
     LLamaCreateInfo llamaData;
 
     GPTLikeCreateInfo()
@@ -134,6 +139,10 @@ struct GeminiBotCreateInfo
     std::string _apiKey;
     std::string _endPoint;
     std::string model = "gemini-2.0-flash";
+    std::vector<std::string> supportModels = {
+        "gemini-2.0-flash-preview-image-generation", "gemini-2.0-flash-lite", "gemini-2.0-flash",
+        "gemini-2.5-pro-preview-05-06", "gemini-2.5-flash-preview-04-17"
+    };
 };
 
 struct Live2D
@@ -191,6 +200,7 @@ struct CustomRule
     std::unordered_map<std::string, std::string> headers;
     std::unordered_map<std::string, std::string> roles{{"system", ""}, {"user", ""}, {"assistant", ""}};
     ResponseRole responseRole{"data: ", "choices/delta/content", "RESPONSE", "[DONE"};
+    std::vector<std::string> supportModels;
 };
 
 struct Configure
@@ -394,6 +404,13 @@ namespace YAML
                     rhs.headers[header.first.as<std::string>()] = header.second.as<std::string>();
                 }
             }
+            if (node["supportModels"])
+            {
+                for (const auto& model : node["supportModels"])
+                {
+                    rhs.supportModels.push_back(model.as<std::string>());
+                }
+            }
 
             // 解析 roles 映射
             if (node["roles"] && node["roles"].IsMap())
@@ -477,6 +494,7 @@ namespace YAML
             node["author"] = rhs.author;
             node["version"] = rhs.version;
             node["description"] = rhs.description;
+            node["supportModels"] = rhs.supportModels;
 
             return node;
         }
@@ -493,6 +511,7 @@ namespace YAML
             node["model"] = data.model;
             node["apiVersion"] = data.apiVersion;
             node["endPoint"] = data._endPoint;
+            node["supportModels"] = data.supportModels;
             return node;
         }
 
@@ -503,6 +522,13 @@ namespace YAML
             data.model = node["model"].as<std::string>();
             data.apiVersion = node["apiVersion"].as<std::string>();
             data._endPoint = node["endPoint"].as<std::string>();
+            if (node["supportModels"])
+            {
+                for (const auto& model : node["supportModels"])
+                {
+                    data.supportModels.push_back(model.as<std::string>());
+                }
+            }
             return true;
         }
     };
@@ -541,6 +567,7 @@ namespace YAML
             node["apiPath"] = data.apiPath;
             node["useLocalModel"] = data.useLocalModel;
             node["llamaData"] = data.llamaData;
+            node["supportModels"] = data.supportModels;
             return node;
         }
 
@@ -557,6 +584,13 @@ namespace YAML
                 data.useLocalModel = node["useLocalModel"].as<bool>();
             if (node["llamaData"])
                 data.llamaData = node["llamaData"].as<LLamaCreateInfo>();
+            if (node["supportModels"])
+            {
+                for (const auto& model : node["supportModels"])
+                {
+                    data.supportModels.push_back(model.as<std::string>());
+                }
+            }
             return true;
         }
     };
@@ -571,6 +605,7 @@ namespace YAML
             node["api_Key"] = data._apiKey;
             node["endPoint"] = data._endPoint;
             node["model"] = data.model;
+            node["supportModels"] = data.supportModels;
             return node;
         }
 
@@ -587,6 +622,13 @@ namespace YAML
             {
                 data.model = "gemini-2.0-flash";
             }
+            if (node["supportModels"])
+            {
+                for (const auto& model : node["supportModels"])
+                {
+                    data.supportModels.push_back(model.as<std::string>());
+                }
+            }
             return true;
         }
     };
@@ -602,6 +644,7 @@ namespace YAML
             node["userName"] = data.userName;
             node["cookies"] = data.cookies;
             node["slackToken"] = data.slackToken;
+
             return node;
         }
 
@@ -662,6 +705,7 @@ namespace YAML
             node["proxy"] = data.proxy;
             node["useWebProxy"] = data.useWebProxy;
             node["endPoint"] = data._endPoint;
+            node["supportModels"] = data.supportModels;
 
             return node;
         }
@@ -677,6 +721,13 @@ namespace YAML
             }
             data.proxy = node["proxy"].as<std::string>();
             data._endPoint = node["endPoint"].as<std::string>();
+            if (node["supportModels"])
+            {
+                for (const auto& model : node["supportModels"])
+                {
+                    data.supportModels.push_back(model.as<std::string>());
+                }
+            }
             return true;
         }
     };

@@ -7,3 +7,10 @@ function UIRenderer()
     UIText("Hello, World!")
     UIEnd()
 end
+
+function OnChat(message)
+    if type(message) ~= "string" then
+        error("Expected a string as parameter")
+    end
+    print("Received: " .. message)
+end
