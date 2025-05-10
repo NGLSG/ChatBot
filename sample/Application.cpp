@@ -4351,7 +4351,7 @@ int Application::Renderer()
     {
         try
         {
-            PluginRun("PreRender");
+            PluginRun("PreRenderer");
             glfwPollEvents();
             glClear(GL_COLOR_BUFFER_BIT);
 

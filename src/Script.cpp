@@ -76,6 +76,260 @@ void Script::PrintAllFunctions()
 
 void Script::binding()
 {
+    lua.new_enum<ImGuiWindowFlags>("ImGuiWindowFlags", {
+                                       {"None", ImGuiWindowFlags_None},
+                                       {"NoTitleBar", ImGuiWindowFlags_NoTitleBar},
+                                       {"NoResize", ImGuiWindowFlags_NoResize},
+                                       {"NoMove", ImGuiWindowFlags_NoMove},
+                                       {"NoScrollbar", ImGuiWindowFlags_NoScrollbar},
+                                       {"NoScrollWithMouse", ImGuiWindowFlags_NoScrollWithMouse},
+                                       {"NoCollapse", ImGuiWindowFlags_NoCollapse},
+                                       {"AlwaysAutoResize", ImGuiWindowFlags_AlwaysAutoResize},
+                                       {"NoBackground", ImGuiWindowFlags_NoBackground},
+                                       {"NoSavedSettings", ImGuiWindowFlags_NoSavedSettings},
+                                       {"NoMouseInputs", ImGuiWindowFlags_NoMouseInputs},
+                                       {"MenuBar", ImGuiWindowFlags_MenuBar},
+                                       {"HorizontalScrollbar", ImGuiWindowFlags_HorizontalScrollbar},
+                                       {"NoFocusOnAppearing", ImGuiWindowFlags_NoFocusOnAppearing},
+                                       {"NoBringToFrontOnFocus", ImGuiWindowFlags_NoBringToFrontOnFocus},
+                                       {"AlwaysVerticalScrollbar", ImGuiWindowFlags_AlwaysVerticalScrollbar},
+                                       {"AlwaysHorizontalScrollbar", ImGuiWindowFlags_AlwaysHorizontalScrollbar},
+                                       {"AlwaysUseWindowPadding", ImGuiWindowFlags_AlwaysUseWindowPadding},
+                                       {"NoNavInputs", ImGuiWindowFlags_NoNavInputs},
+                                       {"NoNavFocus", ImGuiWindowFlags_NoNavFocus},
+                                       {"UnsavedDocument", ImGuiWindowFlags_UnsavedDocument},
+                                       {"NoDocking", ImGuiWindowFlags_NoDocking}
+                                   });
+
+    lua.new_enum<ImGuiInputTextFlags>("ImGuiInputTextFlags", {
+                                          {"None", ImGuiInputTextFlags_None},
+                                          {"CharsDecimal", ImGuiInputTextFlags_CharsDecimal},
+                                          {"CharsHexadecimal", ImGuiInputTextFlags_CharsHexadecimal},
+                                          {"CharsUppercase", ImGuiInputTextFlags_CharsUppercase},
+                                          {"CharsNoBlank", ImGuiInputTextFlags_CharsNoBlank},
+                                          {"AutoSelectAll", ImGuiInputTextFlags_AutoSelectAll},
+                                          {"EnterReturnsTrue", ImGuiInputTextFlags_EnterReturnsTrue},
+                                          {"CallbackCompletion", ImGuiInputTextFlags_CallbackCompletion},
+                                          {"CallbackHistory", ImGuiInputTextFlags_CallbackHistory},
+                                          {"CallbackAlways", ImGuiInputTextFlags_CallbackAlways},
+                                          {"CallbackCharFilter", ImGuiInputTextFlags_CallbackCharFilter},
+                                          {"AllowTabInput", ImGuiInputTextFlags_AllowTabInput},
+                                          {"CtrlEnterForNewLine", ImGuiInputTextFlags_CtrlEnterForNewLine},
+                                          {"NoHorizontalScroll", ImGuiInputTextFlags_NoHorizontalScroll},
+                                          {"AlwaysOverwrite", ImGuiInputTextFlags_AlwaysOverwrite},
+                                          {"ReadOnly", ImGuiInputTextFlags_ReadOnly},
+                                          {"Password", ImGuiInputTextFlags_Password},
+                                          {"NoUndoRedo", ImGuiInputTextFlags_NoUndoRedo},
+                                          {"CharsScientific", ImGuiInputTextFlags_CharsScientific},
+                                          {"CallbackResize", ImGuiInputTextFlags_CallbackResize},
+                                          {"CallbackEdit", ImGuiInputTextFlags_CallbackEdit}
+                                      });
+
+    lua.new_enum<ImGuiTreeNodeFlags>("ImGuiTreeNodeFlags", {
+                                         {"None", ImGuiTreeNodeFlags_None},
+                                         {"Selected", ImGuiTreeNodeFlags_Selected},
+                                         {"Framed", ImGuiTreeNodeFlags_Framed},
+                                         {"AllowOverlap", ImGuiTreeNodeFlags_AllowOverlap},
+                                         {"NoTreePushOnOpen", ImGuiTreeNodeFlags_NoTreePushOnOpen},
+                                         {"NoAutoOpenOnLog", ImGuiTreeNodeFlags_NoAutoOpenOnLog},
+                                         {"DefaultOpen", ImGuiTreeNodeFlags_DefaultOpen},
+                                         {"OpenOnDoubleClick", ImGuiTreeNodeFlags_OpenOnDoubleClick},
+                                         {"OpenOnArrow", ImGuiTreeNodeFlags_OpenOnArrow},
+                                         {"Leaf", ImGuiTreeNodeFlags_Leaf},
+                                         {"Bullet", ImGuiTreeNodeFlags_Bullet},
+                                         {"FramePadding", ImGuiTreeNodeFlags_FramePadding},
+                                         {"SpanAvailWidth", ImGuiTreeNodeFlags_SpanAvailWidth},
+                                         {"SpanFullWidth", ImGuiTreeNodeFlags_SpanFullWidth},
+                                         {"NavLeftJumpsBackHere", ImGuiTreeNodeFlags_NavLeftJumpsBackHere},
+                                         {"CollapsingHeader", ImGuiTreeNodeFlags_CollapsingHeader}
+                                     });
+
+    lua.new_enum<ImGuiPopupFlags>("ImGuiPopupFlags", {
+                                      {"None", ImGuiPopupFlags_None},
+                                      {"MouseButtonLeft", ImGuiPopupFlags_MouseButtonLeft},
+                                      {"MouseButtonRight", ImGuiPopupFlags_MouseButtonRight},
+                                      {"MouseButtonMiddle", ImGuiPopupFlags_MouseButtonMiddle},
+                                      {"NoOpenOverExistingPopup", ImGuiPopupFlags_NoOpenOverExistingPopup},
+                                      {"NoOpenOverItems", ImGuiPopupFlags_NoOpenOverItems},
+                                      {"AnyPopupId", ImGuiPopupFlags_AnyPopupId},
+                                      {"AnyPopupLevel", ImGuiPopupFlags_AnyPopupLevel},
+                                      {"AnyPopup", ImGuiPopupFlags_AnyPopup}
+                                  });
+
+    lua.new_enum<ImGuiSelectableFlags>("ImGuiSelectableFlags", {
+                                           {"None", ImGuiSelectableFlags_None},
+                                           {"DontClosePopups", ImGuiSelectableFlags_DontClosePopups},
+                                           {"SpanAllColumns", ImGuiSelectableFlags_SpanAllColumns},
+                                           {"AllowDoubleClick", ImGuiSelectableFlags_AllowDoubleClick},
+                                           {"Disabled", ImGuiSelectableFlags_Disabled},
+                                           {"AllowOverlap", ImGuiSelectableFlags_AllowOverlap}
+                                       });
+
+    lua.new_enum<ImGuiComboFlags>("ImGuiComboFlags", {
+                                      {"None", ImGuiComboFlags_None},
+                                      {"PopupAlignLeft", ImGuiComboFlags_PopupAlignLeft},
+                                      {"HeightSmall", ImGuiComboFlags_HeightSmall},
+                                      {"HeightRegular", ImGuiComboFlags_HeightRegular},
+                                      {"HeightLarge", ImGuiComboFlags_HeightLarge},
+                                      {"HeightLargest", ImGuiComboFlags_HeightLargest},
+                                      {"NoArrowButton", ImGuiComboFlags_NoArrowButton},
+                                      {"NoPreview", ImGuiComboFlags_NoPreview},
+                                      {"HeightMask_", ImGuiComboFlags_HeightMask_}
+                                  });
+
+    lua.new_enum<ImGuiTabBarFlags>("ImGuiTabBarFlags", {
+                                       {"None", ImGuiTabBarFlags_None},
+                                       {"Reorderable", ImGuiTabBarFlags_Reorderable},
+                                       {"AutoSelectNewTabs", ImGuiTabBarFlags_AutoSelectNewTabs},
+                                       {"TabListPopupButton", ImGuiTabBarFlags_TabListPopupButton},
+                                       {"NoCloseWithMiddleMouseButton", ImGuiTabBarFlags_NoCloseWithMiddleMouseButton},
+                                       {"NoTabListScrollingButtons", ImGuiTabBarFlags_NoTabListScrollingButtons},
+                                       {"NoTooltip", ImGuiTabBarFlags_NoTooltip},
+                                       {"FittingPolicyResizeDown", ImGuiTabBarFlags_FittingPolicyResizeDown},
+                                       {"FittingPolicyScroll", ImGuiTabBarFlags_FittingPolicyScroll},
+                                       {"FittingPolicyMask_", ImGuiTabBarFlags_FittingPolicyMask_},
+                                       {"FittingPolicyDefault_", ImGuiTabBarFlags_FittingPolicyDefault_}
+                                   });
+
+    lua.new_enum<ImGuiTabItemFlags>("ImGuiTabItemFlags", {
+                                        {"None", ImGuiTabItemFlags_None},
+                                        {"UnsavedDocument", ImGuiTabItemFlags_UnsavedDocument},
+                                        {"SetSelected", ImGuiTabItemFlags_SetSelected},
+                                        {
+                                            "NoCloseWithMiddleMouseButton",
+                                            ImGuiTabItemFlags_NoCloseWithMiddleMouseButton
+                                        },
+                                        {"NoPushId", ImGuiTabItemFlags_NoPushId},
+                                        {"NoTooltip", ImGuiTabItemFlags_NoTooltip},
+                                        {"NoReorder", ImGuiTabItemFlags_NoReorder},
+                                        {"Leading", ImGuiTabItemFlags_Leading},
+                                        {"Trailing", ImGuiTabItemFlags_Trailing}
+                                    });
+
+    lua.new_enum<ImGuiTableFlags>("ImGuiTableFlags", {
+                                      {"None", ImGuiTableFlags_None},
+                                      {"Resizable", ImGuiTableFlags_Resizable},
+                                      {"Reorderable", ImGuiTableFlags_Reorderable},
+                                      {"Hideable", ImGuiTableFlags_Hideable},
+                                      {"Sortable", ImGuiTableFlags_Sortable},
+                                      {"NoSavedSettings", ImGuiTableFlags_NoSavedSettings},
+                                      {"ContextMenuInBody", ImGuiTableFlags_ContextMenuInBody},
+                                      {"RowBg", ImGuiTableFlags_RowBg},
+                                      {"BordersInnerH", ImGuiTableFlags_BordersInnerH},
+                                      {"BordersOuterH", ImGuiTableFlags_BordersOuterH},
+                                      {"BordersInnerV", ImGuiTableFlags_BordersInnerV},
+                                      {"BordersOuterV", ImGuiTableFlags_BordersOuterV},
+                                      {"BordersH", ImGuiTableFlags_BordersH},
+                                      {"BordersV", ImGuiTableFlags_BordersV},
+                                      {"BordersInner", ImGuiTableFlags_BordersInner},
+                                      {"BordersOuter", ImGuiTableFlags_BordersOuter},
+                                      {"Borders", ImGuiTableFlags_Borders},
+                                      {"NoBordersInBody", ImGuiTableFlags_NoBordersInBody},
+                                      {"NoBordersInBodyUntilResize", ImGuiTableFlags_NoBordersInBodyUntilResize},
+                                      {"SizingFixedFit", ImGuiTableFlags_SizingFixedFit},
+                                      {"SizingFixedSame", ImGuiTableFlags_SizingFixedSame},
+                                      {"SizingStretchProp", ImGuiTableFlags_SizingStretchProp},
+                                      {"SizingStretchSame", ImGuiTableFlags_SizingStretchSame},
+                                      {"NoHostExtendX", ImGuiTableFlags_NoHostExtendX},
+                                      {"NoHostExtendY", ImGuiTableFlags_NoHostExtendY},
+                                      {"NoKeepColumnsVisible", ImGuiTableFlags_NoKeepColumnsVisible},
+                                      {"PreciseWidths", ImGuiTableFlags_PreciseWidths},
+                                      {"NoClip", ImGuiTableFlags_NoClip},
+                                      {"PadOuterX", ImGuiTableFlags_PadOuterX},
+                                      {"NoPadOuterX", ImGuiTableFlags_NoPadOuterX},
+                                      {"NoPadInnerX", ImGuiTableFlags_NoPadInnerX},
+                                      {"ScrollX", ImGuiTableFlags_ScrollX},
+                                      {"ScrollY", ImGuiTableFlags_ScrollY},
+                                      {"SortMulti", ImGuiTableFlags_SortMulti},
+                                      {"SortTristate", ImGuiTableFlags_SortTristate}
+                                  });
+
+    lua.new_enum<ImGuiTableColumnFlags>("ImGuiTableColumnFlags", {
+                                            {"None", ImGuiTableColumnFlags_None},
+                                            {"Disabled", ImGuiTableColumnFlags_Disabled},
+                                            {"DefaultHide", ImGuiTableColumnFlags_DefaultHide},
+                                            {"DefaultSort", ImGuiTableColumnFlags_DefaultSort},
+                                            {"WidthStretch", ImGuiTableColumnFlags_WidthStretch},
+                                            {"WidthFixed", ImGuiTableColumnFlags_WidthFixed},
+                                            {"NoResize", ImGuiTableColumnFlags_NoResize},
+                                            {"NoReorder", ImGuiTableColumnFlags_NoReorder},
+                                            {"NoHide", ImGuiTableColumnFlags_NoHide},
+                                            {"NoClip", ImGuiTableColumnFlags_NoClip},
+                                            {"NoSort", ImGuiTableColumnFlags_NoSort},
+                                            {"NoSortAscending", ImGuiTableColumnFlags_NoSortAscending},
+                                            {"NoSortDescending", ImGuiTableColumnFlags_NoSortDescending},
+                                            {"NoHeaderLabel", ImGuiTableColumnFlags_NoHeaderLabel},
+                                            {"NoHeaderWidth", ImGuiTableColumnFlags_NoHeaderWidth},
+                                            {"PreferSortAscending", ImGuiTableColumnFlags_PreferSortAscending},
+                                            {"PreferSortDescending", ImGuiTableColumnFlags_PreferSortDescending},
+                                            {"IndentEnable", ImGuiTableColumnFlags_IndentEnable},
+                                            {"IndentDisable", ImGuiTableColumnFlags_IndentDisable},
+                                            {"IsEnabled", ImGuiTableColumnFlags_IsEnabled},
+                                            {"IsVisible", ImGuiTableColumnFlags_IsVisible},
+                                            {"IsSorted", ImGuiTableColumnFlags_IsSorted},
+                                            {"IsHovered", ImGuiTableColumnFlags_IsHovered}
+                                        });
+
+    lua.new_enum<ImGuiTableRowFlags>("ImGuiTableRowFlags", {
+                                         {"None", ImGuiTableRowFlags_None},
+                                         {"Headers", ImGuiTableRowFlags_Headers}
+                                     });
+
+    lua.new_enum<ImGuiColorEditFlags>("ImGuiColorEditFlags", {
+                                          {"None", ImGuiColorEditFlags_None},
+                                          {"NoAlpha", ImGuiColorEditFlags_NoAlpha},
+                                          {"NoPicker", ImGuiColorEditFlags_NoPicker},
+                                          {"NoOptions", ImGuiColorEditFlags_NoOptions},
+                                          {"NoSmallPreview", ImGuiColorEditFlags_NoSmallPreview},
+                                          {"NoInputs", ImGuiColorEditFlags_NoInputs},
+                                          {"NoTooltip", ImGuiColorEditFlags_NoTooltip},
+                                          {"NoLabel", ImGuiColorEditFlags_NoLabel},
+                                          {"NoSidePreview", ImGuiColorEditFlags_NoSidePreview},
+                                          {"NoDragDrop", ImGuiColorEditFlags_NoDragDrop},
+                                          {"NoBorder", ImGuiColorEditFlags_NoBorder},
+                                          {"AlphaBar", ImGuiColorEditFlags_AlphaBar},
+                                          {"AlphaPreview", ImGuiColorEditFlags_AlphaPreview},
+                                          {"AlphaPreviewHalf", ImGuiColorEditFlags_AlphaPreviewHalf},
+                                          {"HDR", ImGuiColorEditFlags_HDR},
+                                          {"DisplayRGB", ImGuiColorEditFlags_DisplayRGB},
+                                          {"DisplayHSV", ImGuiColorEditFlags_DisplayHSV},
+                                          {"DisplayHex", ImGuiColorEditFlags_DisplayHex},
+                                          {"Uint8", ImGuiColorEditFlags_Uint8},
+                                          {"Float", ImGuiColorEditFlags_Float},
+                                          {"PickerHueBar", ImGuiColorEditFlags_PickerHueBar},
+                                          {"PickerHueWheel", ImGuiColorEditFlags_PickerHueWheel},
+                                          {"InputRGB", ImGuiColorEditFlags_InputRGB},
+                                          {"InputHSV", ImGuiColorEditFlags_InputHSV},
+                                          {"DefaultOptions_", ImGuiColorEditFlags_DefaultOptions_},
+                                          {"DisplayMask_", ImGuiColorEditFlags_DisplayMask_},
+                                          {"DataTypeMask_", ImGuiColorEditFlags_DataTypeMask_},
+                                          {"PickerMask_", ImGuiColorEditFlags_PickerMask_},
+                                          {"InputMask_", ImGuiColorEditFlags_InputMask_}
+                                      });
+
+    lua.new_enum<ImGuiSliderFlags>("ImGuiSliderFlags", {
+                                       {"None", ImGuiSliderFlags_None},
+                                       {"AlwaysClamp", ImGuiSliderFlags_AlwaysClamp},
+                                       {"Logarithmic", ImGuiSliderFlags_Logarithmic},
+                                       {"NoRoundToFormat", ImGuiSliderFlags_NoRoundToFormat},
+                                       {"NoInput", ImGuiSliderFlags_NoInput},
+                                       {"InvalidMask_", ImGuiSliderFlags_InvalidMask_}
+                                   });
+
+    lua.new_enum<ImGuiMouseButton>("ImGuiMouseButton", {
+                                       {"Left", ImGuiMouseButton_Left},
+                                       {"Right", ImGuiMouseButton_Right},
+                                       {"Middle", ImGuiMouseButton_Middle},
+                                       {"COUNT", ImGuiMouseButton_COUNT}
+                                   });
+
+    lua.new_enum<ImGuiCond>("ImGuiCond", {
+                                {"None", ImGuiCond_None},
+                                {"Always", ImGuiCond_Always},
+                                {"Once", ImGuiCond_Once},
+                                {"FirstUseEver", ImGuiCond_FirstUseEver},
+                                {"Appearing", ImGuiCond_Appearing}
+                            });
     lua.set_function("ImVec4", sol::overload(
                          []() { return ImVec4(0, 0, 0, 0); },
                          [](float x) { return ImVec4(x, 0, 0, 0); },
@@ -109,19 +363,19 @@ void Script::binding()
                          [](const char* text, const char* text_end) { ImGui::TextUnformatted(text, text_end); }
                      ));
 
-    lua.set_function("UItextColored", &ImGui::TextColored);
+    lua.set_function("UITextColored", &ImGui::TextColored);
 
-    lua.set_function("UItextColoredV", &ImGui::TextColored);
+    lua.set_function("UITextColoredV", &ImGui::TextColored);
 
-    lua.set_function("UItextDisabled", &ImGui::TextDisabled);
+    lua.set_function("UITextDisabled", &ImGui::TextDisabled);
 
-    lua.set_function("UItextWrapped", &ImGui::TextWrapped);
+    lua.set_function("UITextWrapped", &ImGui::TextWrapped);
 
-    lua.set_function("UIlabelText", &ImGui::LabelText);
+    lua.set_function("UILabelText", &ImGui::LabelText);
 
-    lua.set_function("UIbulletText", &ImGui::BulletText);
+    lua.set_function("UIBulletText", &ImGui::BulletText);
 
-    lua.set_function("UIseparatorText", &ImGui::SeparatorText);
+    lua.set_function("UISeparatorText", &ImGui::SeparatorText);
 
     lua.set_function("UIDragFloat", sol::overload(
                          [](const char* label, float* v, float v_speed, float v_min, float v_max,
