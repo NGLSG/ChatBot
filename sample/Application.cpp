@@ -745,6 +745,13 @@ void Application::DisplayInputText(Ref<Chat> chat, bool edit)
                     // 删除目标 chat 之后的所有元素（不包括目标 chat 本身）
                     chat_history.erase(std::next(it), chat_history.end());
                 }
+                std::vector<std::pair<std::string, std::string>> newHis{{"system", SYSTEMROLE + SYSTEMROLE_EX}};
+                for (auto& it : chat_history)
+                {
+                    std::string role = it->flag == 0 ? "user" : "assistant";
+                    newHis.emplace_back(role, it->content);
+                }
+                bot->BuildHistory(newHis);
                 bot->Save(convid);
                 save(convid);
 
@@ -2729,7 +2736,7 @@ void Application::RenderConfigBox()
 
                         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
                         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
-                        ImGui::TextUnformatted((var.name+": ").c_str());
+                        ImGui::TextUnformatted((var.name + ": ").c_str());
 
 
                         ImGui::SameLine();

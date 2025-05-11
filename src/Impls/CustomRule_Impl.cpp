@@ -468,6 +468,7 @@ void JsonPathBuilder::addValueAtPath(json& jsonObj, const vector<string>& path, 
 void JsonPathBuilder::addPath(const string& pathStr, const string& value)
 {
     vector<string> pathParts = split(pathStr, '/');
+    erase_if(pathParts, [](const string& s) { return s.empty(); });
     addValueAtPath(rootJson, pathParts, value);
 }
 
@@ -791,12 +792,7 @@ std::string CustomRule_Impl::Submit(std::string prompt, size_t timeStamp, std::s
             {
                 replaceVariable(it.name, param.content, it.value);
             }
-            if (!param.path.empty())
-                builder.addPath(param.path + "/" + param.suffix, param.content);
-            else
-            {
-                data += "\"" + param.suffix + "\":" + param.content + ",\n";
-            }
+            builder.addPath(param.path + "/" + param.suffix, param.content);
         }
         static const std::string VAR1 = "TOPK";
         static const std::string VAR2 = "TEMP";
@@ -810,12 +806,7 @@ std::string CustomRule_Impl::Submit(std::string prompt, size_t timeStamp, std::s
             replaceVariable(VAR3, must.content, std::to_string(top_p));
             replaceVariable(VAR4, must.content, std::to_string(pres_pen));
             replaceVariable(VAR5, must.content, std::to_string(freq_pen));
-            if (!must.path.empty())
-                builder.addPath(must.path + "/" + must.suffix, must.content);
-            else
-            {
-                data += "\"" + must.suffix + "\":" + must.content + ",\n";
-            }
+            builder.addPath(must.path + "/" + must.suffix, must.content);
         }
 
         builder.addPath(CustomRuleData.promptRole.prompt.suffix, Conversation[convid].dump());
