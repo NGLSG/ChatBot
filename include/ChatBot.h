@@ -1,12 +1,17 @@
 #ifndef CHATBOT_H
 #define CHATBOT_H
 
-#include "VoiceToText.h"
-#include "utils.h"
+#include "Utils.h"
 #include <llama.h>
-#include <vulkan/vulkan.hpp>
-#include <vulkan/vulkan_core.h>
-
+#include <map>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <nlohmann/json.hpp>
+#include "Configure.h"
+#include "Logger.h"
+#include <curl/curl.h>
+#include <fstream>
 using json = nlohmann::json;
 using namespace std;
 
@@ -40,10 +45,25 @@ class ChatBot
 public:
     friend class StringExecutor;
     virtual std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-                               std::string convid = "default", bool async = false) = 0;
+                               std::string convid = "default", float temp = 0.7f,
+                               float top_p = 0.9f,
+                               uint32_t top_k = 40u,
+                               float pres_pen = 0.0f,
+                               float freq_pen = 0.0f, bool async = false) = 0;
 
-    void SubmitAsync(std::string prompt, size_t timeStamp, std::string role = Role::User,
-                     std::string convid = "default")
+    virtual void BuildHistory(const std::vector<std::pair<std::string, std::string>>& history) =0;
+    virtual std::string GetModel() =0;
+
+    void SubmitAsync(
+        std::string prompt,
+        size_t timeStamp,
+        std::string role = Role::User,
+        std::string convid = "default",
+        float temp = 0.7f,
+        float top_p = 0.9f,
+        uint32_t top_k = 40u,
+        float pres_pen = 0.0f,
+        float freq_pen = 0.0f)
     {
         {
             std::lock_guard<std::mutex> lock(forceStopMutex);
@@ -51,8 +71,12 @@ public:
         }
         lastFinalResponse = "";
         std::get<1>(Response[timeStamp]) = false;
-        std::thread([=] { Submit(prompt, timeStamp, role, convid, true); }).detach();
+        std::thread([=]
+        {
+            Submit(prompt, timeStamp, role, convid, temp, top_p, top_k, pres_pen, freq_pen, true);
+        }).detach();
     }
+
 
     std::string GetLastRawResponse()
     {
@@ -97,6 +121,7 @@ public:
 
     map<long long, string> History;
     std::atomic<bool> forceStop{false};
+    virtual std::string sendRequest(std::string data, size_t ts) =0;
 
 protected:
     long long lastTimeStamp = 0;
@@ -104,7 +129,7 @@ protected:
     std::mutex historyAccessMutex;
     std::string lastFinalResponse;
     std::string lastRawResponse;
-    std::unordered_map<size_t, std::tuple<std::string, bool>> Response; //ts,response,finished
+    unordered_map<size_t, std::tuple<std::string, bool>> Response; //ts,response,finished
 
     std::mutex forceStopMutex;
 };

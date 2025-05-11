@@ -1,5 +1,3 @@
-
-
 #ifndef CLAUDE_IMPL_H
 #define CLAUDE_IMPL_H
 
@@ -12,9 +10,14 @@ public:
     {
     }
 
-    std::string
-    Submit(std::string text, size_t timeStamp, std::string role = Role::User,
-           std::string convid = "default", bool async=false) override;
+    std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
+                                   std::string convid = "default", float temp = 0.7f,
+                                   float top_p = 0.9f,
+                                   uint32_t top_k = 40u,
+                                   float pres_pen = 0.0f,
+                                   float freq_pen = 0.0f, bool async = false)override;
+
+
 
     void Reset() override;;
 
@@ -27,6 +30,16 @@ public:
     void Add(std::string name = "default") override;
 
     map<long long, string> GetHistory() override;
+    std::string sendRequest(std::string data, size_t ts) override
+    {
+        return "";
+    }
+    std::string GetModel() override
+    {
+        return "Claude";
+    }
+
+    void BuildHistory(const std::vector<std::pair<std::string, std::string>>& history) override;
 
 private:
     map<string, string> ChannelListName;
@@ -45,7 +58,11 @@ public:
 
     // 提交用户消息并获取响应
     std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-                       std::string convid = "default", bool async=false) override;
+                                   std::string convid = "default", float temp = 0.7f,
+                                   float top_p = 0.9f,
+                                   uint32_t top_k = 40u,
+                                   float pres_pen = 0.0f,
+                                   float freq_pen = 0.0f, bool async = false)override;
 
     // 重置当前对话
     void Reset() override;
@@ -67,7 +84,8 @@ public:
 
     // 时间戳转换为可读时间
     static std::string Stamp2Time(long long timestamp);
-
+    // 发送请求到 Claude API
+    std::string sendRequest(std::string data, size_t ts) override;
     // 历史记录
     json history;
 
@@ -92,8 +110,12 @@ protected:
     // 获取指定天数前的时间戳
     static long long getTimestampBefore(const int daysBefore);
 
-    // 发送请求到 Claude API
-    std::string sendRequest(std::string data, size_t ts);
+public:
+    void BuildHistory(const std::vector<std::pair<std::string, std::string>>& history) override;
+    std::string GetModel() override
+    {
+        return claude_data_.model;
+    }
 };
 
 

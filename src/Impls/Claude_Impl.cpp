@@ -122,6 +122,19 @@ long long Claude::getTimestampBefore(const int daysBefore)
     return std::chrono::duration_cast<std::chrono::milliseconds>(targetTime.time_since_epoch()).count();
 }
 
+void Claude::BuildHistory(const std::vector<std::pair<std::string, std::string>>& history)
+{
+    this->history.clear();
+    this->history.push_back(defaultJson);
+    for (const auto& it : history)
+    {
+        json ask = defaultJson;
+        ask["content"] = it.first;
+        ask["role"] = it.second;
+        this->history.push_back(ask);
+    }
+}
+
 // 发送请求到 Claude API
 std::string Claude::sendRequest(std::string data, size_t ts)
 {
@@ -297,7 +310,8 @@ std::string Claude::sendRequest(std::string data, size_t ts)
 }
 
 // 提交用户消息并获取响应
-std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, bool async)
+std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, float temp,
+                           float top_p, uint32_t top_k, float pres_pen, float freq_pen, bool async)
 {
     try
     {
@@ -312,7 +326,7 @@ std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string rol
             }
         }
         lastFinalResponse = "";
-        lastTimeStamp= timeStamp;
+        lastTimeStamp = timeStamp;
         json ask;
         ask["content"] = prompt;
         ask["role"] = role;
@@ -330,6 +344,11 @@ std::string Claude::Submit(std::string prompt, size_t timeStamp, std::string rol
         std::string data = "{\n"
             "  \"model\": \"" + claude_data_.model + "\",\n"
             "  \"max_tokens\": 4096,\n"
+            "\"temperature\":" + std::to_string(temp) + ",\n"
+            "\"top_k\":" + std::to_string(top_k) + ",\n"
+            "\"top_p\":" + std::to_string(top_p) + ",\n"
+            "\"presence_penalty\":" + std::to_string(pres_pen) + "\n"
+            "\"frequency_penalty\":" + std::to_string(freq_pen) + "\n"
             "  \"messages\": " +
             Conversation[convid_].dump()
             + "}\n";
@@ -450,64 +469,126 @@ void Claude::Add(std::string name)
     Save(name);
 }
 
-std::string ClaudeInSlack::Submit(std::string text, size_t timeStamp, std::string role, std::string convid, bool async)
+std::string ClaudeInSlack::Submit(std::string text, size_t timeStamp, std::string role, std::string convid, float temp,
+                                  float top_p, uint32_t top_k, float pres_pen, float freq_pen, bool async)
 {
     try
     {
         std::lock_guard<std::mutex> lock(historyAccessMutex);
         Response[timeStamp] = std::make_tuple("", false);
         lastFinalResponse = "";
-        lastTimeStamp= timeStamp;
-        cpr::Payload payload{
-            {"token", claudeData.slackToken},
-            {"channel", claudeData.channelID},
-            {"text", text}
-        };
+        lastTimeStamp = timeStamp;
 
-        cpr::Response r;
-        auto future = cpr::PostAsync(cpr::Url{"https://slack.com/api/chat.postMessage"},
-                                     payload);
-
-        // 等待响应，但允许中断
-        while (future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+        // 初始化curl
+        CURL* curl = curl_easy_init();
+        if (!curl)
         {
-            // 每100毫秒检查一次是否要求停止
+            LogError("CURL初始化失败");
+            std::get<0>(Response[timeStamp]) = "CURL初始化失败";
+            std::get<1>(Response[timeStamp]) = true;
+            return "CURL初始化失败";
+        }
+
+        // 构建POST数据
+        std::string postFields = std::string("token=") + curl_easy_escape(curl, claudeData.slackToken.c_str(), 0) +
+            std::string("&channel=") + curl_easy_escape(curl, claudeData.channelID.c_str(), 0) +
+            std::string("&text=") + curl_easy_escape(curl, text.c_str(), 0);
+
+        // 设置URL和POST数据
+        curl_easy_setopt(curl, CURLOPT_URL, "https://slack.com/api/chat.postMessage");
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
+
+        // 设置接收响应的回调函数和数据
+        std::string responseData;
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                         [](char* contents, size_t size, size_t nmemb, std::string* userp) -> size_t
+                         {
+                             userp->append(contents, size * nmemb);
+                             return size * nmemb;
+                         });
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
+
+        // 创建一个线程来执行请求，以支持异步和中断
+        std::thread requestThread([curl, &responseData, timeStamp, this]()
+        {
+            // 执行请求
+            CURLcode res = CURLE_OK;
+
+            // 分段执行，允许中断
+            while (true)
             {
-                std::lock_guard<std::mutex> stopLock(forceStopMutex);
-                if (forceStop)
+                // 检查是否请求停止
                 {
-                    // 记录被中断的状态
-                    std::get<0>(Response[timeStamp]) = "操作已被取消";
-                    std::get<1>(Response[timeStamp]) = true;
-                    return "操作已被取消";
+                    std::lock_guard<std::mutex> stopLock(forceStopMutex);
+                    if (forceStop)
+                    {
+                        std::get<0>(Response[timeStamp]) = "操作已被取消";
+                        std::get<1>(Response[timeStamp]) = true;
+                        curl_easy_cleanup(curl);
+                        return;
+                    }
+                }
+
+                // 执行请求，超时设置为100ms
+                curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 100);
+                res = curl_easy_perform(curl);
+
+                // 如果请求完成或出错，就退出循环
+                if (res != CURLE_OPERATION_TIMEDOUT)
+                {
+                    break;
                 }
             }
-        }
 
-        // 获取结果
-        r = future.get();
+            // 处理请求结果
+            long httpCode = 0;
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
 
-        if (r.status_code == 200)
-        {
-            json response = json::parse(r.text);
-        }
-        else
-        {
-            // 发送失败,打印错误信息
-            LogError(r.error.message);
-            std::get<0>(Response[timeStamp]) = "请求失败: " + r.error.message;
-        }
+            if (res == CURLE_OK && httpCode == 200)
+            {
+                try
+                {
+                    json response = json::parse(responseData);
+                    // 处理响应数据
+                }
+                catch (const std::exception& e)
+                {
+                    std::get<0>(Response[timeStamp]) = "解析响应失败: " + std::string(e.what());
+                }
+            }
+            else
+            {
+                std::string errorMsg = "请求失败: ";
+                if (res != CURLE_OK)
+                {
+                    errorMsg += curl_easy_strerror(res);
+                }
+                else
+                {
+                    errorMsg += "HTTP错误 " + std::to_string(httpCode);
+                }
+                LogError(errorMsg);
+                std::get<0>(Response[timeStamp]) = errorMsg;
+            }
+
+            // 清理curl
+            curl_easy_cleanup(curl);
+        });
+
+        // 分离线程，让它在背景运行
+        requestThread.detach();
     }
     catch (std::exception& e)
     {
         LogError(e.what());
         std::get<0>(Response[timeStamp]) = "发生错误: " + std::string(e.what());
     }
+
     if (async)
         while (!std::get<0>(Response[timeStamp]).empty())
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
-            //等待被处理完成
+            // 等待被处理完成
         }
     else
     {
@@ -519,20 +600,44 @@ std::string ClaudeInSlack::Submit(std::string text, size_t timeStamp, std::strin
 
 void ClaudeInSlack::Reset()
 {
-    /*        cpr::Payload payload{
-                {"token",   claudeData.slackToken},
-                {"channel", claudeData.channelID},
-                {"command", "/reset"}};
-        cpr::Header header{{"Cookie", claudeData.cookies}};
+    /*
+    // curl版本的实现
+    CURL* curl = curl_easy_init();
+    if (curl) {
+        std::string postFields = "token=" + curl_easy_escape(curl, claudeData.slackToken.c_str(), 0) +
+                              "&channel=" + curl_easy_escape(curl, claudeData.channelID.c_str(), 0) +
+                              "&command=/reset";
+
+        // 设置URL和请求参数
         std::string url = "https://" + claudeData.userName + ".slack.com/api/chat.command";
-        cpr::Response r = cpr::Post(cpr::Url{url},
-                                    payload, header);
-        if (r.status_code == 200) {
-            // 发送成功
-        } else {
-            // 发送失败,打印错误信息
-            LogError(r.error.message);
-        }*/
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
+
+        // 设置header
+        struct curl_slist* headers = NULL;
+        headers = curl_slist_append(headers, ("Cookie: " + claudeData.cookies).c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+        // 接收响应的回调
+        std::string responseData;
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, [](char* contents, size_t size, size_t nmemb, std::string* userp) -> size_t {
+            userp->append(contents, size * nmemb);
+            return size * nmemb;
+        });
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
+
+        // 执行请求
+        CURLcode res = curl_easy_perform(curl);
+
+        // 清理
+        curl_slist_free_all(headers);
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK) {
+            LogError(curl_easy_strerror(res));
+        }
+    }
+    */
     Submit("请忘记上面的会话内容", Logger::getCurrentTimestamp());
     LogInfo("Claude : 重置成功");
 }
@@ -563,26 +668,60 @@ map<long long, string> ClaudeInSlack::GetHistory()
     {
         History.clear();
         auto _ts = to_string(Logger::getCurrentTimestamp());
-        cpr::Payload payload = {
-            {"channel", claudeData.channelID},
-            {"latest", _ts},
-            {"token", claudeData.slackToken}
-        };
-        cpr::Response r2 = cpr::Post(cpr::Url{"https://slack.com/api/conversations.history"},
-                                     payload);
-        json j = json::parse(r2.text);
-        if (j["ok"].get<bool>())
-        {
-            for (auto& message : j["messages"])
-            {
-                if (message["bot_profile"]["name"] == "Claude")
-                {
-                    long long ts = (long long)(atof(message["ts"].get<string>().c_str()) * 1000);
-                    std::string text = message["blocks"][0]["elements"][0]["elements"][0]["text"].get<string>();
 
-                    History[ts] = text;
+        // 初始化curl
+        CURL* curl = curl_easy_init();
+        if (!curl)
+        {
+            LogError("CURL初始化失败");
+            return History;
+        }
+
+        // 构建POST数据
+        std::string postFields = std::string("channel=") + curl_easy_escape(curl, claudeData.channelID.c_str(), 0) +
+            std::string("&latest=") + curl_easy_escape(curl, _ts.c_str(), 0) +
+            std::string("&token=") + curl_easy_escape(curl, claudeData.slackToken.c_str(), 0);
+
+        // 设置URL和请求参数
+        curl_easy_setopt(curl, CURLOPT_URL, "https://slack.com/api/conversations.history");
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postFields.c_str());
+
+        // 接收响应的回调
+        std::string responseData;
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                         [](char* contents, size_t size, size_t nmemb, std::string* userp) -> size_t
+                         {
+                             userp->append(contents, size * nmemb);
+                             return size * nmemb;
+                         });
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
+
+        // 执行请求
+        CURLcode res = curl_easy_perform(curl);
+
+        // 清理curl
+        curl_easy_cleanup(curl);
+
+        if (res == CURLE_OK)
+        {
+            json j = json::parse(responseData);
+            if (j["ok"].get<bool>())
+            {
+                for (auto& message : j["messages"])
+                {
+                    if (message["bot_profile"]["name"] == "Claude")
+                    {
+                        long long ts = (long long)(atof(message["ts"].get<string>().c_str()) * 1000);
+                        std::string text = message["blocks"][0]["elements"][0]["elements"][0]["text"].get<string>();
+
+                        History[ts] = text;
+                    }
                 }
             }
+        }
+        else
+        {
+            LogError("获取历史记录失败: " + std::string(curl_easy_strerror(res)));
         }
     }
     catch (const std::exception& e)
@@ -591,4 +730,9 @@ map<long long, string> ClaudeInSlack::GetHistory()
         LogError("获取历史记录失败:" + string(e.what()));
     }
     return History;
+}
+
+void ClaudeInSlack::BuildHistory(const std::vector<std::pair<std::string, std::string>>& history)
+{
+
 }

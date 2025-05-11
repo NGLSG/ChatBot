@@ -2713,7 +2713,36 @@ void Application::RenderConfigBox()
                 ModelController(reinterpret_cast<const char*>(u8"模型"), rule.model, rule.supportModels);
 
                 ShowPasswordInput(reinterpret_cast<const char*>(u8"API密钥"), rule.apiKeyRole.key, "ruleApiKey");
+                if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"变量管理")))
+                {
+                    ImGui::TextColored(ImVec4(0.1f, 0.8f, 0.2f, 1.0f), reinterpret_cast<const char*>(u8"变量:"));
 
+                    ImGui::BeginChild("##VarsList", ImVec2(0, 150), true);
+                    if (rule.vars.empty())
+                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), reinterpret_cast<const char*>(u8"暂无变量"));
+                    int idx = 0;
+                    for (auto& var : rule.vars)
+                    {
+                        ImGui::PushID(idx++);
+                        strcpy_s(GetBufferByName("varName").buffer, TEXT_BUFFER, var.name.c_str());
+                        strcpy_s(GetBufferByName("varValue").buffer, TEXT_BUFFER, var.value.c_str());
+
+                        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
+                        ImGui::TextUnformatted((var.name+": ").c_str());
+
+
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+                        if (ImGui::InputText(reinterpret_cast<const char*>(u8"变量值"), GetBufferByName("varValue").buffer,
+                                             TEXT_BUFFER))
+                            var.value = GetBufferByName("varValue").buffer;
+                        ImGui::PopStyleVar();
+                        ImGui::PopID();
+                    }
+
+                    ImGui::EndChild();
+                }
                 /*// API密钥配置部分
                 if (ImGui::CollapsingHeader(reinterpret_cast<const char*>(u8"API密钥配置")))
                 {

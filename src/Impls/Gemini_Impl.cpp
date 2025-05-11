@@ -222,7 +222,9 @@ std::string Gemini::sendRequest(std::string data, size_t ts)
 }
 
 
-std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, bool async)
+std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, float temp,
+                           float top_p, uint32_t top_k, float
+                           pres_pen, float freq_pen, bool async)
 {
     try
     {
@@ -249,52 +251,13 @@ std::string Gemini::Submit(std::string prompt, size_t timeStamp, std::string rol
         }
         history.emplace_back(ask);
         Conversation[convid] = history;
-        std::string data = "{\"contents\":" + Conversation[convid].dump() + "}";
-
-
-        /*// 创建一个异步请求
-        auto future = cpr::PostAsync(
-            cpr::Url{url},
-            cpr::Header{{"Content-Type", "application/json"}},
-            cpr::Body{data}
-        );
-
-        // 等待响应，但允许中断
-        while (future.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
-        {
-            // 每100毫秒检查一次是否要求停止
-            std::lock_guard<std::mutex> stopLock(forceStopMutex);
-            if (forceStop)
-            {
-                // 设置响应状态并返回
-                std::get<0>(Response[timeStamp]) = "操作已被取消";
-                std::get<1>(Response[timeStamp]) = true;
-                return "操作已被取消";
-            }
-        }
-
-        // 获取响应结果
-        auto r = future.get();
-
-        if (r.status_code != 200)
-        {
-            retry_count++;
-            LogError("Gemini: {0}", r.text);
-
-            // 检查是否应该停止重试
-            std::lock_guard<std::mutex> stopLock(forceStopMutex);
-            if (forceStop)
-            {
-                std::get<0>(Response[timeStamp]) = "操作已被取消";
-                std::get<1>(Response[timeStamp]) = true;
-                return "操作已被取消";
-            }
-
-            continue;
-        }
-
-        json response = json::parse(r.text);
-        std::optional<std::string> res = response["candidates"][0]["content"]["parts"][0]["text"];*/
+        std::string data = "{\"contents\":" + Conversation[convid].dump() + ",\n";
+        data += "generationConfig:{\n\"temperature\":" + std::to_string(temp) + ",\n\"topP\":" + std::to_string(top_p) +
+            ",\n\"topK\":" +
+            std::to_string(top_k) + ",\n\"presencePenalty\":" + std::to_string(pres_pen) + ",\n\"frequencyPenalty\":"
+            +
+            std::to_string(freq_pen) + ",\n}\n}";
+        cout << data << std::endl;
 
         std::string res = sendRequest(data, timeStamp);
 
@@ -398,4 +361,48 @@ void Gemini::Add(std::string name)
 {
     history.clear();
     Save(name);
+}
+
+void Gemini::BuildHistory(const std::vector<std::pair<std::string, std::string>>& history)
+{
+    this->history.clear();
+
+    for (const auto& it : history)
+    {
+        json ask;
+        if (it.first == "user")
+        {
+            ask["role"] = "user";
+        }
+        else if (it.first == "assistant")
+        {
+            ask["role"] = "model";
+        }
+        else if (it.first == "system")
+        {
+            SystemPrompt.clear();
+            ask["role"] = "user";
+            ask["parts"] = json::array();
+            ask["parts"].push_back(json::object());
+            ask["parts"][0]["text"] = it.second;
+            SystemPrompt.push_back(ask);
+            json ask2;
+            ask2["role"] = "model";
+            ask2["parts"] = json::array();
+            ask2["parts"].push_back(json::object());
+            ask2["parts"][0]["text"] = "Yes I am here to help you.";
+            SystemPrompt.push_back(ask2);
+            for (auto& i : SystemPrompt)
+            {
+                this->history.push_back(i);
+            }
+        }
+        else
+        {
+            ask["parts"] = json::array();
+            ask["parts"].push_back(json::object());
+            ask["parts"][0]["text"] = it.second;
+            this->history.emplace_back(ask);
+        }
+    }
 }

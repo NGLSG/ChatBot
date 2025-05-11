@@ -13,67 +13,6 @@ struct TranslateData
     std::string proxy = "";
 };
 
-struct LLamaCreateInfo
-{
-    std::string model = "";
-    int contextSize = 32000; //32k
-    int maxTokens = 4096;
-};
-
-struct ClaudeAPICreateInfo
-{
-    bool enable = false;
-    std::string apiKey;
-    std::string model = "claude-3.5";
-    std::string apiVersion = "2023-06-01";
-    std::string _endPoint = "https://api.anthropic.com/v1/complete";
-    std::vector<std::string> supportModels = {"claude-3.7-sonnet", "claude-3.5-sonnet", "claude-3.7-sonnet-thinking"};
-};
-
-struct OpenAIBotCreateInfo
-{
-    bool enable = true;
-    bool useWebProxy = false;
-    std::string api_key = "";
-    std::string model = "gpt-4o";
-    std::string proxy = "";
-    std::string _endPoint = "";
-    std::vector<std::string> supportModels = {
-        "gpt3.5-turbo", "gpt4o", "gpt4.1", "gpt4.5", "o3", "o1", "o3-mini", "o4-mini"
-    };
-};
-
-struct GPTLikeCreateInfo
-{
-    bool enable;
-    bool useLocalModel = false;
-    std::string api_key;
-    std::string model = ""; //Must be set
-    std::string apiHost = "";
-    std::string apiPath = "";
-    std::vector<std::string> supportModels;
-    LLamaCreateInfo llamaData;
-
-    GPTLikeCreateInfo()
-    {
-        enable = false;
-    }
-
-
-    GPTLikeCreateInfo& operator=(const GPTLikeCreateInfo& data)
-    {
-        this->enable = data.enable;
-        this->api_key = data.api_key;
-        this->model = data.model;
-        this->apiHost = data.apiHost;
-        this->apiPath = data.apiPath;
-        this->llamaData = data.llamaData;
-        this->useLocalModel = data.useLocalModel;
-
-        return *this;
-    }
-};
-
 struct VitsTask
 {
     std::string model;
@@ -124,6 +63,72 @@ struct LConfigure
     float scaleY = 1.0;
 };
 
+struct Live2D
+{
+    bool enable = false;
+    std::string model = "./model/Live2D/Mao";
+    std::string bin = "bin/Live2D/DesktopPet.exe";
+};
+
+struct LLamaCreateInfo
+{
+    std::string model = "";
+    int contextSize = 32000; //32k
+    int maxTokens = 4096;
+};
+
+struct ClaudeAPICreateInfo
+{
+    bool enable = false;
+    std::string apiKey;
+    std::string model = "claude-3.5";
+    std::string apiVersion = "2023-06-01";
+    std::string _endPoint = "https://api.anthropic.com/v1/complete";
+    std::vector<std::string> supportModels;
+};
+
+struct OpenAIBotCreateInfo
+{
+    bool enable = true;
+    bool useWebProxy = false;
+    std::string api_key = "";
+    std::string model = "gpt-4o";
+    std::string proxy = "";
+    std::string _endPoint = "";
+    std::vector<std::string> supportModels;
+};
+
+struct GPTLikeCreateInfo
+{
+    bool enable;
+    bool useLocalModel = false;
+    std::string api_key;
+    std::string model = ""; //Must be set
+    std::string apiHost = "";
+    std::string apiPath = "";
+    LLamaCreateInfo llamaData;
+    std::vector<std::string> supportModels;
+
+    GPTLikeCreateInfo()
+    {
+        enable = false;
+    }
+
+
+    GPTLikeCreateInfo& operator=(const GPTLikeCreateInfo& data)
+    {
+        this->enable = data.enable;
+        this->api_key = data.api_key;
+        this->model = data.model;
+        this->apiHost = data.apiHost;
+        this->apiPath = data.apiPath;
+        this->llamaData = data.llamaData;
+        this->useLocalModel = data.useLocalModel;
+
+        return *this;
+    }
+};
+
 struct ClaudeBotCreateInfo
 {
     bool enable = false;
@@ -131,6 +136,7 @@ struct ClaudeBotCreateInfo
     std::string slackToken;
     std::string userName;
     std::string cookies;
+    std::vector<std::string> supportModels;
 };
 
 struct GeminiBotCreateInfo
@@ -139,18 +145,9 @@ struct GeminiBotCreateInfo
     std::string _apiKey;
     std::string _endPoint;
     std::string model = "gemini-2.0-flash";
-    std::vector<std::string> supportModels = {
-        "gemini-2.0-flash-preview-image-generation", "gemini-2.0-flash-lite", "gemini-2.0-flash",
-        "gemini-2.5-pro-preview-05-06", "gemini-2.5-flash-preview-04-17"
-    };
+    std::vector<std::string> supportModels;
 };
 
-struct Live2D
-{
-    bool enable = false;
-    std::string model = "./model/Live2D/Mao";
-    std::string bin = "bin/Live2D/DesktopPet.exe";
-};
 
 struct ResponseRole
 {
@@ -181,6 +178,13 @@ struct PromptRole
     ParamsRole prompt;
 };
 
+struct CustomVariable
+{
+    std::string name = "";
+    bool isStr = false;
+    std::string value = "";
+};
+
 struct CustomRule
 {
     bool enable = false;
@@ -192,11 +196,18 @@ struct CustomRule
     std::string model = "";
     std::string apiPath =
         "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?key=${API_KEY}";
-
+    std::vector<CustomVariable> vars;
     APIKeyRole apiKeyRole;
     //SYSTEM,USER,ASSISTANT
     PromptRole promptRole;
     std::vector<ParamsRole> params;
+    std::vector<ParamsRole> extraMust = {
+        {"top_k", "", "${TOPK}", false},
+        {"top_p", "", "${TOPP}", false},
+        {"temperature", "", "${TEMP}", false},
+        {"presence_penalty", "", "${PRES}", false},
+        {"frequency_penalty", "", "${FREQ}", false},
+    };
     std::unordered_map<std::string, std::string> headers;
     std::unordered_map<std::string, std::string> roles{{"system", ""}, {"user", ""}, {"assistant", ""}};
     ResponseRole responseRole{"data: ", "choices/delta/content", "RESPONSE", "[DONE"};
@@ -368,6 +379,34 @@ namespace YAML
         }
     };
 
+    template <>
+    struct convert<CustomVariable>
+    {
+        static bool decode(const Node& node, CustomVariable& rhs)
+        {
+            if (!node.IsMap())
+            {
+                return false;
+            }
+            if (node["name"])
+                rhs.name = node["name"].as<std::string>();
+            if (node["value"])
+                rhs.value = node["value"].as<std::string>();
+            if (node["isStr"])
+                rhs.isStr = node["isStr"].as<bool>();
+            return true;
+        }
+
+        static Node encode(const CustomVariable& rhs)
+        {
+            Node node;
+            node["name"] = rhs.name;
+            node["value"] = rhs.value;
+            node["isStr"] = rhs.isStr;
+            return node;
+        }
+    };
+
     // CustomRule 结构体的转换模板
     template <>
     struct convert<CustomRule>
@@ -404,13 +443,6 @@ namespace YAML
                     rhs.headers[header.first.as<std::string>()] = header.second.as<std::string>();
                 }
             }
-            if (node["supportModels"])
-            {
-                for (const auto& model : node["supportModels"])
-                {
-                    rhs.supportModels.push_back(model.as<std::string>());
-                }
-            }
 
             // 解析 roles 映射
             if (node["roles"] && node["roles"].IsMap())
@@ -418,6 +450,14 @@ namespace YAML
                 for (const auto& role : node["roles"])
                 {
                     rhs.roles[role.first.as<std::string>()] = role.second.as<std::string>();
+                }
+            }
+            if (node["supportModels"] && node["supportModels"].IsSequence())
+            {
+                rhs.supportModels.clear();
+                for (const auto& model : node["supportModels"])
+                {
+                    rhs.supportModels.push_back(model.as<std::string>());
                 }
             }
 
@@ -445,6 +485,22 @@ namespace YAML
                 rhs.version = node["version"].as<std::string>();
             if (node["description"])
                 rhs.description = node["description"].as<std::string>();
+            if (node["vars"])
+                for (const auto& var : node["vars"])
+                {
+                    rhs.vars.push_back(var.as<CustomVariable>());
+                }
+
+            if (node["extraMust"])
+            {
+                int i = 0;
+                rhs.extraMust.clear();
+                for (const auto& must : node["extraMust"])
+                {
+                    rhs.extraMust.emplace_back(must.as<ParamsRole>());
+                    i++;
+                }
+            }
 
             return true;
         }
@@ -470,6 +526,13 @@ namespace YAML
             }
             node["headers"] = headersNode;
 
+            Node varsNode;
+            for (const auto& var : rhs.vars)
+            {
+                varsNode.push_back(var);
+            }
+            node["vars"] = varsNode;
+
             // roles 映射
             Node rolesNode;
             for (const auto& role : rhs.roles)
@@ -478,8 +541,16 @@ namespace YAML
             }
             node["roles"] = rolesNode;
 
+            Node extraNode;
+            for (const auto& extra : rhs.extraMust)
+            {
+                extraNode.push_back(extra);
+            }
+            node["extraMust"] = extraNode;
+
             // promptRole
             node["promptRole"] = rhs.promptRole;
+            node["supportModels"] = rhs.supportModels;
 
             // params 数组
             Node paramsNode(NodeType::Sequence);
@@ -494,7 +565,6 @@ namespace YAML
             node["author"] = rhs.author;
             node["version"] = rhs.version;
             node["description"] = rhs.description;
-            node["supportModels"] = rhs.supportModels;
 
             return node;
         }
@@ -522,12 +592,17 @@ namespace YAML
             data.model = node["model"].as<std::string>();
             data.apiVersion = node["apiVersion"].as<std::string>();
             data._endPoint = node["endPoint"].as<std::string>();
-            if (node["supportModels"])
+            if (node["supportModels"] && node["supportModels"].IsSequence())
             {
+                data.supportModels.clear();
                 for (const auto& model : node["supportModels"])
                 {
                     data.supportModels.push_back(model.as<std::string>());
                 }
+            }
+            else
+            {
+                data.supportModels = {"claude-3.5", "claude-3", "claude-2"};
             }
             return true;
         }
@@ -584,12 +659,17 @@ namespace YAML
                 data.useLocalModel = node["useLocalModel"].as<bool>();
             if (node["llamaData"])
                 data.llamaData = node["llamaData"].as<LLamaCreateInfo>();
-            if (node["supportModels"])
+            if (node["supportModels"] && node["supportModels"].IsSequence())
             {
+                data.supportModels.clear();
                 for (const auto& model : node["supportModels"])
                 {
                     data.supportModels.push_back(model.as<std::string>());
                 }
+            }
+            else
+            {
+                data.supportModels = {"grok-1.0", "mistral-7b", "mistral-7b-chat", "mistral-7b-instruct-v1"};
             }
             return true;
         }
@@ -622,12 +702,17 @@ namespace YAML
             {
                 data.model = "gemini-2.0-flash";
             }
-            if (node["supportModels"])
+            if (node["supportModels"] && node["supportModels"].IsSequence())
             {
+                data.supportModels.clear();
                 for (const auto& model : node["supportModels"])
                 {
                     data.supportModels.push_back(model.as<std::string>());
                 }
+            }
+            else
+            {
+                data.supportModels = {"gemini-2.0-flash", "gemini-1.5"};
             }
             return true;
         }
@@ -644,7 +729,7 @@ namespace YAML
             node["userName"] = data.userName;
             node["cookies"] = data.cookies;
             node["slackToken"] = data.slackToken;
-
+            node["supportModels"] = data.supportModels;
             return node;
         }
 
@@ -659,35 +744,17 @@ namespace YAML
             data.enable = node["enable"].as<bool>();
             data.channelID = node["channelID"].as<std::string>();
             data.slackToken = node["slackToken"].as<std::string>();
-            return true;
-        }
-    };
-
-    template <>
-    struct convert<TranslateData>
-    {
-        static Node encode(const TranslateData& data)
-        {
-            Node node;
-            node["appId"] = data.appId;
-            node["APIKey"] = data.APIKey;
-            node["proxy"] = data.proxy;
-            node["enable"] = data.enable;
-            return node;
-        }
-
-        static bool decode(const Node& node, TranslateData& data)
-        {
-            data.proxy = node["proxy"].as<std::string>();
-            data.appId = node["appId"].as<std::string>();
-            data.APIKey = node["APIKey"].as<std::string>();
-            if (node["enable"])
+            if (node["supportModels"] && node["supportModels"].IsSequence())
             {
-                data.enable = node["enable"].as<bool>();
+                data.supportModels.clear();
+                for (const auto& model : node["supportModels"])
+                {
+                    data.supportModels.push_back(model.as<std::string>());
+                }
             }
             else
             {
-                data.enable = false;
+                data.supportModels = {"claude-3.5", "claude-3", "claude-2"};
             }
             return true;
         }
@@ -721,12 +788,120 @@ namespace YAML
             }
             data.proxy = node["proxy"].as<std::string>();
             data._endPoint = node["endPoint"].as<std::string>();
-            if (node["supportModels"])
+            if (node["supportModels"] && node["supportModels"].IsSequence())
             {
+                data.supportModels.clear();
                 for (const auto& model : node["supportModels"])
                 {
                     data.supportModels.push_back(model.as<std::string>());
                 }
+            }
+            else
+            {
+                data.supportModels = {"gpt-4o", "gpt-4", "gpt-3.5-turbo"};
+            }
+            return true;
+        }
+    };
+
+    template <>
+    struct convert<Configure>
+    {
+        static Node encode(const Configure& config)
+        {
+            Node node;
+            node["openAi"] = config.openAi;
+            node["claude"] = config.claude;
+            node["gemini"] = config.gemini;
+            node["grok"] = config.grok;
+            node["mistral"] = config.mistral;
+            node["qwen"] = config.qianwen;
+            node["chatglm"] = config.chatglm;
+            node["hunyuan"] = config.hunyuan;
+            node["baichuan"] = config.baichuan;
+            node["sparkdesk"] = config.sparkdesk;
+            node["huoshan"] = config.huoshan;
+            node["claudeAPI"] = config.claudeAPI;
+            node["customGPTs"] = config.customGPTs;
+            node["customRules"] = config.customRules;
+            return node;
+        }
+
+        static bool decode(const Node& node, Configure& config)
+        {
+            if (node["claudeAPI"])
+            {
+                config.claudeAPI = node["claudeAPI"].as<ClaudeAPICreateInfo>();
+            }
+            if (node["mistral"])
+            {
+                config.mistral = node["mistral"].as<GPTLikeCreateInfo>();
+            }
+            if (node["qwen"])
+            {
+                config.qianwen = node["qwen"].as<GPTLikeCreateInfo>();
+            }
+            if (node["sparkdesk"])
+            {
+                config.sparkdesk = node["sparkdesk"].as<GPTLikeCreateInfo>();
+            }
+            if (node["chatglm"])
+            {
+                config.chatglm = node["chatglm"].as<GPTLikeCreateInfo>();
+            }
+            if (node["hunyuan"])
+            {
+                config.hunyuan = node["hunyuan"].as<GPTLikeCreateInfo>();
+            }
+            if (node["baichuan"])
+            {
+                config.baichuan = node["baichuan"].as<GPTLikeCreateInfo>();
+            }
+            if (node["huoshan"])
+            {
+                config.huoshan = node["huoshan"].as<GPTLikeCreateInfo>();
+            }
+            if (node["openAi"])
+                config.openAi = node["openAi"].as<OpenAIBotCreateInfo>();
+            if (node["gemini"])
+                config.gemini = node["gemini"].as<GeminiBotCreateInfo>();
+            if (node["claude"])
+                config.claude = node["claude"].as<ClaudeBotCreateInfo>();
+            if (node["grok"])
+                config.grok = node["grok"].as<GPTLikeCreateInfo>();
+            if (node["customGPTs"])
+                config.customGPTs = node["customGPTs"].as<std::unordered_map<std::string, GPTLikeCreateInfo>>();
+            if (node["customRules"])
+                config.customRules = node["customRules"].as<std::vector<CustomRule>>();
+            return true;
+        }
+    };
+
+    template <>
+    struct convert<TranslateData>
+    {
+        static Node encode(const TranslateData& data)
+        {
+            Node node;
+            node["appId"] = data.appId;
+            node["APIKey"] = data.APIKey;
+            node["proxy"] = data.proxy;
+            node["enable"] = data.enable;
+            return node;
+        }
+
+        static bool decode(const Node& node, TranslateData& data)
+        {
+            data.proxy = node["proxy"].as<std::string>();
+            data.appId = node["appId"].as<std::string>();
+            data.APIKey = node["APIKey"].as<std::string>();
+            if (node["enable"])
+            {
+                data.enable = node["enable"].as<bool>();
+            }
+            else
+            {
+                data.enable = false;
             }
             return true;
         }
@@ -916,100 +1091,6 @@ namespace YAML
             data.height = node["height"].as<int>();
             data.denoising_strength = node["denoising_strength"].as<int>();
             data.cfg_scale = node["cfg_scale"].as<float>();
-            return true;
-        }
-    };
-
-    template <>
-    struct convert<Configure>
-    {
-        static Node encode(const Configure& config)
-        {
-            Node node;
-            node["MicroPhoneID"] = config.MicroPhoneID;
-            node["OutDeviceID"] = config.OutDeviceID;
-            node["openAi"] = config.openAi;
-            node["claude"] = config.claude;
-            node["gemini"] = config.gemini;
-            node["baiDuTranslator"] = config.baiDuTranslator;
-            node["vits"] = config.vits;
-            node["whisper"] = config.whisper;
-            node["live2D"] = config.live2D;
-            node["stableDiffusion"] = config.stableDiffusion;
-            node["grok"] = config.grok;
-            node["mistral"] = config.mistral;
-            node["qwen"] = config.qianwen;
-            node["chatglm"] = config.chatglm;
-            node["hunyuan"] = config.hunyuan;
-            node["baichuan"] = config.baichuan;
-            node["sparkdesk"] = config.sparkdesk;
-            node["huoshan"] = config.huoshan;
-            node["claudeAPI"] = config.claudeAPI;
-            node["customGPTs"] = config.customGPTs;
-            node["customRules"] = config.customRules;
-            return node;
-        }
-
-        static bool decode(const Node& node, Configure& config)
-        {
-            if (!node["openAi"] || !node["baiDuTranslator"] || !node["vits"])
-            {
-                return false;
-            }
-            if (node["MicroPhoneID"])
-            {
-                config.MicroPhoneID = node["MicroPhoneID"].as<std::string>();
-            }
-            if (node["OutDeviceID"])
-            {
-                config.OutDeviceID = node["OutDeviceID"].as<std::string>();
-            }
-            if (node["claudeAPI"])
-            {
-                config.claudeAPI = node["claudeAPI"].as<ClaudeAPICreateInfo>();
-            }
-            if (node["mistral"])
-            {
-                config.mistral = node["mistral"].as<GPTLikeCreateInfo>();
-            }
-            if (node["qwen"])
-            {
-                config.qianwen = node["qwen"].as<GPTLikeCreateInfo>();
-            }
-            if (node["sparkdesk"])
-            {
-                config.sparkdesk = node["sparkdesk"].as<GPTLikeCreateInfo>();
-            }
-            if (node["chatglm"])
-            {
-                config.chatglm = node["chatglm"].as<GPTLikeCreateInfo>();
-            }
-            if (node["hunyuan"])
-            {
-                config.hunyuan = node["hunyuan"].as<GPTLikeCreateInfo>();
-            }
-            if (node["baichuan"])
-            {
-                config.baichuan = node["baichuan"].as<GPTLikeCreateInfo>();
-            }
-            if (node["huoshan"])
-            {
-                config.huoshan = node["huoshan"].as<GPTLikeCreateInfo>();
-            }
-            config.openAi = node["openAi"].as<OpenAIBotCreateInfo>();
-            config.gemini = node["gemini"].as<GeminiBotCreateInfo>();
-            config.claude = node["claude"].as<ClaudeBotCreateInfo>();
-            if (node["grok"])
-                config.grok = node["grok"].as<GPTLikeCreateInfo>();
-            if (node["customGPTs"])
-                config.customGPTs = node["customGPTs"].as<std::unordered_map<std::string, GPTLikeCreateInfo>>();
-            if (node["customRules"])
-                config.customRules = node["customRules"].as<std::vector<CustomRule>>();
-            config.baiDuTranslator = node["baiDuTranslator"].as<TranslateData>();
-            config.vits = node["vits"].as<VITSData>();
-            config.whisper = node["whisper"].as<WhisperCreateInfo>();
-            config.live2D = node["live2D"].as<Live2D>();
-            config.stableDiffusion = node["stableDiffusion"].as<StableDiffusionData>();
             return true;
         }
     };

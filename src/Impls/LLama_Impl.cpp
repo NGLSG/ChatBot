@@ -1,12 +1,19 @@
 #include "Impls/LLama_Impl.h"
 
-
+#include <vulkan/vulkan.hpp>
 #include <llama-context.h>
 #include <llama-sampling.h>
+#include <iostream>
 
 llama_chat_message LLama::ChatMessage::To()
 {
+#ifdef _WIN32
+    // Windows环境下使用_strdup
     return {role.c_str(), _strdup(content.c_str())};
+#else
+    // Linux/Unix环境下使用strdup
+    return {role.c_str(), strdup(content.c_str())};
+#endif
 }
 
 std::vector<llama_chat_message> LLama::chatInfo::To()
@@ -86,6 +93,18 @@ uint16_t LLama::GetGPULayer()
     else
     {
         return 0;
+    }
+}
+
+void LLama::BuildHistory(const std::vector<std::pair<std::string, std::string>>& history)
+{
+    this->history[convid_].messages.clear();
+    for (const auto& it : history)
+    {
+        ChatMessage msg;
+        msg.role = it.first;
+        msg.content = it.second;
+        this->history[convid_].messages.push_back(msg);
     }
 }
 
@@ -199,7 +218,8 @@ LLama::LLama(const LLamaCreateInfo& data, const std::string& sysr): llamaData(da
     LogInfo("LLama: 初始化完成，上下文大小: {0}, 最大令牌数: {1}", llamaData.contextSize, llamaData.maxTokens);
 }
 
-std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, bool async)
+std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid, float temp, float top_p, uint32_t top_k, float
+                          pres_pen, float freq_pen, bool async)
 {
     // 检查上下文是否已初始化
     if (!ctx)
@@ -210,7 +230,7 @@ std::string LLama::Submit(std::string prompt, size_t timeStamp, std::string role
 
     std::lock_guard<std::mutex> lock(historyAccessMutex);
     lastFinalResponse = "";
-    lastTimeStamp= timeStamp;
+    lastTimeStamp = timeStamp;
     // 初始化对话历史
     if (!history.contains(convid))
     {
@@ -543,4 +563,9 @@ void LLama::Add(std::string name)
 map<long long, string> LLama::GetHistory()
 {
     return map<long long, string>();
+}
+
+std::string LLama::sendRequest(std::string data, size_t ts)
+{
+    return "";
 }

@@ -1,8 +1,145 @@
 #include "Impls/CustomRule_Impl.h"
+
+#include <regex>
+
+#include "Configure.h"
 static ResponseRole ROLE;
 static vector<string> RESPONSE_PATH;
 static const string MD = "${MODEL}";
 static const string API_KEY = "${API_KEY}";
+
+std::string replaceAll(std::string str, const std::string& from, const std::string& to)
+{
+    size_t start_pos = 0;
+    while ((start_pos = str.find(from, start_pos)) != std::string::npos)
+    {
+        str.replace(start_pos, from.length(), to);
+        start_pos += to.length(); // Move past the replacement
+    }
+    return str;
+}
+
+void resolveChainedVariables(std::vector<CustomVariable>& vars)
+{
+    if (vars.empty())
+    {
+        return;
+    }
+
+    int max_iterations = vars.size() * vars.size(); // Heuristic limit to prevent infinite loops
+    int current_iteration = 0;
+    bool changed_in_pass;
+
+    do
+    {
+        changed_in_pass = false;
+        current_iteration++;
+
+        for (auto& target_var : vars)
+        {
+            std::string original_value = target_var.value; // Keep original for this pass's sources
+
+            // Regex to find placeholders like ${VAR_NAME}
+            // Using regex to correctly capture variable names, especially if they can have underscores, numbers etc.
+            // This regex finds ${ followed by one or more word characters (alphanumeric + underscore), followed by }
+            std::regex placeholder_regex("\\$\\{([\\w_]+)\\}");
+            std::smatch match;
+            std::string temp_value = target_var.value; // Work on a temporary copy for multiple replacements in one var
+
+            // Iteratively replace placeholders in the current target_var.value
+            // This inner loop handles multiple placeholders within a single variable's value string
+            std::string current_processing_value = target_var.value;
+            std::string last_iteration_value;
+
+            // This inner loop is to ensure all placeholders in a single string are processed
+            // e.g. VarC = ${VarA}${VarB}
+            do
+            {
+                last_iteration_value = current_processing_value;
+                std::string search_value = current_processing_value; // string to search placeholders in
+                std::string new_value_for_target = ""; // build the new value incrementally
+                size_t last_pos = 0;
+
+                while (std::regex_search(search_value, match, placeholder_regex))
+                {
+                    std::string placeholder = match[0].str(); // e.g., "${Var1}"
+                    std::string var_name_to_find = match[1].str(); // e.g., "Var1"
+
+                    new_value_for_target += match.prefix().str(); // Add text before the placeholder
+
+                    bool found_source = false;
+                    for (const auto& source_var : vars)
+                    {
+                        if (source_var.name == var_name_to_find)
+                        {
+                            // Important: Only use source_var.value if it's already resolved
+                            // OR if it's a literal. For simplicity in this iterative approach,
+                            // we use its current value. The outer loop will eventually resolve it.
+                            // However, to avoid direct self-reference in a non-productive way,
+                            // ensure source_var is not target_var or that its value is different.
+                            if (&source_var != &target_var || source_var.value != original_value)
+                            {
+                                new_value_for_target += source_var.value;
+                                found_source = true;
+                            }
+                            break;
+                        }
+                    }
+                    if (!found_source)
+                    {
+                        new_value_for_target += placeholder; // Keep placeholder if source not found
+                    }
+
+                    search_value = match.suffix().str();
+                    last_pos += match.prefix().length() + placeholder.length();
+                }
+                new_value_for_target += search_value; // Add remaining part of the string
+                current_processing_value = new_value_for_target;
+
+                if (current_processing_value != last_iteration_value)
+                {
+                    if (target_var.value != current_processing_value)
+                    {
+                        target_var.value = current_processing_value;
+                        changed_in_pass = true;
+                    }
+                }
+                else
+                {
+                    // No change in this inner iteration, break
+                    break;
+                }
+                // Continue inner loop if the value string changed, ensuring chained substitutions within one string resolve
+            }
+            while (true);
+        } // end for each target_var
+
+        if (current_iteration > max_iterations)
+        {
+            // Optional: Log a warning if max_iterations is reached,
+            // indicating potential circular dependencies or unresolved variables.
+            // std::cerr << "Warning: Variable resolution reached max iterations. Possible circular dependency." << std::endl;
+            // for(const auto& var : vars) {
+            //     if (var.value.find("${") != std::string::npos) {
+            //         std::cerr << "Unresolved: " << var.name << " = " << var.value << std::endl;
+            //     }
+            // }
+            break;
+        }
+    }
+    while (changed_in_pass);
+}
+
+void replaceVariable(const std::string& varName, std::string& text, const std::string& value)
+{
+    std::string var = "${" + varName + "}";
+    auto p = text.find(var);
+    if (p != std::string::npos)
+    {
+        text.replace(p, var.length(), value);
+    }
+}
+
 // 从 JSON 中按照指定路径提取内容
 std::string ExtractContentFromJson(const json& jsonData, const std::vector<std::string>& path)
 {
@@ -262,7 +399,7 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
     return totalSize;
 }
 
-std::vector<std::string> split(const std::string& str, char delimiter)
+static std::vector<std::string> split(const std::string& str, char delimiter)
 {
     std::vector<std::string> tokens;
     std::string token;
@@ -283,14 +420,56 @@ void JsonPathBuilder::addValueAtPath(json& jsonObj, const vector<string>& path, 
     json* current = &jsonObj;
     for (size_t i = 0; i < path.size() - 1; ++i)
     {
-        if (!current->contains(path[i]))
+        const string& segment = path[i];
+        bool isArrayIndex = !segment.empty() &&
+            std::all_of(segment.begin(), segment.end(), [](char c) { return isdigit(c); });
+
+        if (isArrayIndex)
         {
-            (*current)[path[i]] = json::object();
+            size_t index = std::stoul(segment);
+
+            // Ensure current node is an array
+            if (!current->is_array())
+            {
+                (*current) = json::array();
+            }
+
+            // Expand array if needed by pushing empty objects
+            while (current->size() <= index)
+            {
+                current->push_back(json::object());
+            }
+
+            // Get reference to the array element
+            current = &(*current)[index];
         }
-        current = &(*current)[path[i]];
+        else
+        {
+            // Object case
+            if (!current->contains(segment))
+            {
+                // If next segment is numeric, create array, else create object
+                bool nextIsArray = (i < path.size() - 2) &&
+                    !path[i + 1].empty() &&
+                    std::all_of(path[i + 1].begin(), path[i + 1].end(), [](char c) { return isdigit(c); });
+
+                (*current)[segment] = nextIsArray ? json::array() : json::object();
+            }
+            // Get reference to the object property
+            current = &(*current)[segment];
+        }
     }
 
-    (*current)[path.back()] = value;
+    // Handle the final assignment - parse the value as raw JSON
+    if (!path.empty())
+    {
+        try {
+            (*current)[path.back()] = json::parse(value);
+        } catch (const json::parse_error&) {
+            // If parsing fails (invalid JSON), fall back to treating it as a raw string
+            (*current)[path.back()] = value;
+        }
+    }
 }
 
 void JsonPathBuilder::addPath(const string& pathStr, const string& value)
@@ -302,6 +481,55 @@ void JsonPathBuilder::addPath(const string& pathStr, const string& value)
 json JsonPathBuilder::getJson()
 {
     return rootJson;
+}
+
+CustomRule_Impl::CustomRule_Impl(const CustomRule& data, std::string systemrole): CustomRuleData(data)
+{
+    resolveChainedVariables(CustomRuleData.vars);
+    paths = split(CustomRuleData.promptRole.prompt.path, '/');
+    paths2 = split(CustomRuleData.promptRole.role.path, '/');
+    RESPONSE_PATH = split(CustomRuleData.responseRole.content, '/');
+    ROLE = CustomRuleData.responseRole;
+    JsonPathBuilder builder;
+
+    // 添加第一个路径
+    builder.addPath(CustomRuleData.promptRole.prompt.path, "${PROMPT}");
+
+    // 添加第二个路径
+    builder.addPath(CustomRuleData.promptRole.role.path, "${ROLE}");
+
+    templateJson = builder.getJson();
+
+
+    if (CustomRuleData.supportSystemRole && !CustomRuleData.roles["system"].empty())
+    {
+        auto js = templateJson;
+        /*js[paths2.front()].back() = CustomRuleData.roles["system"];
+        js[paths.front()].back() = systemrole;*/
+        js = buildRequest(systemrole, CustomRuleData.roles["system"]);
+
+        SystemPrompt.push_back(js);
+    }
+    else
+    {
+        auto js = templateJson;
+        std::string data1 = js.dump();
+        /*js[paths2.front()].back() = CustomRuleData.roles["assistant"];
+        js[paths.front()].back() = "Yes I am here to help you.";*/
+        js = buildRequest("Yes I am here to help you.", CustomRuleData.roles["assistant"]);
+        std::string data2 = js.dump();
+        auto js2 = templateJson;
+        /*js2[paths2.front()].back() = CustomRuleData.roles["user"];
+        js2[paths.front()].back() = systemrole;*/
+        js2 = buildRequest(systemrole, CustomRuleData.roles["user"]);
+        SystemPrompt.push_back(js2);
+        SystemPrompt.push_back(js);
+    }
+    if (!UDirectory::Exists(ConversationPath))
+    {
+        UDirectory::Create(ConversationPath);
+        Add("default");
+    }
 }
 
 std::string CustomRule_Impl::sendRequest(std::string data, size_t ts)
@@ -316,6 +544,10 @@ std::string CustomRule_Impl::sendRequest(std::string data, size_t ts)
                 url.replace(url.find(MD), MD.size(), CustomRuleData.model);
             if (CustomRuleData.apiKeyRole.role == "URL" && url.find(API_KEY) != std::string::npos)
                 url.replace(url.find(API_KEY), API_KEY.size(), CustomRuleData.apiKeyRole.key);
+            for (auto& it : CustomRuleData.vars)
+            {
+                replaceVariable(it.name, url, it.value);
+            }
 
             // 检查强制停止标志
             {
@@ -335,7 +567,15 @@ std::string CustomRule_Impl::sendRequest(std::string data, size_t ts)
                 headers = curl_slist_append(headers, "Content-Type: application/json");
                 for (const auto& [key, value] : CustomRuleData.headers)
                 {
-                    headers = curl_slist_append(headers, (key + ": " + value).c_str());
+                    std::string v = value;
+                    for (const auto& it : CustomRuleData.vars)
+                    {
+                        if (v.find(it.name) != std::string::npos)
+                        {
+                            v.replace(v.find(it.name), it.name.size(), it.value);
+                        }
+                    }
+                    headers = curl_slist_append(headers, (key + ": " + v).c_str());
                 }
                 if (CustomRuleData.apiKeyRole.role == "HEADERS")
                 {
@@ -446,51 +686,74 @@ std::string CustomRule_Impl::sendRequest(std::string data, size_t ts)
     return "";
 }
 
-
-CustomRule_Impl::CustomRule_Impl(const CustomRule& data, std::string systemrole): CustomRuleData(data)
+json CustomRule_Impl::buildRequest(const std::string& prompt, const std::string& role)
 {
-    paths = split(CustomRuleData.promptRole.prompt.path, '/');
-    paths2 = split(CustomRuleData.promptRole.role.path, '/');
-    RESPONSE_PATH = split(CustomRuleData.responseRole.content, '/');
-    ROLE = CustomRuleData.responseRole;
-    JsonPathBuilder builder;
+    auto js = templateJson;
 
-    // 添加第一个路径
-    builder.addPath(CustomRuleData.promptRole.prompt.path, "${PROMPT}");
-
-    // 添加第二个路径
-    builder.addPath(CustomRuleData.promptRole.role.path, "${ROLE}");
-
-    templateJson = builder.getJson();
-
-
-    if (CustomRuleData.supportSystemRole && !CustomRuleData.roles["system"].empty())
+    // 通用路径设置函数
+    auto setValueAtPath = [](json& j, const std::vector<std::string>& path, const json& value)
     {
-        auto js = templateJson;
-        js[paths2.front()].back() = CustomRuleData.roles["system"];
-        js[paths.front()].back() = systemrole;
-        SystemPrompt.push_back(js);
-    }
-    else
+        if (path.empty()) return;
+
+        json* current = &j;
+        for (size_t i = 0; i < path.size() - 1; ++i)
+        {
+            const auto& segment = path[i];
+
+            if (current->is_array())
+            {
+                // 处理数组索引
+                if (segment.find_first_not_of("0123456789") == std::string::npos)
+                {
+                    size_t index = std::stoul(segment);
+                    if (index >= current->size())
+                    {
+                        current->push_back(json::object());
+                    }
+                    current = &(*current)[index];
+                }
+                else
+                {
+                    // 非数字键，转换为对象
+                    *current = json::object();
+                    (*current)[segment] = json::object();
+                    current = &(*current)[segment];
+                }
+            }
+            else
+            {
+                // 处理对象
+                if (!current->contains(segment))
+                {
+                    (*current)[segment] = json::object();
+                }
+                current = &(*current)[segment];
+            }
+        }
+
+        if (!path.empty())
+        {
+            (*current)[path.back()] = value;
+        }
+    };
+
+    // 设置role
+    if (!paths2.empty())
     {
-        auto js = templateJson;
-        js[paths2.front()].back() = CustomRuleData.roles["assistant"];
-        js[paths.front()].back() = "Yes I am here to help you.";
-        auto js2 = templateJson;
-        js2[paths2.front()].back() = CustomRuleData.roles["user"];
-        js2[paths.front()].back() = systemrole;
-        SystemPrompt.push_back(js2);
-        SystemPrompt.push_back(js);
+        setValueAtPath(js, paths2, role);
     }
-    if (!UDirectory::Exists(ConversationPath))
+
+    // 设置prompt
+    if (!paths.empty())
     {
-        UDirectory::Create(ConversationPath);
-        Add("default");
+        setValueAtPath(js, paths, prompt);
     }
+
+    return js;
 }
 
 std::string CustomRule_Impl::Submit(std::string prompt, size_t timeStamp, std::string role, std::string convid,
-                                    bool async)
+                                    float temp, float top_p, uint32_t top_k, float pres_pen, float freq_pen, bool async)
 {
     try
     {
@@ -506,9 +769,9 @@ std::string CustomRule_Impl::Submit(std::string prompt, size_t timeStamp, std::s
         }
         lastTimeStamp = timeStamp;
         lastFinalResponse = "";
-        json ask = templateJson;
-        ask[paths.front()].back() = prompt;
-        ask[paths2.front()].back() = CustomRuleData.roles[role];
+        json ask = buildRequest(prompt, CustomRuleData.roles[role]); //templateJson;
+        /*ask[paths.front()].back()[paths.back()] = prompt;
+        ask[paths2.front()].back()[paths2.back()] = CustomRuleData.roles[role];*/
         convid_ = convid;
         if (Conversation.find(convid) == Conversation.end())
         {
@@ -523,17 +786,56 @@ std::string CustomRule_Impl::Submit(std::string prompt, size_t timeStamp, std::s
         }
         history.emplace_back(ask);
         Conversation[convid] = history;
-        std::string data = "{\n";
+        std::string d = Conversation[convid].dump();
+        std::string data;
+        JsonPathBuilder builder;
+
+        // Handle params
         for (auto& param : CustomRuleData.params)
         {
             if (param.content == MD)
                 param.content = CustomRuleData.model;
-            if (param.isStr)
-                data += "\"" + param.suffix + "\":\"" + param.content + "\",\n";
+            for (auto& it : CustomRuleData.vars)
+            {
+                replaceVariable(it.name, param.content, it.value);
+            }
+            if (!param.path.empty())
+                builder.addPath(param.path + "/" + param.suffix, param.content);
             else
+            {
                 data += "\"" + param.suffix + "\":" + param.content + ",\n";
+            }
         }
-        data += "\"" + CustomRuleData.promptRole.prompt.suffix + "\":" + Conversation[convid_].dump() + "\n}";
+        static const std::string VAR1 = "TOPK";
+        static const std::string VAR2 = "TEMP";
+        static const std::string VAR3 = "TOPP";
+        static const std::string VAR4 = "PRES";
+        static const std::string VAR5 = "FREQ";
+        for (auto& must : CustomRuleData.extraMust)
+        {
+            replaceVariable(VAR1, must.content, std::to_string(top_k));
+            replaceVariable(VAR2, must.content, std::to_string(temp));
+            replaceVariable(VAR3, must.content, std::to_string(top_p));
+            replaceVariable(VAR4, must.content, std::to_string(pres_pen));
+            replaceVariable(VAR5, must.content, std::to_string(freq_pen));
+            if (!must.path.empty())
+                builder.addPath(must.path + "/" + must.suffix, must.content);
+            else
+            {
+                data += "\"" + must.suffix + "\":" + must.content + ",\n";
+            }
+        }
+
+        builder.addPath(CustomRuleData.promptRole.prompt.suffix, Conversation[convid].dump());
+
+        json resultJson = builder.getJson();
+        data += resultJson.dump();
+        cout << data << endl;
+
+        if (!data.empty() && data.back() == ',')
+        {
+            data.pop_back();
+        }
         Response[timeStamp] = std::make_tuple("", false);
         std::string res = sendRequest(data, timeStamp);
 
@@ -642,4 +944,15 @@ void CustomRule_Impl::Add(std::string name)
 map<long long, string> CustomRule_Impl::GetHistory()
 {
     return map<long long, string>();
+}
+
+void CustomRule_Impl::BuildHistory(const std::vector<std::pair<std::string, std::string>>& history)
+{
+    this->history.clear();
+    for (const auto& it : history)
+    {
+        json js = templateJson;
+        js[paths.front()].back() = it.first;
+        js[paths2.front()].back() = CustomRuleData.roles[it.second];
+    }
 }
