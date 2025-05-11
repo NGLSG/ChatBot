@@ -83,6 +83,7 @@ int main(int argc, char* argv[])
         }
 
         Logger::Init();
+        StringExecutor::Init();
 
 #ifdef _WIN32
         SetupDllSearchPaths();

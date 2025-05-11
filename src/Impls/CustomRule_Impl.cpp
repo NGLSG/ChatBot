@@ -427,46 +427,39 @@ void JsonPathBuilder::addValueAtPath(json& jsonObj, const vector<string>& path, 
         if (isArrayIndex)
         {
             size_t index = std::stoul(segment);
-
-            // Ensure current node is an array
             if (!current->is_array())
             {
                 (*current) = json::array();
             }
-
-            // Expand array if needed by pushing empty objects
             while (current->size() <= index)
             {
                 current->push_back(json::object());
             }
 
-            // Get reference to the array element
             current = &(*current)[index];
         }
         else
         {
-            // Object case
             if (!current->contains(segment))
             {
-                // If next segment is numeric, create array, else create object
                 bool nextIsArray = (i < path.size() - 2) &&
                     !path[i + 1].empty() &&
                     std::all_of(path[i + 1].begin(), path[i + 1].end(), [](char c) { return isdigit(c); });
 
                 (*current)[segment] = nextIsArray ? json::array() : json::object();
             }
-            // Get reference to the object property
             current = &(*current)[segment];
         }
     }
 
-    // Handle the final assignment - parse the value as raw JSON
     if (!path.empty())
     {
-        try {
+        try
+        {
             (*current)[path.back()] = json::parse(value);
-        } catch (const json::parse_error&) {
-            // If parsing fails (invalid JSON), fall back to treating it as a raw string
+        }
+        catch (const json::parse_error&)
+        {
             (*current)[path.back()] = value;
         }
     }
@@ -517,7 +510,6 @@ CustomRule_Impl::CustomRule_Impl(const CustomRule& data, std::string systemrole)
         /*js[paths2.front()].back() = CustomRuleData.roles["assistant"];
         js[paths.front()].back() = "Yes I am here to help you.";*/
         js = buildRequest("Yes I am here to help you.", CustomRuleData.roles["assistant"]);
-        std::string data2 = js.dump();
         auto js2 = templateJson;
         /*js2[paths2.front()].back() = CustomRuleData.roles["user"];
         js2[paths.front()].back() = systemrole;*/
@@ -830,7 +822,6 @@ std::string CustomRule_Impl::Submit(std::string prompt, size_t timeStamp, std::s
 
         json resultJson = builder.getJson();
         data += resultJson.dump();
-        cout << data << endl;
 
         if (!data.empty() && data.back() == ',')
         {
@@ -952,7 +943,17 @@ void CustomRule_Impl::BuildHistory(const std::vector<std::pair<std::string, std:
     for (const auto& it : history)
     {
         json js = templateJson;
-        js[paths.front()].back() = it.first;
-        js[paths2.front()].back() = CustomRuleData.roles[it.second];
+        if (it.first == "system" && !CustomRuleData.supportSystemRole)
+        {
+            auto j1 = buildRequest(it.second, CustomRuleData.roles["user"]);
+            auto j2 = buildRequest("Yes,i know that", CustomRuleData.roles["assistant"]);
+            this->history.push_back(j1);
+            this->history.push_back(j2);
+        }
+        else
+        {
+            this->history.push_back(buildRequest(it.second, CustomRuleData.roles[it.first]));
+        }
     }
+    std::string data = this->history.dump();
 }
