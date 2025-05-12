@@ -14,7 +14,7 @@ std::string replaceAll(std::string str, const std::string& from, const std::stri
     while ((start_pos = str.find(from, start_pos)) != std::string::npos)
     {
         str.replace(start_pos, from.length(), to);
-        start_pos += to.length(); // Move past the replacement
+        start_pos += to.length();
     }
     return str;
 }
@@ -26,7 +26,7 @@ void resolveChainedVariables(std::vector<CustomVariable>& vars)
         return;
     }
 
-    int max_iterations = vars.size() * vars.size(); // Heuristic limit to prevent infinite loops
+    int max_iterations = vars.size() * vars.size();
     int current_iteration = 0;
     bool changed_in_pass;
 
@@ -37,46 +37,33 @@ void resolveChainedVariables(std::vector<CustomVariable>& vars)
 
         for (auto& target_var : vars)
         {
-            std::string original_value = target_var.value; // Keep original for this pass's sources
-
-            // Regex to find placeholders like ${VAR_NAME}
-            // Using regex to correctly capture variable names, especially if they can have underscores, numbers etc.
-            // This regex finds ${ followed by one or more word characters (alphanumeric + underscore), followed by }
-            std::regex placeholder_regex("\\$\\{([\\w_]+)\\}");
+            std::string original_value = target_var.value;
+            std::regex placeholder_regex(R"(\$\{([\w_]+)\})");
             std::smatch match;
-            std::string temp_value = target_var.value; // Work on a temporary copy for multiple replacements in one var
+            std::string temp_value = target_var.value;
 
-            // Iteratively replace placeholders in the current target_var.value
-            // This inner loop handles multiple placeholders within a single variable's value string
             std::string current_processing_value = target_var.value;
             std::string last_iteration_value;
 
-            // This inner loop is to ensure all placeholders in a single string are processed
-            // e.g. VarC = ${VarA}${VarB}
             do
             {
                 last_iteration_value = current_processing_value;
-                std::string search_value = current_processing_value; // string to search placeholders in
-                std::string new_value_for_target = ""; // build the new value incrementally
+                std::string search_value = current_processing_value;
+                std::string new_value_for_target;
                 size_t last_pos = 0;
 
                 while (std::regex_search(search_value, match, placeholder_regex))
                 {
-                    std::string placeholder = match[0].str(); // e.g., "${Var1}"
-                    std::string var_name_to_find = match[1].str(); // e.g., "Var1"
+                    std::string placeholder = match[0].str();
+                    std::string var_name_to_find = match[1].str();
 
-                    new_value_for_target += match.prefix().str(); // Add text before the placeholder
+                    new_value_for_target += match.prefix().str();
 
                     bool found_source = false;
                     for (const auto& source_var : vars)
                     {
                         if (source_var.name == var_name_to_find)
                         {
-                            // Important: Only use source_var.value if it's already resolved
-                            // OR if it's a literal. For simplicity in this iterative approach,
-                            // we use its current value. The outer loop will eventually resolve it.
-                            // However, to avoid direct self-reference in a non-productive way,
-                            // ensure source_var is not target_var or that its value is different.
                             if (&source_var != &target_var || source_var.value != original_value)
                             {
                                 new_value_for_target += source_var.value;
@@ -87,13 +74,13 @@ void resolveChainedVariables(std::vector<CustomVariable>& vars)
                     }
                     if (!found_source)
                     {
-                        new_value_for_target += placeholder; // Keep placeholder if source not found
+                        new_value_for_target += placeholder;
                     }
 
                     search_value = match.suffix().str();
                     last_pos += match.prefix().length() + placeholder.length();
                 }
-                new_value_for_target += search_value; // Add remaining part of the string
+                new_value_for_target += search_value;
                 current_processing_value = new_value_for_target;
 
                 if (current_processing_value != last_iteration_value)
@@ -106,24 +93,14 @@ void resolveChainedVariables(std::vector<CustomVariable>& vars)
                 }
                 else
                 {
-                    // No change in this inner iteration, break
                     break;
                 }
-                // Continue inner loop if the value string changed, ensuring chained substitutions within one string resolve
             }
             while (true);
-        } // end for each target_var
+        }
 
         if (current_iteration > max_iterations)
         {
-            // Optional: Log a warning if max_iterations is reached,
-            // indicating potential circular dependencies or unresolved variables.
-            // std::cerr << "Warning: Variable resolution reached max iterations. Possible circular dependency." << std::endl;
-            // for(const auto& var : vars) {
-            //     if (var.value.find("${") != std::string::npos) {
-            //         std::cerr << "Unresolved: " << var.name << " = " << var.value << std::endl;
-            //     }
-            // }
             break;
         }
     }
@@ -813,6 +790,7 @@ std::string CustomRule_Impl::Submit(std::string prompt, size_t timeStamp, std::s
 
         json resultJson = builder.getJson();
         data += resultJson.dump();
+        LogInfo("转发数据: {0}", data);
 
         if (!data.empty() && data.back() == ',')
         {

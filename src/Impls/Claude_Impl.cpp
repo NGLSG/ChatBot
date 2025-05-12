@@ -731,8 +731,3 @@ map<long long, string> ClaudeInSlack::GetHistory()
     }
     return History;
 }
-
-void ClaudeInSlack::BuildHistory(const std::vector<std::pair<std::string, std::string>>& history)
-{
-
-}

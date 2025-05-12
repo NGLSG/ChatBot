@@ -11,35 +11,33 @@ public:
     }
 
     std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-                                   std::string convid = "default", float temp = 0.7f,
-                                   float top_p = 0.9f,
-                                   uint32_t top_k = 40u,
-                                   float pres_pen = 0.0f,
-                                   float freq_pen = 0.0f, bool async = false)override;
-
-
+                       std::string convid = "default", float temp = 0.7f,
+                       float top_p = 0.9f,
+                       uint32_t top_k = 40u,
+                       float pres_pen = 0.0f,
+                       float freq_pen = 0.0f, bool async = false) override;
 
     void Reset() override;;
 
-    void Load(std::string name = "default") override;
+    void Load(std::string name) override;
 
-    void Save(std::string name = "default") override;
+    void Save(std::string name) override;
 
     void Del(std::string id) override;
 
-    void Add(std::string name = "default") override;
+    void Add(std::string name) override;
 
     map<long long, string> GetHistory() override;
+
     std::string sendRequest(std::string data, size_t ts) override
     {
         return "";
     }
+
     std::string GetModel() override
     {
         return "Claude";
     }
-
-    void BuildHistory(const std::vector<std::pair<std::string, std::string>>& history) override;
 
 private:
     map<string, string> ChannelListName;
@@ -58,20 +56,20 @@ public:
 
     // 提交用户消息并获取响应
     std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-                                   std::string convid = "default", float temp = 0.7f,
-                                   float top_p = 0.9f,
-                                   uint32_t top_k = 40u,
-                                   float pres_pen = 0.0f,
-                                   float freq_pen = 0.0f, bool async = false)override;
+                       std::string convid = "default", float temp = 0.7f,
+                       float top_p = 0.9f,
+                       uint32_t top_k = 40u,
+                       float pres_pen = 0.0f,
+                       float freq_pen = 0.0f, bool async = false) override;
 
     // 重置当前对话
     void Reset() override;
 
     // 加载指定对话
-    void Load(std::string name = "default") override;
+    void Load(std::string name) override;
 
     // 保存当前对话
-    void Save(std::string name = "default") override;
+    void Save(std::string name) override;
 
     // 删除指定对话
     void Del(std::string name) override;
@@ -108,10 +106,11 @@ protected:
     static long long getCurrentTimestamp();
 
     // 获取指定天数前的时间戳
-    static long long getTimestampBefore(const int daysBefore);
+    static long long getTimestampBefore(int daysBefore);
 
 public:
     void BuildHistory(const std::vector<std::pair<std::string, std::string>>& history) override;
+
     std::string GetModel() override
     {
         return claude_data_.model;

@@ -10,18 +10,18 @@ public:
 
     ChatGPT(const OpenAIBotCreateInfo& chat_data, std::string systemrole = "");
 
-    std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-                                   std::string convid = "default", float temp = 0.7f,
-                                   float top_p = 0.9f,
-                                   uint32_t top_k = 40u,
-                                   float pres_pen = 0.0f,
-                                   float freq_pen = 0.0f, bool async = false) override;
+    std::string Submit(std::string prompt, size_t timeStamp, std::string role,
+                       std::string convid, float temp,
+                       float top_p,
+                       uint32_t top_k,
+                       float pres_pen,
+                       float freq_pen, bool async) override;
 
     void Reset() override;
 
-    void Load(std::string name = "default") override;
+    void Load(std::string name) override;
 
-    void Save(std::string name = "default") override;
+    void Save(std::string name) override;
 
     void Del(std::string name) override;
 
@@ -34,10 +34,12 @@ public:
     json history;
     std::string sendRequest(std::string data, size_t ts) override;
     void BuildHistory(const std::vector<std::pair<std::string, std::string>>& history) override;
+
     std::string GetModel() override
     {
         return chat_data_.model;
     }
+
 protected:
     OpenAIBotCreateInfo chat_data_;
     std::string mode_name_ = "default";
@@ -49,9 +51,6 @@ protected:
     const std::string suffix = ".dat";
 
     json defaultJson;
-
-
-
 };
 
 class GPTLike : public ChatGPT
@@ -182,7 +181,7 @@ public:
         chat_data_.enable = data.enable;
         chat_data_.api_key = data.api_key;
         chat_data_.model = data.model;
-    chat_data_.useWebProxy = true;
+        chat_data_.useWebProxy = true;
 
         // 设置腾讯混元API端点
         chat_data_._endPoint = "https://api.hunyuan.cloud.tencent.com/v1/chat/completions";
@@ -194,6 +193,7 @@ public:
         }
     }
 };
+
 class HuoshanAI : public ChatGPT
 {
 public:

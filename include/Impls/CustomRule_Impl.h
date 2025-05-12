@@ -38,12 +38,12 @@ private:
 public:
     CustomRule_Impl(const CustomRule& data,
                     std::string systemrole = "You are a ai assistant made by Artiverse Studio.");
-    std::string Submit(std::string prompt, size_t timeStamp, std::string role = Role::User,
-                       std::string convid = "default", float temp = 0.7f,
-                       float top_p = 0.9f,
-                       uint32_t top_k = 40u,
-                       float pres_pen = 0.0f,
-                       float freq_pen = 0.0f, bool async = false) override;
+    std::string Submit(std::string prompt, size_t timeStamp, std::string role,
+                       std::string convid, float temp,
+                       float top_p,
+                       uint32_t top_k,
+                       float pres_pen,
+                       float freq_pen, bool async) override;
     void Reset() override;
     void Load(std::string name) override;
     void Save(std::string name) override;
