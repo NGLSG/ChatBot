@@ -39,6 +39,8 @@ public:
         return "Claude";
     }
 
+    void BuildHistory(const std::vector<std::pair<std::string, std::string>>& history) override;
+
 private:
     map<string, string> ChannelListName;
     map<string, string> ChannelListID;

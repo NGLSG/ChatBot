@@ -1013,11 +1013,11 @@ private:
                 while (!bot->Finished(botR->timestamp))
                 {
                     std::string msg = bot->GetResponse(botR->timestamp);
-                    std::string res;
+                    std::string res = msg;
                     if (msg != "")
                     {
                         res = PluginRunWithRes<std::string>("OnChat", msg);
-                        if (!isContentInvalid(res))
+                        if (isContentInvalid(res))
                         {
                             res = msg;
                         }
