@@ -1065,6 +1065,7 @@ void Application::CreateBot()
     loadingBot = true;
     std::thread([&]()
     {
+        ConversationPath = "Conversations/";
         OnlySetting = false;
         auto isMissingKey = [](const std::string& key)
         {

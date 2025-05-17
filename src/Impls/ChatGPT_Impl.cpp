@@ -427,8 +427,8 @@ std::string ChatGPT::Submit(std::string prompt, size_t timeStamp, std::string ro
             "\"temperature\":" + std::to_string(temp) + ",\n"
             "\"top_k\":" + std::to_string(top_k) + ",\n"
             "\"top_p\":" + std::to_string(top_p) + ",\n"
-            "\"presence_penalty\":" + std::to_string(pres_pen) + "\n"
-            "\"frequency_penalty\":" + std::to_string(freq_pen) + "\n"
+            "\"presence_penalty\":" + std::to_string(pres_pen) + ",\n"
+            "\"frequency_penalty\":" + std::to_string(freq_pen) + ",\n"
             "  \"messages\": " +
             Conversation[convid_].dump()
             + "}\n";
