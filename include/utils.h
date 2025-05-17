@@ -187,6 +187,11 @@ public:
     template <typename T>
     static std::optional<T> LoadYaml(const std::string& file)
     {
+        if (!UFile::Exists(file))
+        {
+            LogWarn("LoadYaml: file not found: {}", file);
+            return T();
+        }
         try
         {
             // 从文件中读取YAML数据
@@ -420,6 +425,7 @@ private:
     inline static const std::string ToolsPath = "Tools/";
     inline static const std::string ToolsManifestPath = "ToolsManifest.yaml";
     inline static ToolsManifest toolsManifest;
+
     static std::string FormatToolInfo(const std::string& toolID, const ToolInfo& toolInfo)
     {
         std::string result = "";
@@ -447,6 +453,7 @@ private:
 
         return result;
     }
+
 public:
     struct Code
     {
@@ -460,7 +467,13 @@ public:
 
     static void Init()
     {
-        toolsManifest = Utils::LoadYaml<ToolsManifest>(ToolsManifestPath).value();
+        if (!UFile::Exists(ToolsManifestPath))
+        {
+            toolsManifest = ToolsManifest();
+            Utils::SaveYaml(ToolsManifestPath, Utils::toYaml(toolsManifest));
+        }
+        else
+            toolsManifest = Utils::LoadYaml<ToolsManifest>(ToolsManifestPath).value_or(ToolsManifest());
     }
 
     static std::pair<std::string, std::string> EraseInRange(const std::string& str1, const std::string& str2,
