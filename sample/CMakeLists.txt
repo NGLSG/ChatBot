@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-
+set(CMAKE_CUDA_ARCHITECTURES "75")
 project(Chatbot)
 # 设置CUDA编译器标志和C++标准
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -allow-unsupported-compiler")
@@ -30,7 +30,7 @@ if (CMAKE_CUDA_COMPILER)
     # 获取CUDA路径信息
     get_filename_component(CUDA_BIN_DIR ${CMAKE_CUDA_COMPILER} DIRECTORY)
     get_filename_component(CUDA_ROOT_DIR ${CUDA_BIN_DIR} DIRECTORY)
-    set(CUDA_DLL_DIR "${CUDA_ROOT_DIR}/bin")
+    set(CUDA_DLL_DIR "${CUDA_ROOT_DIR}/bin/x64")
 else ()
     # 尝试使用Vulkan
     find_package(Vulkan QUIET)
